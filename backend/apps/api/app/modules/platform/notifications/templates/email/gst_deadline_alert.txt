@@ -1,0 +1,5 @@
+GST filing deadline {{deadline}} is approaching.
+
+Compliance: {{compliance_type}}
+
+— Finance OS

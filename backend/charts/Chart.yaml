@@ -1,0 +1,6 @@
+apiVersion: v2
+name: finance-api
+description: Finance API and worker chart
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

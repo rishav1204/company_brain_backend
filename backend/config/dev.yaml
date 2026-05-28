@@ -1,0 +1,41 @@
+app:
+  name: company-brain-finance-api
+  env: dev
+  api_prefix: /api/v1
+
+auth:
+  provider: auth0
+  mode: bearer_only
+  tenant_claim: org_id
+  roles_claim: roles
+  user_claim: sub
+  jwt_algorithm: HS256
+  jwt_issuer: https://example-issuer
+  jwt_audience: company-brain-api
+  jwt_jwks_url: ""
+
+databases:
+  postgres:
+    dsn: postgresql://postgres:postgres@localhost:5432/company_brain
+  neo4j:
+    uri: bolt://localhost:7687
+    user: neo4j
+    password: password
+
+queue:
+  provider: redis-bullmq
+  redis_url: redis://localhost:6379
+  queue_main_name: finance.agent.action
+  queue_dlq_name: finance.agent.action.dlq
+
+retrieval:
+  chunk_size_tokens: 800
+  chunk_overlap_ratio: 0.25
+  top_k: 5
+  min_confidence: 0.7
+
+llm:
+  provider: openai
+  model: gpt-4.1
+  api_key_env: OPENAI_API_KEY
+  base_url_env: OPENAI_BASE_URL

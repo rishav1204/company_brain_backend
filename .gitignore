@@ -1,0 +1,5 @@
+backend/apps/api/.env
+backend/apps/api/.venv/
+backend/apps/api/__pycache__/
+backend/apps/api/app/__pycache__/
+backend/apps/api/app/**/*.pyc

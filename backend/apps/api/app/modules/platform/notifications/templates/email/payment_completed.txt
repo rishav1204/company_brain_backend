@@ -1,0 +1,3 @@
+Payment of {{amount}} for {{entity_label}} has been completed.
+
+— Finance OS

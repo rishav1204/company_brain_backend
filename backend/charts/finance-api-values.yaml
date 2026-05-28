@@ -1,0 +1,75 @@
+replicaCount: 3
+
+image:
+  repository: company-brain/finance-api
+  tag: v1.0.0
+  pullPolicy: IfNotPresent
+
+api:
+  enabled: true
+  replicaCount: 3
+  port: 8000
+
+worker:
+  enabled: true
+  replicaCount: 2
+  command: ["python", "cmd/worker.py"]
+
+scheduler:
+  enabled: true
+  replicaCount: 1
+  command: ["python", "cmd/scheduler.py"]
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+env:
+  - name: APP_ENV
+    value: prod
+  - name: POSTGRES_DSN
+    valueFrom:
+      secretKeyRef:
+        name: finance-api-secrets
+        key: postgres_dsn
+  - name: REDIS_URL
+    valueFrom:
+      secretKeyRef:
+        name: finance-api-secrets
+        key: redis_url
+  - name: OTEL_ENABLED
+    value: "true"
+  - name: OTEL_SERVICE_NAME
+    value: company-brain-api
+  - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    valueFrom:
+      secretKeyRef:
+        name: finance-api-secrets
+        key: otel_exporter_otlp_endpoint
+        optional: true
+  - name: LOG_SINK_URL
+    valueFrom:
+      secretKeyRef:
+        name: finance-api-secrets
+        key: log_sink_url
+        optional: true
+  - name: OBSERVABILITY_REQUIRE_IN_PROD
+    value: "true"
+
+probes:
+  livenessPath: /health
+  readinessPath: /ready

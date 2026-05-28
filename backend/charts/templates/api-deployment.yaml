@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-api
+spec:
+  replicas: {{ .Values.api.replicaCount | default .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: finance-api
+  template:
+    metadata:
+      labels:
+        app: finance-api
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.api.port | default 8000 }}
+          env:
+            {{- toYaml .Values.env | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.livenessPath | default "/health" }}
+              port: {{ .Values.api.port | default 8000 }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readinessPath | default "/ready" }}
+              port: {{ .Values.api.port | default 8000 }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

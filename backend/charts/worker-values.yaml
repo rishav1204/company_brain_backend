@@ -1,0 +1,22 @@
+worker:
+  image:
+    repository: company-brain/finance-worker
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  queueGroup: agent.run
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 800m
+      memory: 1Gi
+  env:
+    - name: APP_ENV
+      value: prod
+    - name: REDIS_URL
+      valueFrom:
+        secretKeyRef:
+          name: finance-api-secrets
+          key: redis_url

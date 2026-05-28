@@ -1,0 +1,48 @@
+from datetime import datetime, timezone
+
+from app.services.logger import log_event
+from app.services.memory_service import apply_memory_decay
+from app.services.repositories import memory_repo
+
+
+def run_scheduled_jobs_once(org_id: str) -> dict:
+    decay_summary = apply_memory_decay(org_id=org_id)
+    workflow_summary: dict = {}
+    platform_summary: dict = {}
+    try:
+        from app.modules.platform.events.services.scheduling_service import scheduling_service
+
+        platform_summary = scheduling_service.run_org_scheduled_emissions(org_id)
+    except Exception as exc:
+        platform_summary = {"error": str(exc)}
+    try:
+        from app.modules.workflows.services.workflow_service import workflow_service
+
+        if workflow_service.schema_ready():
+            from app.modules.workflows.workers.timeout_worker import run_timeout_checks
+            from app.modules.workflows.workers.retry_worker import run_retry_queue_drain
+
+            workflow_summary = {
+                "timeouts": run_timeout_checks(org_id),
+                "retries": run_retry_queue_drain(org_id),
+                "note": "sla/escalation/reconciliation emitted via platform scheduler events",
+            }
+    except Exception as exc:
+        workflow_summary = {"error": str(exc)}
+    now = datetime.now(timezone.utc).isoformat()
+    log_event(
+        "scheduler.jobs.ran",
+        org_id=org_id,
+        at=now,
+        decay_summary=decay_summary,
+        workflow=workflow_summary,
+        platform=platform_summary,
+    )
+    return {
+        "ran_at": now,
+        "org_id": org_id,
+        "decay_summary": decay_summary,
+        "platform_summary": platform_summary,
+        "workflow_summary": workflow_summary,
+        "memory_records_total": len(memory_repo.list_all_for_decay(org_id=org_id)),
+    }

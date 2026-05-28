@@ -1,0 +1,43 @@
+groups:
+  - name: finance-api-alerts
+    rules:
+      - alert: FinanceApiHighErrorRate
+        expr: (app_request_error_count / clamp_min(app_request_count, 1)) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Finance API high error rate"
+          description: "Error rate is above 10% for more than 10 minutes."
+      - alert: FinanceApiQueueDlqGrowing
+        expr: app_queue_dlq_count > 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Queue DLQ growth detected"
+          description: "DLQ count exceeded threshold and may indicate processing failures."
+      - alert: FinanceApiLlmFailuresHigh
+        expr: app_llm_failures > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM failure rate elevated"
+          description: "LLM failures exceeded threshold; check provider availability and budgets."
+      - alert: FinanceApiQueueLagHigh
+        expr: app_queue_lag_total > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue lag high"
+          description: "Event queue lag exceeded threshold for more than 10 minutes."
+      - alert: FinanceApiOtelUnavailable
+        expr: app_otel_enabled < 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OpenTelemetry exporter not active"
+          description: "OTEL appears disabled or exporter unavailable in runtime."

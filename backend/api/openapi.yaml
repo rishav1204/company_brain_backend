@@ -1,0 +1,262 @@
+openapi: 3.1.0
+info:
+  title: Company Brain Finance API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /me:
+    get:
+      summary: Get current user context
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current authenticated context
+  /permissions/evaluate:
+    get:
+      summary: Evaluate policy for object/action
+      parameters:
+        - in: query
+          name: object_type
+          schema: { type: string }
+          required: true
+        - in: query
+          name: object_id
+          schema: { type: string }
+          required: true
+        - in: query
+          name: action
+          schema: { type: string }
+          required: true
+      responses:
+        "200":
+          description: Permission decision
+  /auth/password/login:
+    post:
+      summary: Dev password login to mint JWT
+      responses:
+        "200":
+          description: JWT token response
+  /auth/dev/create-user:
+    post:
+      summary: Dev helper to create login identity
+      responses:
+        "200":
+          description: Dev user created response
+  /sources:
+    post:
+      summary: Create source connector
+      responses:
+        "200": { description: Source created }
+    get:
+      summary: List source status
+      responses:
+        "200": { description: Sources list }
+  /sources/{sourceId}/sync:
+    post:
+      summary: Trigger incremental sync
+      parameters:
+        - in: path
+          name: sourceId
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Sync run created }
+  /ingestion-runs:
+    get:
+      summary: List ingestion runs
+      responses:
+        "200": { description: Ingestion history }
+  /query/context:
+    post:
+      summary: Retrieve context package
+      responses:
+        "200": { description: Context response }
+  /query/explain:
+    post:
+      summary: Explain with citations and graph trace
+      responses:
+        "200": { description: Explain response }
+  /documents/{id}/citations:
+    get:
+      summary: Retrieve citations for a document
+      parameters:
+        - in: path
+          name: id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Citation list }
+  /workflows:
+    get:
+      summary: List workflows by filters
+      responses:
+        "200": { description: Workflows list }
+  /workflows/{id}/actions:
+    post:
+      summary: Execute workflow action
+      parameters:
+        - in: path
+          name: id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Action accepted }
+  /workflows/{id}/timeline:
+    get:
+      summary: Get workflow timeline
+      parameters:
+        - in: path
+          name: id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Timeline response }
+  /decisions:
+    post:
+      summary: Record decision with rationale
+      responses:
+        "200": { description: Decision created }
+    get:
+      summary: List decisions
+      responses:
+        "200": { description: Decision list }
+  /memory:
+    post:
+      summary: Write curated memory
+      responses:
+        "200": { description: Memory record created }
+    get:
+      summary: Retrieve memory by scope
+      responses:
+        "200": { description: Memory list }
+  /agents/run:
+    post:
+      summary: Trigger domain agent run
+      responses:
+        "200": { description: Agent run started }
+  /agents/runs/{runId}:
+    get:
+      summary: Get agent run state
+      parameters:
+        - in: path
+          name: runId
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Agent run state }
+  /agents/runs/{runId}/approve:
+    post:
+      summary: Human approval gate
+      parameters:
+        - in: path
+          name: runId
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Approval accepted }
+  /audit/logs:
+    get:
+      summary: Immutable audit trail
+      responses:
+        "200": { description: Audit log list }
+  /companies/{company_id}/invoices/{invoice_id}:
+    get:
+      summary: Get invoice by company scope
+      parameters:
+        - in: path
+          name: company_id
+          schema: { type: string }
+          required: true
+        - in: path
+          name: invoice_id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Company-scoped invoice response }
+  /companies/{company_id}/invoices:
+    post:
+      summary: Create invoice in company scope
+      parameters:
+        - in: path
+          name: company_id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Invoice create response }
+  /companies/{company_id}/workflows/{workflow_id}/actions:
+    post:
+      summary: Execute company-scoped workflow action
+      parameters:
+        - in: path
+          name: company_id
+          schema: { type: string }
+          required: true
+        - in: path
+          name: workflow_id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Workflow action policy result }
+  /companies/{company_id}/reports/close-status:
+    get:
+      summary: Company close-status report
+      parameters:
+        - in: path
+          name: company_id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Close status summary }
+  /metrics:
+    get:
+      summary: Runtime metrics snapshot
+      responses:
+        "200": { description: Metrics counters response }
+  /events/recent:
+    get:
+      summary: Recent events for org
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100 }
+          required: false
+      responses:
+        "200": { description: Recent event list }
+  /ingestion/runs/start:
+    post:
+      summary: Start ingestion run with trigger mode
+      responses:
+        "200": { description: Ingestion run started }
+  /ingestion/runs/complete:
+    post:
+      summary: Complete ingestion run and reliability update
+      responses:
+        "200": { description: Ingestion run completed }
+  /identity/resolve:
+    post:
+      summary: Resolve canonical identity from aliases
+      responses:
+        "200": { description: Identity resolution response }
+  /queue/enqueue:
+    post:
+      summary: Enqueue event for async processing
+      responses:
+        "200": { description: Queue accepted response }
+  /queue/process-next:
+    post:
+      summary: Process next queued event with dedupe and retry
+      responses:
+        "200": { description: Queue processing response }
+  /memory/decay/run:
+    post:
+      summary: Apply memory lifecycle decay rules
+      responses:
+        "200": { description: Memory decay summary }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

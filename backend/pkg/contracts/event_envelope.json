@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EventEnvelope",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "org_id",
+    "source",
+    "occurred_at",
+    "trace_id",
+    "payload",
+    "schema_version"
+  ],
+  "properties": {
+    "event_id": { "type": "string" },
+    "event_type": { "type": "string" },
+    "schema_version": { "type": "string" },
+    "event_version": { "type": "string" },
+    "org_id": { "type": "string" },
+    "entity_type": { "type": "string" },
+    "entity_id": { "type": "string" },
+    "source": { "type": "string" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "trace_id": { "type": "string" },
+    "actor_id": { "type": "string" },
+    "topic": { "type": "string" },
+    "principal": { "type": "object" },
+    "payload": { "type": "object" },
+    "metadata": { "type": "object" }
+  }
+}

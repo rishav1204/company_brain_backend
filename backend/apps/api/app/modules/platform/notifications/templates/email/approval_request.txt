@@ -1,0 +1,7 @@
+Hi {{recipient_name}},
+
+Please approve {{entity_label}} ({{amount}}).
+
+Open Finance OS Action Center to review.
+
+— Finance OS

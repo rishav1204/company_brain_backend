@@ -1,0 +1,50 @@
+{
+  "title": "Finance API Operations",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Request Count",
+      "targets": [{ "expr": "app_request_count" }],
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Request Errors",
+      "targets": [{ "expr": "app_request_error_count" }],
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Queue DLQ Count",
+      "targets": [{ "expr": "app_queue_dlq_count" }],
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM Failures",
+      "targets": [{ "expr": "app_llm_failures" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Retrieval Queries",
+      "targets": [{ "expr": "app_retrieval_queries" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue Lag Total",
+      "targets": [{ "expr": "app_queue_lag_total" }],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 }
+    },
+    {
+      "type": "stat",
+      "title": "OTel Enabled",
+      "targets": [{ "expr": "app_otel_enabled" }],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "benchmark_version": "2026.05.v1",
+  "dataset_version": "finance-ap-ar-close-v1",
+  "org_id": "11111111-1111-4111-8111-111111111111",
+  "qa_gold_examples": [
+    {
+      "org_scope": "tenant",
+      "question": "What is the AP payment approval threshold?",
+      "expected_answer": "Payments above 50000 USD require controller approval.",
+      "expected_citations": [{"source_ref": "doc:policy-ap-approval", "span": "section-2"}],
+      "tags": ["AP", "policy"]
+    },
+    {
+      "org_scope": "tenant",
+      "question": "Which close tasks block period-end posting?",
+      "expected_answer": "Unreconciled bank accounts and open AP exceptions block close posting.",
+      "expected_citations": [{"source_ref": "doc:close-checklist", "span": "blockers"}],
+      "tags": ["close", "workflow"]
+    },
+    {
+      "org_scope": "tenant",
+      "question": "How should high-risk vendor payments be handled?",
+      "expected_answer": "Route high-risk vendor payments to human approval with evidence citations.",
+      "expected_citations": [{"source_ref": "doc:vendor-risk", "span": "approval-flow"}],
+      "tags": ["AP", "risk"]
+    }
+  ],
+  "retrieval_judgments": [
+    {"query": "AP approval threshold", "candidate_ref": "doc:policy-ap-approval", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "AP approval threshold", "candidate_ref": "doc:sop-payment-controls", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "AP approval threshold", "candidate_ref": "doc:controller-matrix", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "AP approval threshold", "candidate_ref": "doc:legacy-memo", "relevance_label": 2, "judged_by": "benchmark"},
+    {"query": "close blockers", "candidate_ref": "doc:close-checklist", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "close blockers", "candidate_ref": "doc:bank-recon-status", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "close blockers", "candidate_ref": "doc:ap-exception-queue", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "vendor risk approval", "candidate_ref": "doc:vendor-risk", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "vendor risk approval", "candidate_ref": "doc:agent-approval-policy", "relevance_label": 3, "judged_by": "benchmark"},
+    {"query": "vendor risk approval", "candidate_ref": "doc:audit-trail-sample", "relevance_label": 2, "judged_by": "benchmark"}
+  ],
+  "safety_events": [
+    {
+      "event_type": "policy_breach_attempt",
+      "severity": "low",
+      "details": {"blocked": true, "path": "benchmark_negative_control"}
+    }
+  ]
+}

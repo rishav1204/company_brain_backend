@@ -1,0 +1,38 @@
+-- Module 5: extended notification templates
+
+INSERT INTO notifications.templates (org_id, template_key, channel, subject_template, body_template, variables)
+VALUES
+    (NULL, 'invoice_approval_request', 'email', 'Invoice approval: {{invoice_number}}',
+     'Hi {{recipient_name}},\n\nInvoice {{invoice_number}} ({{amount}}) requires your approval.\n\nOpen Action Center to review.',
+     '["recipient_name","invoice_number","amount"]'::jsonb),
+    (NULL, 'invoice_approval_request', 'in_app', NULL,
+     'Invoice {{invoice_number}} needs approval',
+     '["invoice_number","amount"]'::jsonb),
+    (NULL, 'payment_completed', 'email', 'Payment completed: {{entity_label}}',
+     'Payment of {{amount}} for {{entity_label}} has been completed.',
+     '["entity_label","amount"]'::jsonb),
+    (NULL, 'payment_completed', 'in_app', NULL,
+     'Payment completed: {{entity_label}}',
+     '["entity_label","amount"]'::jsonb),
+    (NULL, 'gst_deadline_alert', 'email', 'GST deadline approaching: {{deadline}}',
+     'GST filing deadline {{deadline}} is approaching. Compliance type: {{compliance_type}}.',
+     '["deadline","compliance_type"]'::jsonb),
+    (NULL, 'gst_deadline_alert', 'in_app', NULL,
+     'GST deadline: {{deadline}}',
+     '["deadline"]'::jsonb),
+    (NULL, 'compliance_alert', 'email', 'Compliance alert: {{compliance_type}}',
+     'Compliance alert ({{compliance_type}}): {{status}}. {{summary}}',
+     '["compliance_type","status","summary"]'::jsonb),
+    (NULL, 'risk_alert', 'email', 'Risk alert',
+     'Risk detected: {{summary}}',
+     '["summary"]'::jsonb),
+    (NULL, 'workflow_escalation', 'in_app', NULL,
+     'Escalation: {{workflow_id}} — {{reason}}',
+     '["workflow_id","reason"]'::jsonb),
+    (NULL, 'approval_digest', 'email', 'Your approval digest',
+     'Hi {{recipient_name}},\n\nPending items:\n{{body}}',
+     '["recipient_name","body"]'::jsonb),
+    (NULL, 'workflow_update', 'email', 'Workflow update',
+     '{{body}}',
+     '["body"]'::jsonb)
+ON CONFLICT DO NOTHING;

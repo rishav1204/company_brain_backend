@@ -1,0 +1,41 @@
+app:
+  name: company-brain-finance-api
+  env: prod
+  api_prefix: /api/v1
+
+auth:
+  provider: auth0
+  mode: bearer_only
+  tenant_claim: org_id
+  roles_claim: roles
+  user_claim: sub
+  jwt_algorithm: HS256
+  jwt_issuer: ${JWT_ISSUER}
+  jwt_audience: ${JWT_AUDIENCE}
+  jwt_jwks_url: ${JWT_JWKS_URL}
+
+databases:
+  postgres:
+    dsn: ${POSTGRES_DSN}
+  neo4j:
+    uri: ${NEO4J_URI}
+    user: ${NEO4J_USER}
+    password: ${NEO4J_PASSWORD}
+
+queue:
+  provider: redis-bullmq
+  redis_url: ${REDIS_URL}
+  queue_main_name: ${QUEUE_MAIN_NAME}
+  queue_dlq_name: ${QUEUE_DLQ_NAME}
+
+retrieval:
+  chunk_size_tokens: 800
+  chunk_overlap_ratio: 0.25
+  top_k: 5
+  min_confidence: 0.75
+
+llm:
+  provider: openai
+  model: ${OPENAI_MODEL}
+  api_key_env: OPENAI_API_KEY
+  base_url_env: OPENAI_BASE_URL
