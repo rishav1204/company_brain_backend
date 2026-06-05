@@ -13,106 +13,157 @@ from app.services.metrics import metrics_store
 
 
 class PostingService:
+    def _validate_posting(self, org_id: str, *, posting_date: str, lines: list[dict], company_id: str | None = None) -> tuple[float, float, str, dict[str, dict]]:
+        if not lines:
+            raise ValueError("No posting lines")
+        total_debit, total_credit = validate_double_entry(lines)
+        period = fiscal_period_service.resolve_open_period(org_id, posting_date=posting_date, company_id=company_id)
+        fiscal_period_id = str(period["id"])
+        group_cache: dict[str, dict] = {}
+        for l in lines:
+            aid = str(l.get("account_id") or "")
+            if not aid:
+                raise ValueError("Missing account_id")
+            acc = account_repository.get(org_id, account_id=aid)
+            if not acc or not bool(acc.get("is_active")):
+                raise ValueError("Account not active")
+            if not bool(acc.get("is_postable")):
+                raise ValueError("Account is not postable")
+            gid = str(acc.get("group_id") or "")
+            if gid and gid not in group_cache:
+                g = account_group_repository.get(org_id, group_id=gid)
+                group_cache[gid] = g or {}
+        return total_debit, total_credit, fiscal_period_id, group_cache
+
+    def _write_post(
+        self,
+        conn,
+        org_id: str,
+        *,
+        posted_by: str | None,
+        posting_date: str,
+        lines: list[dict],
+        fiscal_period_id: str,
+        group_cache: dict[str, dict],
+        batch_number: str | None = None,
+    ) -> tuple[dict, str, str]:
+        batch_number = batch_number or ("LB-" + uuid.uuid4().hex[:12].upper())
+        batch = ledger_repository.create_batch(conn, org_id, batch_number=batch_number, posted_by=posted_by)
+        batch_id = str(batch["id"])
+        ledger_repository.insert_entries(
+            conn,
+            org_id,
+            batch_id=batch_id,
+            fiscal_period_id=fiscal_period_id,
+            posting_date=posting_date,
+            lines=lines,
+        )
+        totals: dict[str, tuple[float, float]] = {}
+        for l in lines:
+            aid = str(l["account_id"])
+            d = float(l.get("debit_amount") or 0)
+            c = float(l.get("credit_amount") or 0)
+            prev = totals.get(aid, (0.0, 0.0))
+            totals[aid] = (prev[0] + d, prev[1] + c)
+        for aid, (d, c) in totals.items():
+            acc = account_repository.get(org_id, account_id=aid) or {}
+            g = group_cache.get(str(acc.get("group_id") or ""), {}) or {}
+            nature = str(g.get("nature") or "debit").lower()
+            closing = (d - c) if nature == "debit" else (c - d)
+            ledger_repository.upsert_balance(
+                conn,
+                org_id,
+                account_id=aid,
+                fiscal_period_id=fiscal_period_id,
+                debit_delta=d,
+                credit_delta=c,
+                closing_balance=closing,
+            )
+        return batch, batch_id, batch_number
+
+    def post_with_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        posted_by: str | None,
+        posting_date: str,
+        lines: list[dict],
+        company_id: str | None = None,
+    ) -> dict:
+        """Write GL batch+entries+balances using caller's open transaction."""
+        total_debit, total_credit, fiscal_period_id, group_cache = self._validate_posting(
+            org_id, posting_date=posting_date, lines=lines, company_id=company_id
+        )
+        batch, batch_id, batch_number = self._write_post(
+            conn,
+            org_id,
+            posted_by=posted_by,
+            posting_date=posting_date,
+            lines=lines,
+            fiscal_period_id=fiscal_period_id,
+            group_cache=group_cache,
+        )
+        return {
+            "batch": batch,
+            "batch_id": batch_id,
+            "batch_number": batch_number,
+            "totals": {"debit": total_debit, "credit": total_credit},
+            "fiscal_period_id": fiscal_period_id,
+        }
+
     def post(self, org_id: str, *, posted_by: str | None, posting_date: str, lines: list[dict], company_id: str | None = None) -> dict:
         started = time.time()
         if not lines:
             raise ValueError("No posting lines")
 
         try:
-            # Validate double-entry first (fast fail)
-            total_debit, total_credit = validate_double_entry(lines)
+            total_debit, total_credit, fiscal_period_id, group_cache = self._validate_posting(
+                org_id, posting_date=posting_date, lines=lines, company_id=company_id
+            )
 
-            # Fiscal period resolution (must be open)
-            period = fiscal_period_service.resolve_open_period(org_id, posting_date=posting_date, company_id=company_id)
-            fiscal_period_id = str(period["id"])
-
-            # Validate accounts exist/active/postable
-            # (Batch fetch optimization can come later.)
-            group_cache: dict[str, dict] = {}
-            for l in lines:
-                aid = str(l.get("account_id") or "")
-                if not aid:
-                    raise ValueError("Missing account_id")
-                acc = account_repository.get(org_id, account_id=aid)
-                if not acc or not bool(acc.get("is_active")):
-                    raise ValueError("Account not active")
-                if not bool(acc.get("is_postable")):
-                    raise ValueError("Account is not postable")
-                gid = str(acc.get("group_id") or "")
-                if gid and gid not in group_cache:
-                    g = account_group_repository.get(org_id, group_id=gid)
-                    group_cache[gid] = g or {}
-
-            batch_number = "LB-" + uuid.uuid4().hex[:12].upper()
-
-            # Atomic posting: batch + entries + balance projection within one DB transaction
             with get_db_conn() as conn:
                 set_rls_org(conn, org_id)
-
-                batch = ledger_repository.create_batch(conn, org_id, batch_number=batch_number, posted_by=posted_by)
-                batch_id = str(batch["id"])
-
-                ledger_repository.insert_entries(
+                batch, batch_id, batch_number = self._write_post(
                     conn,
                     org_id,
-                    batch_id=batch_id,
-                    fiscal_period_id=fiscal_period_id,
+                    posted_by=posted_by,
                     posting_date=posting_date,
                     lines=lines,
+                    fiscal_period_id=fiscal_period_id,
+                    group_cache=group_cache,
                 )
 
-                totals: dict[str, tuple[float, float]] = {}
-                for l in lines:
-                    aid = str(l["account_id"])
-                    d = float(l.get("debit_amount") or 0)
-                    c = float(l.get("credit_amount") or 0)
-                    prev = totals.get(aid, (0.0, 0.0))
-                    totals[aid] = (prev[0] + d, prev[1] + c)
-                for aid, (d, c) in totals.items():
-                    acc = account_repository.get(org_id, account_id=aid) or {}
-                    g = group_cache.get(str(acc.get("group_id") or ""), {}) or {}
-                    nature = str(g.get("nature") or "debit").lower()
-                    closing = (d - c) if nature == "debit" else (c - d)
-                    ledger_repository.upsert_balance(
-                        conn,
-                        org_id,
-                        account_id=aid,
-                        fiscal_period_id=fiscal_period_id,
-                        debit_delta=d,
-                        credit_delta=c,
-                        closing_balance=closing,
-                    )
+            # Emit events + audit logs best-effort
+            try:
+                from app.modules.platform.events.services.event_service import platform_event_service
 
-        # Emit events + audit logs best-effort
-        try:
-            from app.modules.platform.events.services.event_service import platform_event_service
+                platform_event_service.publish(
+                    event_type="erp.ledger.posted",
+                    org_id=org_id,
+                    source="erp.gl",
+                    entity_type="ledger_batch",
+                    entity_id=batch_id,
+                    payload={"batch_id": batch_id, "batch_number": batch_number, "posting_date": posting_date},
+                )
+            except Exception:
+                pass
+            try:
+                from app.modules.platform.governance.services.audit_service import audit_service
 
-            platform_event_service.publish(
-                event_type="erp.ledger.posted",
-                org_id=org_id,
-                source="erp.gl",
-                entity_type="ledger_batch",
-                entity_id=batch_id,
-                payload={"batch_id": batch_id, "batch_number": batch_number, "posting_date": posting_date},
-            )
-        except Exception:
-            pass
-        try:
-            from app.modules.platform.governance.services.audit_service import audit_service
-
-            audit_service.record(
-                org_id=org_id,
-                actor_type="system",
-                actor_id=posted_by or "erp.gl",
-                action="erp.ledger.posted",
-                object_ref=f"erp:ledger_batch:{batch_id}",
-                payload={"batch_number": batch_number, "total_debit": total_debit, "total_credit": total_credit},
-                entity_type="ledger_batch",
-                entity_id=batch_id,
-                source_service="erp.gl",
-            )
-        except Exception:
-            pass
+                audit_service.record(
+                    org_id=org_id,
+                    actor_type="system",
+                    actor_id=posted_by or "erp.gl",
+                    action="erp.ledger.posted",
+                    object_ref=f"erp:ledger_batch:{batch_id}",
+                    payload={"batch_number": batch_number, "total_debit": total_debit, "total_credit": total_credit},
+                    entity_type="ledger_batch",
+                    entity_id=batch_id,
+                    source_service="erp.gl",
+                )
+            except Exception:
+                pass
 
             metrics_store.incr_gl_posting()
             metrics_store.observe_gl_posting_latency_ms(int((time.time() - started) * 1000))

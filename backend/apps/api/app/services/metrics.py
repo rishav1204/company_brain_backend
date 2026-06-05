@@ -44,6 +44,15 @@ class MetricsSnapshot:
     gl_posting_failures: int
     gl_posting_latency_ms_total: int
     gl_posting_latency_samples: int
+    journal_postings: int
+    journal_posting_failures: int
+    journal_posting_latency_ms_total: int
+    journal_posting_latency_samples: int
+    journal_reversals: int
+    journal_validation_failures: int
+    journal_approvals: int
+    journal_submissions: int
+    journal_ai_low_confidence: int
 
 
 class MetricsStore:
@@ -89,6 +98,15 @@ class MetricsStore:
         self.gl_posting_failures = 0
         self.gl_posting_latency_ms_total = 0
         self.gl_posting_latency_samples = 0
+        self.journal_postings = 0
+        self.journal_posting_failures = 0
+        self.journal_posting_latency_ms_total = 0
+        self.journal_posting_latency_samples = 0
+        self.journal_reversals = 0
+        self.journal_validation_failures = 0
+        self.journal_approvals = 0
+        self.journal_submissions = 0
+        self.journal_ai_low_confidence = 0
         self._queue_lag: dict[str, int] = {}
         self._queue_dlq_lag: dict[str, int] = {}
 
@@ -231,6 +249,39 @@ class MetricsStore:
             self.gl_posting_latency_ms_total += int(latency_ms)
             self.gl_posting_latency_samples += 1
 
+    def incr_journal_posting(self) -> None:
+        with self._lock:
+            self.journal_postings += 1
+
+    def incr_journal_posting_failure(self) -> None:
+        with self._lock:
+            self.journal_posting_failures += 1
+
+    def observe_journal_posting_latency_ms(self, latency_ms: int) -> None:
+        with self._lock:
+            self.journal_posting_latency_ms_total += int(latency_ms)
+            self.journal_posting_latency_samples += 1
+
+    def incr_journal_reversal(self) -> None:
+        with self._lock:
+            self.journal_reversals += 1
+
+    def incr_journal_validation_failure(self) -> None:
+        with self._lock:
+            self.journal_validation_failures += 1
+
+    def incr_journal_approved(self) -> None:
+        with self._lock:
+            self.journal_approvals += 1
+
+    def incr_journal_submitted(self) -> None:
+        with self._lock:
+            self.journal_submissions += 1
+
+    def incr_journal_ai_low_confidence(self) -> None:
+        with self._lock:
+            self.journal_ai_low_confidence += 1
+
     def record_notification_delivery_latency(self, latency_ms: int) -> None:
         with self._lock:
             self.notification_delivery_latency_ms_total += latency_ms
@@ -296,6 +347,15 @@ class MetricsStore:
                 gl_posting_failures=self.gl_posting_failures,
                 gl_posting_latency_ms_total=self.gl_posting_latency_ms_total,
                 gl_posting_latency_samples=self.gl_posting_latency_samples,
+                journal_postings=self.journal_postings,
+                journal_posting_failures=self.journal_posting_failures,
+                journal_posting_latency_ms_total=self.journal_posting_latency_ms_total,
+                journal_posting_latency_samples=self.journal_posting_latency_samples,
+                journal_reversals=self.journal_reversals,
+                journal_validation_failures=self.journal_validation_failures,
+                journal_approvals=self.journal_approvals,
+                journal_submissions=self.journal_submissions,
+                journal_ai_low_confidence=self.journal_ai_low_confidence,
             )
 
 

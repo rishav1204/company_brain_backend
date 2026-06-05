@@ -360,6 +360,19 @@ def _consume_workflow_escalation_event(envelope: dict) -> None:
     run_escalation_checks(org_id, trace_id=str(envelope.get("trace_id", "")))
 
 
+def _emit_ap_invoice_due_events(org_id: str) -> None:
+    from datetime import date
+
+    from app.modules.erp.accounts_payable.events.ap_events import emit_invoice_due
+    from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
+
+    today = date.today().isoformat()
+    for inv in invoice_repository.list_outstanding(org_id):
+        due = str(inv.get("due_date") or "")[:10]
+        if due and due <= today:
+            emit_invoice_due(org_id, invoice_id=str(inv.get("id")), due_date=due)
+
+
 def _consume_notification_digest_event(envelope: dict) -> None:
     from app.modules.platform.notifications.workers.digest_worker import run_digest_batch_for_org
 
@@ -380,8 +393,33 @@ def _consume_scheduler_event(envelope: dict) -> None:
                 from app.modules.platform.documents.services.retention_service import document_retention_service
 
                 document_retention_service.enforce_retention(org_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("scheduler.tick retention failed org=%s: %s", org_id, exc)
+            if org_id:
+                try:
+                    from app.modules.erp.journals.services.recurring_journal_service import recurring_journal_service
+
+                    recurring_journal_service.run_due(org_id)
+                except Exception as exc:
+                    import logging
+
+                    logging.getLogger(__name__).warning("scheduler.tick recurring journals failed org=%s: %s", org_id, exc)
+                try:
+                    from app.modules.erp.journals.services.accrual_service import accrual_service
+
+                    accrual_service.process_due_reversals(org_id)
+                except Exception as exc:
+                    import logging
+
+                    logging.getLogger(__name__).warning("scheduler.tick accrual reversals failed org=%s: %s", org_id, exc)
+                try:
+                    _emit_ap_invoice_due_events(org_id)
+                except Exception as exc:
+                    import logging
+
+                    logging.getLogger(__name__).warning("scheduler.tick AP due invoices failed org=%s: %s", org_id, exc)
     elif event_type in {"scheduler.escalation.scan"}:
         _consume_workflow_escalation_event(envelope)
     elif event_type in {"scheduler.reconciliation.daily"}:
@@ -478,37 +516,30 @@ def _consume_coa_events(envelope: dict) -> None:
     if event_type in {"invoice.extracted"}:
         return
 
-    # journal.posted -> mark used_in_journals for accounts once journal lines exist (future)
     if event_type in {"journal.posted", "erp.journal.posted"}:
+        journal_id = str(payload.get("journal_id") or "").strip()
+        if journal_id:
+            try:
+                from app.modules.erp.coa.repositories.account_usage_repository import account_usage_repository
+                from app.modules.erp.journals.repositories.journal_line_repository import journal_line_repository
+
+                lines = journal_line_repository.list_by_journal(org_id, journal_id=journal_id)
+                for line in lines:
+                    aid = str(line.get("account_id") or "")
+                    if not aid:
+                        continue
+                    usage = account_usage_repository.get_or_default(org_id, account_id=aid)
+                    account_usage_repository.upsert(
+                        org_id,
+                        account_id=aid,
+                        has_balance=bool(usage.get("has_balance")),
+                        used_in_journals=True,
+                    )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("journal.posted COA usage update failed org=%s: %s", org_id, exc)
         return
-    elif event_type == "erp.payment.completed" and payload.get("payment_id"):
-        for did in document_ids:
-            evidence_service.link(
-                org_id,
-                document_id=did,
-                entity_type="payment",
-                entity_id=str(payload.get("payment_id")),
-                metadata={"linked_by": "event_consumer", "event_type": event_type},
-            )
-    elif event_type == "journal.posted" and payload.get("journal_entry_id"):
-        for did in document_ids:
-            evidence_service.link(
-                org_id,
-                document_id=did,
-                entity_type="journal_entry",
-                entity_id=str(payload.get("journal_entry_id")),
-                metadata={"linked_by": "event_consumer", "event_type": event_type},
-            )
-    elif event_type in {"approval.requested", "approval.completed"} and payload.get("approval_id"):
-        for did in document_ids:
-            evidence_service.link(
-                org_id,
-                document_id=did,
-                entity_type="approval",
-                entity_id=str(payload.get("approval_id")),
-                workflow_id=str(payload.get("workflow_instance_id", "")) or None,
-                metadata={"linked_by": "event_consumer", "event_type": event_type},
-            )
 
 def _consume_document_security_event(envelope: dict) -> None:
     event_type = str(envelope.get("event_type", ""))
@@ -567,7 +598,7 @@ def _push_document_realtime(envelope: dict) -> None:
 
 def _consume_invoice_ai_reviewed(envelope: dict) -> None:
     """
-    Wire OCR/AI completion -> workflow start for invoice review/approval.
+    Wire OCR/AI completion -> AP invoice (single source of truth).
     Source event is emitted by OCR worker as `invoice.ai.reviewed`.
     """
     event_type = str(envelope.get("event_type", ""))
@@ -589,31 +620,45 @@ def _consume_invoice_ai_reviewed(envelope: dict) -> None:
         extraction = extraction_repository.latest_extraction(org_id, document_id) or {}
     except Exception:
         extraction = {}
-    # Start ERP workflow using existing consumer entrypoint (no GL posting yet; only prepares intent).
-    try:
-        from app.modules.workflows.services.erp_workflow_consumer import handle_entity_created
+    extracted = extraction.get("extracted_data") if isinstance(extraction.get("extracted_data"), dict) else {}
+    if not extracted:
+        return
 
-        handle_entity_created(
-            org_id=org_id,
-            payload={
-                "entity_type": "invoice",
-                "entity_id": document_id,
-                "event": "invoice.ai.reviewed",
-                "amount": (extraction.get("extracted_data") or {}).get("total_amount"),
-                "metadata": {
-                    "document_id": document_id,
-                    "extraction_id": extraction.get("id"),
-                    "extraction_type": extraction.get("extraction_type"),
-                    "extracted_data": extraction.get("extracted_data"),
-                    "confidence_score": extraction.get("confidence_score"),
-                    # Placeholder for GL intent prepared by UI/AI later:
-                    # "gl_post_request": {...}
-                },
-            },
-            trace_id=str(envelope.get("trace_id", "")) or None,
+    ap_invoice_id: str | None = None
+    try:
+        from app.modules.erp.accounts_payable.services.ai_invoice_service import ai_invoice_service
+
+        result = ai_invoice_service.create_from_extraction(
+            org_id,
+            extracted_data=extracted,
+            source_document_id=document_id,
+            created_by="ai.invoice",
         )
-    except Exception:
-        pass
+        ap_invoice_id = str((result.get("invoice") or {}).get("id") or "")
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "AP invoice from invoice.ai.reviewed failed org=%s doc=%s: %s", org_id, document_id, exc
+        )
+        return
+
+    if not ap_invoice_id:
+        return
+
+    try:
+        from app.modules.erp.accounts_payable.services.invoice_service import invoice_service
+
+        invoice_service.submit_for_approval(org_id, invoice_id=ap_invoice_id, actor_id="ai.invoice")
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "AP invoice submit from invoice.ai.reviewed failed org=%s invoice=%s: %s",
+            org_id,
+            ap_invoice_id,
+            exc,
+        )
 
 
 def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
@@ -629,7 +674,8 @@ def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
     if not org_id:
         return
     payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
-    if str(payload.get("step_key") or "") != "gl.post":
+    step_key = str(payload.get("step_key") or "")
+    if step_key not in {"gl.post", "journal.post"}:
         return
     instance_id = str(payload.get("workflow_instance_id") or "").strip()
     if not instance_id:
@@ -641,15 +687,41 @@ def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
     except Exception:
         return
     metadata = instance.get("metadata") if isinstance(instance.get("metadata"), dict) else {}
-    gl_req = metadata.get("gl_post_request") if isinstance(metadata.get("gl_post_request"), dict) else None
-    if not gl_req:
-        return
+    journal_id = str(metadata.get("journal_id") or "").strip()
+    posted_by = str(instance.get("owner_user_id") or "workflow")
     try:
+        if journal_id:
+            from app.modules.erp.journals.ai.confidence_engine import requires_finance_review
+            from app.modules.erp.journals.services.approval_service import approval_service
+            from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+            from app.modules.erp.journals.repositories.journal_repository import journal_repository
+
+            journal = journal_repository.get(org_id, journal_id=journal_id) or {}
+            status = str(journal.get("journal_status") or "")
+            approver = str(metadata.get("approver_user_id") or posted_by)
+            if requires_finance_review(journal.get("ai_confidence") if isinstance(journal.get("ai_confidence"), dict) else {}):
+                return
+            if status in {"draft", "pending_approval"}:
+                approval_service.approve(org_id, journal_id=journal_id, approver_id=approver)
+            result = posting_orchestrator.post_journal(org_id, journal_id=journal_id, posted_by=posted_by)
+            batch_id = result.get("ledger_batch_id")
+            _publish_child_event(
+                envelope,
+                event_type="journal.posted",
+                org_id=org_id,
+                source="workflow.journal_post",
+                payload={"journal_id": journal_id, "batch_id": batch_id, "workflow_instance_id": instance_id},
+            )
+            return
+
+        gl_req = metadata.get("gl_post_request") if isinstance(metadata.get("gl_post_request"), dict) else None
+        if not gl_req:
+            return
         from app.modules.erp.gl.services.posting_service import posting_service
 
         result = posting_service.post(
             org_id,
-            posted_by=str(instance.get("owner_user_id") or "workflow"),
+            posted_by=posted_by,
             posting_date=str(gl_req.get("posting_date") or metadata.get("posting_date") or "")[:10],
             company_id=gl_req.get("company_id"),
             lines=gl_req.get("lines") or [],
@@ -665,6 +737,103 @@ def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
             )
     except Exception:
         return
+
+
+def _consume_journal_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"invoice.extracted", "ocr.completed", "document.extracted", "invoice.received"}:
+        document_id = str(payload.get("document_id") or envelope.get("entity_id") or "").strip()
+        extracted = payload.get("extracted_data") if isinstance(payload.get("extracted_data"), dict) else {}
+        if not document_id or not extracted:
+            try:
+                from app.modules.platform.documents.repositories.extraction_repository import extraction_repository
+
+                ext = extraction_repository.latest_extraction(org_id, document_id) or {}
+                extracted = ext.get("extracted_data") if isinstance(ext.get("extracted_data"), dict) else {}
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("invoice extraction lookup failed org=%s: %s", org_id, exc)
+                extracted = {}
+        if document_id and extracted:
+            try:
+                from app.modules.erp.accounts_payable.services.ai_invoice_service import ai_invoice_service
+
+                ai_invoice_service.create_from_extraction(
+                    org_id,
+                    extracted_data=extracted,
+                    source_document_id=document_id,
+                    created_by="event.invoice.extracted",
+                )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("AP AI invoice failed org=%s doc=%s: %s", org_id, document_id, exc)
+
+    if event_type in {"approval.completed", "workflow.approved"}:
+        ap_payment_id = str(payload.get("ap_payment_id") or "").strip()
+        if not ap_payment_id:
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            ap_payment_id = str(metadata.get("ap_payment_id") or "").strip()
+        if ap_payment_id:
+            try:
+                from app.modules.erp.accounts_payable.services.payment_service import payment_service
+
+                payment_service.mark_workflow_approved(org_id, payment_id=ap_payment_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "AP payment workflow approve failed org=%s payment=%s: %s", org_id, ap_payment_id, exc
+                )
+            return
+
+        ap_invoice_id = str(
+            payload.get("ap_invoice_id") or payload.get("invoice_id") or payload.get("entity_id") or ""
+        ).strip()
+        if ap_invoice_id:
+            try:
+                from app.modules.erp.accounts_payable.services.invoice_service import invoice_service
+
+                approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+                invoice_service.approve(org_id, invoice_id=ap_invoice_id, approver_id=approver, auto_post=True)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "AP invoice approve from event failed org=%s invoice=%s: %s", org_id, ap_invoice_id, exc
+                )
+            return
+        journal_id = str(payload.get("journal_id") or "").strip()
+        if not journal_id:
+            return
+        try:
+            from app.modules.erp.journals.services.approval_service import approval_service
+
+            approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+            approval_service.approve(org_id, journal_id=journal_id, approver_id=approver)
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("journal approve from event failed org=%s journal=%s: %s", org_id, journal_id, exc)
+
+    if event_type in {"erp.payment.completed", "payment.completed"}:
+        journal_id = str(payload.get("journal_id") or "").strip()
+        if not journal_id:
+            return
+        try:
+            from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+
+            posting_orchestrator.post_journal(org_id, journal_id=journal_id, posted_by=str(payload.get("posted_by") or "payment"))
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("journal post from payment event failed org=%s journal=%s: %s", org_id, journal_id, exc)
 
 
 def consume_event(queue: str, envelope: dict) -> None:
@@ -729,6 +898,7 @@ def consume_event(queue: str, envelope: dict) -> None:
     _consume_coa_events(envelope)
     _consume_invoice_ai_reviewed(envelope)
     _consume_workflow_system_task_gl_post(envelope)
+    _consume_journal_events(envelope)
     _push_document_realtime(envelope)
     try:
         from app.modules.platform.notifications.services.notification_service import notification_service
