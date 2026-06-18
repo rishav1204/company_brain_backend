@@ -420,6 +420,14 @@ def _consume_scheduler_event(envelope: dict) -> None:
                     import logging
 
                     logging.getLogger(__name__).warning("scheduler.tick AP due invoices failed org=%s: %s", org_id, exc)
+                try:
+                    from app.modules.erp.accounts_receivable.services.dunning_service import dunning_service
+
+                    dunning_service.process_due_invoices(org_id)
+                except Exception as exc:
+                    import logging
+
+                    logging.getLogger(__name__).warning("scheduler.tick AR dunning failed org=%s: %s", org_id, exc)
     elif event_type in {"scheduler.escalation.scan"}:
         _consume_workflow_escalation_event(envelope)
     elif event_type in {"scheduler.reconciliation.daily"}:
@@ -793,6 +801,26 @@ def _consume_journal_events(envelope: dict) -> None:
                 )
             return
 
+        ar_invoice_id = str(payload.get("ar_invoice_id") or "").strip()
+        if not ar_invoice_id:
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            ar_invoice_id = str(metadata.get("ar_invoice_id") or "").strip()
+        if ar_invoice_id:
+            try:
+                from app.modules.erp.accounts_receivable.services.sales_invoice_service import sales_invoice_service
+
+                approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+                sales_invoice_service.issue_invoice(
+                    org_id, invoice_id=ar_invoice_id, issued_by=approver, auto_post=True, force_credit_approval=True
+                )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "AR invoice issue from workflow failed org=%s invoice=%s: %s", org_id, ar_invoice_id, exc
+                )
+            return
+
         ap_invoice_id = str(
             payload.get("ap_invoice_id") or payload.get("invoice_id") or payload.get("entity_id") or ""
         ).strip()
@@ -834,6 +862,30 @@ def _consume_journal_events(envelope: dict) -> None:
             import logging
 
             logging.getLogger(__name__).warning("journal post from payment event failed org=%s journal=%s: %s", org_id, journal_id, exc)
+
+
+def _consume_ar_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"customer.payment.received", "payment.received"}:
+        receipt_id = str(payload.get("receipt_id") or "").strip()
+        if receipt_id and payload.get("auto_complete"):
+            try:
+                from app.modules.erp.accounts_receivable.services.collection_service import collection_service
+
+                collection_service.complete_receipt(
+                    org_id, receipt_id=receipt_id, completed_by=str(payload.get("posted_by") or "event"), auto_post=True
+                )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "AR receipt complete from event failed org=%s receipt=%s: %s", org_id, receipt_id, exc
+                )
 
 
 def consume_event(queue: str, envelope: dict) -> None:
@@ -899,6 +951,7 @@ def consume_event(queue: str, envelope: dict) -> None:
     _consume_invoice_ai_reviewed(envelope)
     _consume_workflow_system_task_gl_post(envelope)
     _consume_journal_events(envelope)
+    _consume_ar_events(envelope)
     _push_document_realtime(envelope)
     try:
         from app.modules.platform.notifications.services.notification_service import notification_service

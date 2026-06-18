@@ -11,6 +11,9 @@ _ENTITY_WORKFLOW_MAP = {
     "gst_return": "GST_FILING",
     "reconciliation": "BANK_RECONCILIATION",
     "vendor": "VENDOR_ONBOARDING",
+    "sales_invoice": "AR_INVOICE_APPROVAL",
+    "customer_credit": "AR_CREDIT_LIMIT_APPROVAL",
+    "ar_writeoff": "AR_WRITE_OFF_APPROVAL",
 }
 
 

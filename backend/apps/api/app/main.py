@@ -13,6 +13,7 @@ from app.modules.erp.coa.routes.router import erp_coa_router
 from app.modules.erp.gl.routes.router import erp_gl_router
 from app.modules.erp.journals.routes.router import erp_journals_router
 from app.modules.erp.accounts_payable.routes.router import erp_ap_router
+from app.modules.erp.accounts_receivable.routes.router import erp_ar_router
 from app.modules.platform.governance.middleware.audit_middleware import AuditCaptureMiddleware
 from app.modules.platform.governance.middleware.governance_middleware import GovernanceEnforcementMiddleware
 from app.modules.platform.governance.middleware.trace_middleware import GovernanceTraceMiddleware
@@ -99,6 +100,7 @@ app.include_router(erp_coa_router, prefix=settings.api_prefix)
 app.include_router(erp_gl_router, prefix=settings.api_prefix)
 app.include_router(erp_journals_router, prefix=settings.api_prefix)
 app.include_router(erp_ap_router, prefix=settings.api_prefix)
+app.include_router(erp_ar_router, prefix=settings.api_prefix)
 app.include_router(companies.router, prefix=settings.api_prefix)
 app.include_router(observability.router, prefix=settings.api_prefix)
 app.include_router(ingestion.router, prefix=settings.api_prefix)
