@@ -10,7 +10,7 @@ Migration: `backend/migrations/030_erp_gl_engine.sql`
 - **`erp.ledger_entries`**: immutable accounting truth records (no updates/deletes; corrections via reversals/new postings)
 - **`erp.ledger_batches`**: atomic posting group identifier
 - **`erp.account_balances`**: projection table (materialized totals and closing balance per account+period)
-- **`erp.fiscal_periods`**: period control for posting eligibility
+- **`erp.fiscal_periods`**: period control for posting eligibility (owned by **Module 12** — see [M12_fiscal.md](./M12_fiscal.md))
 - **`erp.closing_entries`**: recorded closing batches (year-end close scaffolding)
 
 ### Invariants (enforced)
@@ -20,19 +20,19 @@ Migration: `backend/migrations/030_erp_gl_engine.sql`
 
 ## Posting rules (non-negotiable)
 - **Double-entry**: total debits == total credits (rounded to 2 decimals)
-- **Fiscal locking**: posting date must resolve to an **open and unlocked** `erp.fiscal_periods` row
+- **Fiscal locking**: posting date must resolve to an **open** fiscal period per M12 `lock_status` (soft/hard/closed gates via `posting_validation_service`)
 - **Account validation**: account exists, `is_active = true`, `is_postable = true`
 - **Atomicity**: batch + entries + balance projection are written in one DB transaction
 
 ## APIs (prefix: `/api/v1/erp/*`)
 
-### Fiscal periods
+### Fiscal periods (aliases — canonical owner: M12)
 - **POST** `/erp/fiscal-periods`
 - **GET** `/erp/fiscal-periods`
 - **POST** `/erp/fiscal-periods/{fiscal_period_id}/lock`
 - **POST** `/erp/fiscal-periods/{fiscal_period_id}/close`
 
-All mutations require GL finance admin guard (`erp.gl.admin` / `gl.admin` / finance-admin role).
+Canonical APIs: `/erp/ledger/*` (see M12_fiscal.md). GL routes delegate to `modules/erp/fiscal/`.
 
 ### Posting to GL
 - **POST** `/erp/gl/post`

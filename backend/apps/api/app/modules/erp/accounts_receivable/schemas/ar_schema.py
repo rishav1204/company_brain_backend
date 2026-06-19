@@ -57,6 +57,8 @@ class SalesInvoiceCreateRequest(BaseModel):
     cgst: float = Field(default=0, ge=0)
     sgst: float = Field(default=0, ge=0)
     igst: float = Field(default=0, ge=0)
+    gst_rate: float | None = Field(default=None, ge=0, le=1)
+    export_zero_rated: bool = False
     company_id: str | None = None
     contract_months: int | None = Field(default=None, ge=1)
     lines: list[InvoiceLineInput] = Field(default_factory=list)
@@ -79,6 +81,7 @@ class ReceiptRecordRequest(BaseModel):
     payment_mode: str = "bank_transfer"
     bank_account_id: str
     company_id: str | None = None
+    idempotency_key: str | None = Field(default=None, max_length=128)
     invoice_allocations: list[dict] = Field(default_factory=list)
 
 

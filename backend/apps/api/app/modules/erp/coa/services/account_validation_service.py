@@ -16,6 +16,15 @@ class AccountValidationService:
         "gst_output",
         "fixed_asset",
         "depreciation",
+        "accumulated_depreciation",
+        "inventory",
+        "cogs",
+        "grni_clearing",
+        "inventory_loss",
+        "tds_payable",
+        "tcs_payable",
+        "tds_receivable",
+        "tcs_receivable",
     }
 
     STATEMENT_TYPES = {"balance_sheet", "profit_loss", "cash_flow"}

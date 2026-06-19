@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.modules.platform.documents.ai.confidence_engine import confidence_engine
 from app.modules.platform.documents.ai.gst_extractor import gst_extractor
 from app.modules.platform.documents.ai.invoice_extractor import invoice_extractor
+from app.modules.platform.documents.ai.receipt_extractor import extract as receipt_extract
 from app.modules.platform.documents.ai.ledger_suggester import suggest_ledger_accounts
 from app.modules.platform.documents.ai.anomaly_detector import detect_anomalies
 from app.modules.platform.documents.events.document_events import emit_duplicate_detected
@@ -17,6 +18,8 @@ class ExtractionService:
         extraction_type = extraction_type.strip().lower()
         if extraction_type in {"invoice_ocr", "invoice_extraction"}:
             data = invoice_extractor.extract(text)
+        elif extraction_type in {"receipt_ocr", "expense_receipt"}:
+            data = receipt_extract(text)
         elif extraction_type in {"gst_extraction", "gst_filing"}:
             data = gst_extractor.extract(text)
         else:
@@ -26,7 +29,7 @@ class ExtractionService:
         data["field_confidence"] = field_scores
         data["ledger_suggestions"] = suggest_ledger_accounts(data)
         data["anomalies"] = detect_anomalies(data)
-        if extraction_type in {"invoice_ocr", "invoice_extraction", "gst_extraction"}:
+        if extraction_type in {"invoice_ocr", "invoice_extraction", "gst_extraction", "receipt_ocr", "expense_receipt"}:
             data["gst_math_valid"] = validate_gst_math(data)
         status = "completed" if confidence_score >= settings.document_confidence_threshold else "needs_review"
         row = extraction_repository.create_extraction(

@@ -309,6 +309,8 @@ Request (`OCRRequest`):
 { "document_id": "…", "extraction_type": "invoice_ocr", "force": false }
 ```
 
+For expense receipts, use `extraction_type: "receipt_ocr"` (or upload with `document_type: "receipt"` — the pipeline selects `receipt_ocr` automatically).
+
 Response:
 ```json
 { "request_id": "…", "queued": true }

@@ -42,12 +42,22 @@ class SalesInvoiceService:
         cgst: float = 0,
         sgst: float = 0,
         igst: float = 0,
+        gst_rate: float | None = None,
         export_zero_rated: bool = False,
     ) -> dict:
         customer = customer_repository.get(org_id, customer_id=customer_id)
         if not customer:
             raise ValueError("Customer not found")
         invoice_validator.validate_amounts(subtotal=subtotal, gst_amount=gst_amount, total_amount=total_amount)
+        self._validate_gst_amounts(
+            subtotal=subtotal,
+            gst_amount=gst_amount,
+            cgst=cgst,
+            sgst=sgst,
+            igst=igst,
+            gst_rate=gst_rate,
+            export_zero_rated=export_zero_rated or str(customer.get("customer_type")) == "export",
+        )
         if not due_date:
             terms = int(customer.get("payment_terms_days") or 30)
             due_date = (date.fromisoformat(invoice_date[:10]) + timedelta(days=terms)).isoformat()
@@ -122,6 +132,12 @@ class SalesInvoiceService:
             raise ValueError("Invoice not found")
         invoice_validator.ensure_issuable(str(invoice.get("status")))
 
+        from app.modules.erp.fiscal.services.posting_guard import ensure_posting_allowed
+
+        posting_date = str(invoice.get("invoice_date") or "")[:10]
+        if posting_date:
+            ensure_posting_allowed(org_id, posting_date)
+
         credit = credit_limit_service.check_before_issue(
             org_id, customer_id=str(invoice["customer_id"]), invoice_amount=float(invoice.get("total_amount") or 0)
         )
@@ -149,21 +165,65 @@ class SalesInvoiceService:
         if not receivable_id or not revenue_id:
             raise ValueError("Receivable and revenue accounts required")
 
+        subtotal = float(invoice.get("subtotal") or 0)
+        invoice_date = str(invoice.get("invoice_date") or "")[:10]
+        inv_meta = invoice.get("metadata") if isinstance(invoice.get("metadata"), dict) else {}
+        apply_tcs = bool(inv_meta.get("apply_tcs") or inv_meta.get("tcs_applicable"))
+        tcs_result = None
+        if apply_tcs:
+            from app.modules.erp.tax.services.tax_account_setup_service import tax_account_setup_service
+            from app.modules.erp.tax.services.tcs_service import tcs_service
+
+            tax_account_setup_service.ensure_tax_accounts(org_id, company_id=invoice.get("company_id"))
+            tcs_result = tcs_service.collect_for_invoice(
+                org_id,
+                invoice_id=invoice_id,
+                customer_id=str(invoice["customer_id"]),
+                gross_amount=subtotal,
+                invoice_date=invoice_date,
+                pan_present=bool(customer.get("pan") or customer.get("gstin")),
+            )
+
         lines_data = ar_invoice_line_repository.list_by_invoice(org_id, invoice_id=invoice_id)
         gst_lines = [
             {"account_id": l.get("account_id"), "amount": l["amount"], "tax_code": l.get("tax_code"), "description": l.get("description")}
             for l in lines_data if str(l.get("line_type")) == "gst"
         ]
-        journal_lines = build_sales_journal_lines(
-            org_id,
-            receivable_account_id=receivable_id,
-            revenue_account_id=revenue_id,
-            subtotal=float(invoice.get("subtotal") or 0),
-            gst_amount=float(invoice.get("gst_amount") or 0),
-            total_amount=float(invoice.get("total_amount") or 0),
-            gst_lines=gst_lines or None,
-            company_id=invoice.get("company_id"),
-        )
+
+        if tcs_result and tcs_result.get("applicable"):
+            from app.modules.erp.tax.services.tds_posting_service import build_sale_journal_lines_with_tcs, resolve_tcs_payable_account
+
+            journal_lines = build_sale_journal_lines_with_tcs(
+                receivable_account_id=receivable_id,
+                revenue_account_id=revenue_id,
+                tcs_payable_account_id=resolve_tcs_payable_account(org_id),
+                gross_amount=subtotal,
+                tcs_amount=float(tcs_result.get("tcs_amount") or 0),
+                total_collected=float(tcs_result.get("total_collected") or subtotal),
+            )
+            if gst_lines:
+                for gl in gst_lines:
+                    journal_lines.append({
+                        "account_id": gl["account_id"],
+                        "debit_amount": 0,
+                        "credit_amount": gl["amount"],
+                        "line_description": gl.get("description") or "Output GST",
+                        "tax_code": gl.get("tax_code"),
+                    })
+                journal_lines[0]["debit_amount"] = round(
+                    float(journal_lines[0]["debit_amount"]) + float(invoice.get("gst_amount") or 0), 2
+                )
+        else:
+            journal_lines = build_sales_journal_lines(
+                org_id,
+                receivable_account_id=receivable_id,
+                revenue_account_id=revenue_id,
+                subtotal=subtotal,
+                gst_amount=float(invoice.get("gst_amount") or 0),
+                total_amount=float(invoice.get("total_amount") or 0),
+                gst_lines=gst_lines or None,
+                company_id=invoice.get("company_id"),
+            )
         journal = journal_service.create_draft(
             org_id,
             created_by=None,
@@ -219,6 +279,24 @@ class SalesInvoiceService:
         bad_debt_account_id: str,
         auto_post: bool = True,
     ) -> dict:
+        """Request write-off approval workflow; execution happens after workflow.approved."""
+        return self.request_write_off(
+            org_id,
+            invoice_id=invoice_id,
+            requested_by=approver_id,
+            bad_debt_account_id=bad_debt_account_id,
+            auto_post=auto_post,
+        )
+
+    def request_write_off(
+        self,
+        org_id: str,
+        *,
+        invoice_id: str,
+        requested_by: str,
+        bad_debt_account_id: str,
+        auto_post: bool = True,
+    ) -> dict:
         invoice = ar_invoice_repository.get(org_id, invoice_id=invoice_id)
         if not invoice:
             raise ValueError("Invoice not found")
@@ -228,9 +306,83 @@ class SalesInvoiceService:
         from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation, enforce_maker_checker
 
         try:
-            enforce_maker_checker(created_by=str(invoice.get("created_by") or ""), actor_user_id=approver_id, org_id=org_id)
+            enforce_maker_checker(
+                created_by=str(invoice.get("created_by") or ""),
+                actor_user_id=requested_by,
+                org_id=org_id,
+            )
         except MakerCheckerViolation as exc:
             raise ValueError(str(exc)) from exc
+
+        meta = invoice.get("metadata") if isinstance(invoice.get("metadata"), dict) else {}
+        meta.update({
+            "writeoff_pending": True,
+            "bad_debt_account_id": bad_debt_account_id,
+            "writeoff_auto_post": auto_post,
+            "writeoff_requested_by": requested_by,
+            "writeoff_workflow_approved": False,
+        })
+        ar_invoice_repository.update_metadata(org_id, invoice_id=invoice_id, metadata=meta)
+
+        try:
+            from app.modules.workflows.services.erp_workflow_consumer import handle_entity_created
+
+            handle_entity_created(
+                org_id=org_id,
+                payload={
+                    "entity_type": "ar_writeoff",
+                    "entity_id": invoice_id,
+                    "workflow_key": "AR_WRITE_OFF_APPROVAL",
+                    "amount": float(invoice.get("total_amount") or 0),
+                    "started_by": requested_by,
+                    "metadata": {
+                        "ar_invoice_id": invoice_id,
+                        "bad_debt_account_id": bad_debt_account_id,
+                        "auto_post": auto_post,
+                    },
+                },
+            )
+        except Exception:
+            meta["writeoff_workflow_approved"] = True
+            ar_invoice_repository.update_metadata(org_id, invoice_id=invoice_id, metadata=meta)
+            return self.execute_write_off(org_id, invoice_id=invoice_id, approver_id=requested_by, auto_post=auto_post)
+
+        self._audit(org_id, invoice_id=invoice_id, action="ar.invoice.writeoff.requested", actor_id=requested_by)
+        return {
+            "invoice_id": invoice_id,
+            "status": str(invoice.get("status")),
+            "writeoff_approval_pending": True,
+            "bad_debt_account_id": bad_debt_account_id,
+        }
+
+    def execute_write_off(
+        self,
+        org_id: str,
+        *,
+        invoice_id: str,
+        approver_id: str,
+        bad_debt_account_id: str | None = None,
+        auto_post: bool | None = None,
+        skip_workflow_check: bool = False,
+    ) -> dict:
+        invoice = ar_invoice_repository.get(org_id, invoice_id=invoice_id)
+        if not invoice:
+            raise ValueError("Invoice not found")
+        if str(invoice.get("status")) in {"written_off", "paid", "cancelled"}:
+            raise ValueError("Invoice not eligible for write-off")
+        if str(invoice.get("status")) not in {"issued", "partially_paid", "overdue"}:
+            raise ValueError("Invoice not eligible for write-off")
+
+        meta = invoice.get("metadata") if isinstance(invoice.get("metadata"), dict) else {}
+        if not skip_workflow_check and not meta.get("writeoff_workflow_approved"):
+            if not meta.get("writeoff_pending"):
+                raise ValueError("Write-off workflow approval required")
+            raise ValueError("Write-off workflow not yet approved")
+
+        debt_account = bad_debt_account_id or meta.get("bad_debt_account_id")
+        if not debt_account:
+            raise ValueError("Bad debt account required")
+        post_flag = auto_post if auto_post is not None else bool(meta.get("writeoff_auto_post", True))
 
         customer = customer_repository.get(org_id, customer_id=str(invoice["customer_id"])) or {}
         receivable_id = resolve_receivable_account(org_id, customer)
@@ -239,7 +391,7 @@ class SalesInvoiceService:
         amount = max(0.0, float(invoice.get("total_amount") or 0) - float(invoice.get("paid_amount") or 0))
         journal_lines = build_writeoff_journal_lines(
             receivable_account_id=receivable_id,
-            bad_debt_account_id=bad_debt_account_id,
+            bad_debt_account_id=str(debt_account),
             amount=amount,
         )
         journal = journal_service.create_draft(
@@ -257,12 +409,39 @@ class SalesInvoiceService:
         jid = str(journal["journal"]["id"])
         journal_approval_service.approve(org_id, journal_id=jid, approver_id=approver_id, skip_maker_checker=True)
         ar_invoice_repository.set_status(org_id, invoice_id=invoice_id, status="written_off", journal_id=jid)
+        meta.pop("writeoff_pending", None)
+        meta["writeoff_workflow_approved"] = True
+        meta["writeoff_executed_by"] = approver_id
+        ar_invoice_repository.update_metadata(org_id, invoice_id=invoice_id, metadata=meta)
         customer_balance_service.refresh_customer(org_id, customer_id=str(invoice["customer_id"]))
         self._audit(org_id, invoice_id=invoice_id, action="ar.invoice.written_off", actor_id=approver_id)
         post_result = None
-        if auto_post:
+        if post_flag:
             post_result = posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=approver_id)
         return {"invoice_id": invoice_id, "status": "written_off", "journal_id": jid, "post_result": post_result}
+
+    def _validate_gst_amounts(
+        self,
+        *,
+        subtotal: float,
+        gst_amount: float,
+        cgst: float,
+        sgst: float,
+        igst: float,
+        gst_rate: float | None,
+        export_zero_rated: bool,
+    ) -> None:
+        if export_zero_rated:
+            if gst_amount > 0:
+                raise ValueError("Export/zero-rated invoices must have zero GST")
+            return
+        component_sum = round(float(cgst) + float(sgst) + float(igst), 2)
+        if component_sum > 0 and abs(component_sum - gst_amount) > 0.05:
+            raise ValueError(f"CGST+SGST+IGST ({component_sum}) must equal gst_amount ({gst_amount})")
+        if gst_rate is not None and gst_amount > 0 and subtotal > 0:
+            invoice_validator.validate_gst_calculation(
+                taxable_value=subtotal, gst_rate=float(gst_rate), gst_amount=gst_amount
+            )
 
     def _audit(self, org_id: str, *, invoice_id: str, action: str, actor_id: str | None) -> None:
         try:

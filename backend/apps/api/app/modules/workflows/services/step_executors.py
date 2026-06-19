@@ -89,14 +89,22 @@ def _execute_notification(*, org_id: str, instance: dict, step: dict, trace_id: 
 
 
 def _execute_reconciliation(*, org_id: str, instance: dict, step: dict, trace_id: str | None) -> dict:
+    reconciliation_id = str(instance.get("entity_id") or (instance.get("metadata") or {}).get("reconciliation_id") or "")
+    if reconciliation_id:
+        try:
+            from app.modules.erp.reconciliation.repositories.reconciliation_repository import reconciliation_repository
+
+            reconciliation_repository.set_status(org_id, reconciliation_id=reconciliation_id, status="pending_approval")
+        except Exception:
+            pass
     event_bus.publish(
         event_type="workflow.step.reconciliation",
         org_id=org_id,
         source="workflow.executor",
         trace_id=trace_id,
-        payload={"workflow_instance_id": instance["id"], "entity_id": instance.get("entity_id")},
+        payload={"workflow_instance_id": instance["id"], "entity_id": instance.get("entity_id"), "reconciliation_id": reconciliation_id},
     )
-    return {"status": "completed", "detail": "reconciliation_triggered"}
+    return {"status": "completed", "detail": "reconciliation_pending_approval"}
 
 
 def _execute_validation(*, org_id: str, instance: dict, step: dict, **_kwargs: Any) -> dict:
@@ -107,15 +115,21 @@ def _execute_validation(*, org_id: str, instance: dict, step: dict, **_kwargs: A
 
 
 def _execute_payment_execution(*, org_id: str, instance: dict, step: dict, trace_id: str | None) -> dict:
-    event_bus.publish(
-        event_type="agent.action.executed",
-        org_id=org_id,
-        source="workflow.payment_execution",
-        trace_id=trace_id,
-        payload={
-            "workflow_instance_id": instance["id"],
-            "action": "execute_payment",
-            "entity_id": instance.get("entity_id"),
-        },
-    )
-    return {"status": "completed", "detail": "payment_execution_dispatched"}
+    metadata = instance.get("metadata") if isinstance(instance.get("metadata"), dict) else {}
+    payment_request_id = str(
+        metadata.get("payment_request_id") or instance.get("entity_id") or ""
+    ).strip()
+    if not payment_request_id:
+        return {"status": "failed", "detail": "payment_request_id_missing", "retryable": False}
+    try:
+        from app.modules.erp.treasury.services.payment_service import treasury_payment_service
+
+        result = treasury_payment_service.execute_request(
+            org_id,
+            payment_request_id=payment_request_id,
+            executed_by=str(metadata.get("started_by") or "workflow"),
+            auto_post=True,
+        )
+        return {"status": "completed", "detail": "payment_executed", "result": result}
+    except Exception as exc:
+        return {"status": "failed", "detail": str(exc), "retryable": True}

@@ -25,6 +25,8 @@ class InvoiceRepository:
         created_by: str | None = None,
         ai_confidence: dict | None = None,
         metadata: dict | None = None,
+        purchase_order_id: str | None = None,
+        goods_receipt_id: str | None = None,
     ) -> dict:
         iid = str(uuid4())
         with get_db_conn() as conn:
@@ -35,12 +37,13 @@ class InvoiceRepository:
                     INSERT INTO erp.ap_invoices (
                       id, org_id, company_id, vendor_id, invoice_number, invoice_date, due_date,
                       invoice_amount, gst_amount, total_amount, source_document_id,
-                      duplicate_checksum, created_by, ai_confidence, metadata
+                      duplicate_checksum, created_by, ai_confidence, metadata,
+                      purchase_order_id, goods_receipt_id
                     )
                     VALUES (
                       %s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::date,
                       %s::numeric,%s::numeric,%s::numeric,%s::uuid,
-                      %s,%s::uuid,%s::jsonb,%s::jsonb
+                      %s,%s::uuid,%s::jsonb,%s::jsonb,%s::uuid,%s::uuid
                     )
                     RETURNING id::text, invoice_number, invoice_date::text, due_date::text,
                               invoice_amount, gst_amount, total_amount, status,
@@ -51,6 +54,7 @@ class InvoiceRepository:
                         invoice_date, due_date, invoice_amount, gst_amount, total_amount,
                         source_document_id, duplicate_checksum, created_by,
                         Json(ai_confidence or {}), Json(metadata or {}),
+                        purchase_order_id, goods_receipt_id,
                     ),
                 )
                 return dict(cur.fetchone() or {"id": iid})
@@ -65,7 +69,8 @@ class InvoiceRepository:
                            invoice_amount, gst_amount, total_amount, paid_amount, status,
                            source_document_id::text, journal_id::text, duplicate_checksum,
                            ai_confidence, metadata, created_by::text, approved_by::text,
-                           company_id::text, created_at::text, updated_at::text
+                           company_id::text, purchase_order_id::text, goods_receipt_id::text,
+                           created_at::text, updated_at::text
                     FROM erp.ap_invoices
                     WHERE org_id = %s::uuid AND id = %s::uuid
                     """,
@@ -127,6 +132,12 @@ class InvoiceRepository:
         if metadata is not None:
             fields.append("metadata = %s::jsonb")
             params.append(Json(metadata))
+        if purchase_order_id is not None:
+            fields.append("purchase_order_id = %s::uuid")
+            params.append(purchase_order_id)
+        if goods_receipt_id is not None:
+            fields.append("goods_receipt_id = %s::uuid")
+            params.append(goods_receipt_id)
         if not fields:
             row = self.get(org_id, invoice_id=invoice_id)
             if not row:
@@ -175,6 +186,24 @@ class InvoiceRepository:
                     RETURNING id::text, status, journal_id::text, approved_by::text
                     """,
                     (status, approved_by, journal_id, org_id, invoice_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError("Invoice not found")
+                return dict(row)
+
+    def patch_metadata(self, org_id: str, *, invoice_id: str, metadata: dict) -> dict:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE erp.ap_invoices
+                    SET metadata = %s::jsonb, updated_at = NOW()
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    RETURNING id::text, metadata
+                    """,
+                    (Json(metadata), org_id, invoice_id),
                 )
                 row = cur.fetchone()
                 if not row:

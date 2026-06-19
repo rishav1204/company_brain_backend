@@ -26,14 +26,24 @@ def emit_invoice_created(
     )
 
 
-def emit_payment_completed(org_id: str, *, payment_id: str, amount: float | None = None, trace_id: str | None = None) -> dict:
+def emit_payment_completed(
+    org_id: str,
+    *,
+    payment_id: str,
+    amount: float | None = None,
+    trace_id: str | None = None,
+    journal_id: str | None = None,
+) -> dict:
+    payload = {"entity_type": "payment", "entity_id": payment_id, "amount": amount}
+    if journal_id:
+        payload["journal_id"] = journal_id
     return platform_event_service.publish(
         event_type="erp.payment.completed",
         org_id=org_id,
         source="erp.treasury",
         entity_type="payment",
         entity_id=payment_id,
-        payload={"entity_type": "payment", "entity_id": payment_id, "amount": amount},
+        payload=payload,
         trace_id=trace_id,
     )
 

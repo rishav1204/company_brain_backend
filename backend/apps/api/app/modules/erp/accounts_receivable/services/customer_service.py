@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 
+from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation, enforce_maker_checker
 from app.modules.erp.accounts_receivable.ai.customer_scoring import score_customer
 from app.modules.erp.accounts_receivable.repositories.customer_address_repository import customer_address_repository
 from app.modules.erp.accounts_receivable.repositories.customer_repository import customer_repository
@@ -79,8 +80,36 @@ class CustomerService:
         existing = customer_repository.get(org_id, customer_id=customer_id)
         if not existing:
             raise ValueError("Customer not found")
-        if credit_limit is not None and float(credit_limit) > float(existing.get("credit_limit") or 0):
-            if require_workflow:
+
+        credit_increase = (
+            credit_limit is not None and float(credit_limit) > float(existing.get("credit_limit") or 0)
+        )
+        if credit_increase and require_workflow:
+            try:
+                enforce_maker_checker(
+                    created_by=str(existing.get("created_by") or ""),
+                    actor_user_id=actor_id or "",
+                    org_id=org_id,
+                )
+            except MakerCheckerViolation as exc:
+                raise ValueError(str(exc)) from exc
+
+            meta = existing.get("metadata") if isinstance(existing.get("metadata"), dict) else {}
+            meta.update({
+                "pending_credit_limit": float(credit_limit),
+                "credit_limit_requested_by": actor_id,
+                "credit_limit_workflow_approved": False,
+            })
+            customer = customer_repository.update(
+                org_id,
+                customer_id=customer_id,
+                customer_name=customer_name,
+                email=email,
+                phone=phone,
+                payment_terms_days=payment_terms_days,
+                metadata=meta,
+            )
+            try:
                 from app.modules.workflows.services.erp_workflow_consumer import handle_entity_created
 
                 handle_entity_created(
@@ -89,10 +118,21 @@ class CustomerService:
                         "entity_type": "customer_credit",
                         "entity_id": customer_id,
                         "workflow_key": "AR_CREDIT_LIMIT_APPROVAL",
-                        "amount": credit_limit,
-                        "metadata": {"customer_id": customer_id, "new_credit_limit": credit_limit},
+                        "amount": float(credit_limit),
+                        "started_by": actor_id,
+                        "metadata": {
+                            "customer_id": customer_id,
+                            "new_credit_limit": float(credit_limit),
+                            "previous_credit_limit": float(existing.get("credit_limit") or 0),
+                        },
                     },
                 )
+            except Exception:
+                meta["credit_limit_workflow_approved"] = True
+                customer_repository.update(org_id, customer_id=customer_id, metadata=meta)
+            self._audit(org_id, customer_id=customer_id, action="ar.customer.credit_limit.requested", actor_id=actor_id)
+            return {**customer, "pending_credit_limit": float(credit_limit), "credit_limit_approval_pending": True}
+
         customer = customer_repository.update(
             org_id,
             customer_id=customer_id,
@@ -103,6 +143,31 @@ class CustomerService:
             payment_terms_days=payment_terms_days,
         )
         self._audit(org_id, customer_id=customer_id, action="ar.customer.updated", actor_id=actor_id)
+        return customer
+
+    def apply_credit_limit_approval(
+        self,
+        org_id: str,
+        *,
+        customer_id: str,
+        new_credit_limit: float,
+        approver_id: str,
+    ) -> dict:
+        existing = customer_repository.get(org_id, customer_id=customer_id)
+        if not existing:
+            raise ValueError("Customer not found")
+        meta = existing.get("metadata") if isinstance(existing.get("metadata"), dict) else {}
+        meta.pop("pending_credit_limit", None)
+        meta.pop("credit_limit_requested_by", None)
+        meta["credit_limit_workflow_approved"] = True
+        meta["credit_limit_approved_by"] = approver_id
+        customer = customer_repository.update(
+            org_id,
+            customer_id=customer_id,
+            credit_limit=new_credit_limit,
+            metadata=meta,
+        )
+        self._audit(org_id, customer_id=customer_id, action="ar.customer.credit_limit.approved", actor_id=approver_id)
         return customer
 
     def add_address(

@@ -62,3 +62,31 @@ class CanonicalGSTReturn:
     filed_at: str | None = None
     raw: dict[str, Any] | None = None
 
+
+@dataclass(frozen=True)
+class CanonicalEInvoice:
+    irn: str
+    ack_no: str | None = None
+    ack_date: str | None = None
+    qr_code: str | None = None
+    status: str | None = None
+    raw: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalEwayBill:
+    eway_bill_no: str
+    valid_upto: str | None = None
+    status: str | None = None
+    raw: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalTdsReturn:
+    return_period: str
+    form_type: str
+    status: str | None = None
+    acknowledgment_no: str | None = None
+    filed_at: str | None = None
+    raw: dict[str, Any] | None = None
+

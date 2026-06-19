@@ -428,12 +428,40 @@ def _consume_scheduler_event(envelope: dict) -> None:
                     import logging
 
                     logging.getLogger(__name__).warning("scheduler.tick AR dunning failed org=%s: %s", org_id, exc)
+                try:
+                    from app.modules.erp.assets.services.depreciation_service import depreciation_service
+
+                    depreciation_service.run_due(org_id)
+                except Exception as exc:
+                    import logging
+
+                    logging.getLogger(__name__).warning("scheduler.tick asset depreciation failed org=%s: %s", org_id, exc)
     elif event_type in {"scheduler.escalation.scan"}:
         _consume_workflow_escalation_event(envelope)
     elif event_type in {"scheduler.reconciliation.daily"}:
         from app.modules.platform.events.workers.reconciliation_worker import process_reconciliation_event
 
         process_reconciliation_event(org_id, envelope)
+    elif event_type in {"scheduler.compliance.daily"}:
+        if org_id:
+            try:
+                from app.modules.erp.compliance.services.compliance_scheduler_service import compliance_scheduler_service
+
+                compliance_scheduler_service.run_daily(org_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("scheduler.compliance.daily failed org=%s: %s", org_id, exc)
+    elif event_type in {"scheduler.treasury.daily"}:
+        if org_id:
+            try:
+                from app.modules.erp.treasury.jobs.treasury_daily_job import run_treasury_daily
+
+                run_treasury_daily(org_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("scheduler.treasury.daily failed org=%s: %s", org_id, exc)
 
 
 def _consume_ai_queue_event(envelope: dict) -> None:
@@ -623,6 +651,15 @@ def _consume_invoice_ai_reviewed(envelope: dict) -> None:
     if not document_id:
         return
     try:
+        from app.modules.platform.documents.repositories.document_repository import document_repository
+
+        doc = document_repository.get_document(org_id, document_id) or {}
+        doc_type = str(doc.get("document_type") or "").lower()
+        if doc_type in {"receipt", "expense_receipt"}:
+            return
+    except Exception:
+        pass
+    try:
         from app.modules.platform.documents.repositories.extraction_repository import extraction_repository
 
         extraction = extraction_repository.latest_extraction(org_id, document_id) or {}
@@ -747,6 +784,1072 @@ def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
         return
 
 
+def _resolve_workflow_domain_context(org_id: str, payload: dict) -> dict:
+    """Merge workflow instance metadata into payload for domain consumers."""
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    merged = {**metadata, **{k: v for k, v in payload.items() if v is not None}}
+    instance_id = str(payload.get("workflow_instance_id") or "").strip()
+    approval_id = str(payload.get("approval_id") or "").strip()
+    try:
+        from app.modules.workflows.repositories import workflow_repo
+        from app.modules.workflows.repositories.approval_repository import approval_repo
+
+        if not instance_id and approval_id:
+            approval = approval_repo.get_approval(org_id, approval_id) or {}
+            instance_id = str(approval.get("workflow_instance_id") or "").strip()
+            merged.setdefault("approver_user_id", approval.get("decided_by") or approval.get("requested_from_user_id"))
+        if instance_id:
+            instance = workflow_repo.get_instance(org_id, instance_id) or {}
+            inst_meta = instance.get("metadata") if isinstance(instance.get("metadata"), dict) else {}
+            merged = {**inst_meta, **merged}
+            merged.setdefault("entity_type", instance.get("entity_type"))
+            merged.setdefault("entity_id", instance.get("entity_id"))
+            merged.setdefault("workflow_type", instance.get("workflow_type"))
+            merged.setdefault("workflow_instance_id", instance_id)
+    except Exception:
+        pass
+    return merged
+
+
+def _handle_ar_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    """Route completed AR workflows to domain services. Returns True if handled."""
+    import logging
+
+    log = logging.getLogger(__name__)
+    ctx = _resolve_workflow_domain_context(org_id, payload)
+    instance_id = str(ctx.get("workflow_instance_id") or "").strip()
+    if event_type == "approval.completed" and instance_id:
+        try:
+            from app.modules.workflows.repositories import workflow_repo
+
+            instance = workflow_repo.get_instance(org_id, instance_id) or {}
+            if str(instance.get("status") or "") != "completed":
+                return False
+        except Exception:
+            return False
+    elif event_type not in {"", "workflow.completed", "workflow.approved"}:
+        return False
+
+    entity_type = str(ctx.get("entity_type") or "").strip()
+    workflow_type = str(ctx.get("workflow_type") or "").strip()
+    approver = str(
+        ctx.get("approver_user_id") or ctx.get("approved_by") or ctx.get("started_by") or "workflow"
+    ).strip()
+
+    if entity_type == "customer_credit" or workflow_type == "AR_CREDIT_LIMIT_APPROVAL":
+        customer_id = str(ctx.get("customer_id") or ctx.get("entity_id") or "").strip()
+        new_limit = ctx.get("new_credit_limit")
+        if customer_id and new_limit is not None:
+            try:
+                from app.modules.erp.accounts_receivable.services.customer_service import customer_service
+
+                customer_service.apply_credit_limit_approval(
+                    org_id,
+                    customer_id=customer_id,
+                    new_credit_limit=float(new_limit),
+                    approver_id=approver,
+                )
+                return True
+            except Exception as exc:
+                log.warning("AR credit limit approval failed org=%s customer=%s: %s", org_id, customer_id, exc)
+        return False
+
+    if entity_type == "ar_writeoff" or workflow_type == "AR_WRITE_OFF_APPROVAL":
+        invoice_id = str(ctx.get("ar_invoice_id") or ctx.get("entity_id") or "").strip()
+        bad_debt_account_id = str(ctx.get("bad_debt_account_id") or "").strip() or None
+        auto_post = ctx.get("auto_post")
+        if invoice_id:
+            try:
+                from app.modules.erp.accounts_receivable.repositories.invoice_repository import ar_invoice_repository
+                from app.modules.erp.accounts_receivable.services.sales_invoice_service import sales_invoice_service
+
+                invoice = ar_invoice_repository.get(org_id, invoice_id=invoice_id) or {}
+                meta = invoice.get("metadata") if isinstance(invoice.get("metadata"), dict) else {}
+                meta["writeoff_workflow_approved"] = True
+                meta.pop("writeoff_pending", None)
+                ar_invoice_repository.update_metadata(org_id, invoice_id=invoice_id, metadata=meta)
+                sales_invoice_service.execute_write_off(
+                    org_id,
+                    invoice_id=invoice_id,
+                    approver_id=approver,
+                    bad_debt_account_id=bad_debt_account_id,
+                    auto_post=bool(auto_post) if auto_post is not None else None,
+                    skip_workflow_check=True,
+                )
+                return True
+            except Exception as exc:
+                log.warning("AR write-off from workflow failed org=%s invoice=%s: %s", org_id, invoice_id, exc)
+        return False
+
+    ar_invoice_id = str(ctx.get("ar_invoice_id") or "").strip()
+    if not ar_invoice_id and entity_type == "sales_invoice":
+        ar_invoice_id = str(ctx.get("entity_id") or "").strip()
+    if ar_invoice_id and not ctx.get("bad_debt_account_id"):
+        try:
+            from app.modules.erp.accounts_receivable.services.sales_invoice_service import sales_invoice_service
+
+            sales_invoice_service.issue_invoice(
+                org_id, invoice_id=ar_invoice_id, issued_by=approver, auto_post=True, force_credit_approval=True
+            )
+            return True
+        except Exception as exc:
+            log.warning("AR invoice issue from workflow failed org=%s invoice=%s: %s", org_id, ar_invoice_id, exc)
+    return False
+
+
+def _handle_treasury_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    import logging
+
+    log = logging.getLogger(__name__)
+    ctx = _resolve_workflow_domain_context(org_id, payload)
+    instance_id = str(ctx.get("workflow_instance_id") or "").strip()
+    if event_type == "approval.completed" and instance_id:
+        try:
+            from app.modules.workflows.repositories import workflow_repo
+
+            instance = workflow_repo.get_instance(org_id, instance_id) or {}
+            if str(instance.get("status") or "") != "completed":
+                return False
+        except Exception:
+            return False
+    elif event_type not in {"", "workflow.completed", "workflow.approved"}:
+        return False
+
+    entity_type = str(ctx.get("entity_type") or "").strip()
+    workflow_type = str(ctx.get("workflow_type") or "").strip()
+    if entity_type != "treasury_payment" and workflow_type != "TREASURY_PAYMENT_APPROVAL":
+        return False
+
+    payment_request_id = str(ctx.get("payment_request_id") or ctx.get("entity_id") or "").strip()
+    if not payment_request_id:
+        return False
+    approver = str(ctx.get("approver_user_id") or ctx.get("approved_by") or "workflow")
+    try:
+        from app.modules.erp.treasury.services.payment_service import treasury_payment_service
+
+        treasury_payment_service.mark_workflow_approved(
+            org_id, payment_request_id=payment_request_id, approver_id=approver
+        )
+        return True
+    except Exception as exc:
+        log.warning("Treasury payment workflow failed org=%s req=%s: %s", org_id, payment_request_id, exc)
+    return False
+
+
+def _consume_treasury_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"payment.scheduled", "erp.payment.scheduled"}:
+        ap_payment_id = str(payload.get("payment_id") or payload.get("ap_payment_id") or payload.get("entity_id") or "").strip()
+        if ap_payment_id:
+            try:
+                from app.modules.erp.accounts_payable.repositories.payment_repository import payment_repository
+                from app.modules.erp.treasury.services.payment_service import treasury_payment_service
+
+                payment = payment_repository.get(org_id, payment_id=ap_payment_id) or {}
+                vendor_bank_account_id = payload.get("vendor_bank_account_id")
+                if not vendor_bank_account_id:
+                    pmeta = payment.get("metadata") if isinstance(payment.get("metadata"), dict) else {}
+                    vendor_bank_account_id = pmeta.get("vendor_bank_account_id")
+                treasury_payment_service.create_from_ap_scheduled(
+                    org_id,
+                    ap_payment_id=ap_payment_id,
+                    bank_account_id=str(payload.get("bank_account_id") or payment.get("bank_account_id") or ""),
+                    amount=float(payload.get("amount") or payment.get("amount") or 0),
+                    vendor_id=str(payload.get("vendor_id") or payment.get("vendor_id") or ""),
+                    scheduled_date=str(payload.get("payment_date") or payment.get("payment_date") or "")[:10],
+                    created_by=str(payload.get("created_by") or payment.get("created_by") or "event"),
+                    vendor_bank_account_id=str(vendor_bank_account_id) if vendor_bank_account_id else None,
+                )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Treasury payment request from scheduled failed org=%s payment=%s: %s", org_id, ap_payment_id, exc
+                )
+
+    if event_type in {"bank.statement.imported", "bank.feed.imported", "bank.transaction.imported"}:
+        bank_account_id = str(payload.get("bank_account_id") or "").strip()
+        if bank_account_id:
+            try:
+                from app.modules.erp.treasury.services.bank_feed_service import bank_feed_service
+
+                bank_feed_service.import_feed(
+                    org_id,
+                    bank_account_id=bank_account_id,
+                    provider=str(payload.get("provider") or "stub_bank"),
+                    payload=payload,
+                    transactions=payload.get("transactions") if isinstance(payload.get("transactions"), list) else None,
+                )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Bank feed import failed org=%s: %s", org_id, exc)
+            try:
+                from app.modules.erp.reconciliation.jobs.auto_match_job import run_auto_match
+
+                run_auto_match(org_id, bank_account_id=bank_account_id)
+            except Exception:
+                pass
+
+    if event_type == "payment.executed":
+        bank_account_id = str(payload.get("bank_account_id") or "").strip()
+        if bank_account_id:
+            try:
+                from app.modules.erp.reconciliation.jobs.auto_match_job import run_auto_match
+
+                run_auto_match(org_id, bank_account_id=bank_account_id)
+            except Exception:
+                pass
+
+    if event_type in {"receipt.received", "payment.received"}:
+        bank_account_id = str(payload.get("bank_account_id") or "").strip()
+        if bank_account_id:
+            try:
+                from app.modules.erp.reconciliation.jobs.auto_match_job import run_auto_match
+
+                run_auto_match(org_id, bank_account_id=bank_account_id)
+            except Exception:
+                pass
+
+    if event_type in {"reconciliation.completed"}:
+        bank_tx_id = str(payload.get("bank_transaction_id") or "").strip()
+        if bank_tx_id:
+            try:
+                from app.modules.erp.banking.repositories.bank_transaction_repository import bank_transaction_repository
+                from app.modules.erp.treasury.jobs.cash_snapshot_job import run_cash_snapshot
+
+                tx = bank_transaction_repository.get(org_id, transaction_id=bank_tx_id) or {}
+                bank_account_id = str(tx.get("bank_account_id") or "")
+                if bank_account_id:
+                    run_cash_snapshot(org_id, bank_account_id=bank_account_id)
+            except Exception:
+                pass
+        else:
+            try:
+                from app.modules.erp.treasury.services.cash_position_service import cash_position_service
+
+                cash_position_service.refresh_and_emit(org_id)
+            except Exception:
+                pass
+
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
+        _handle_treasury_workflow_approval(org_id, payload, event_type=event_type)
+
+    if event_type in {"erp.invoice.approved", "invoice.approved"}:
+        try:
+            treasury_service = __import__(
+                "app.modules.erp.treasury.services.treasury_service",
+                fromlist=["treasury_service"],
+            ).treasury_service
+            treasury_service.refresh_cash_position(org_id)
+        except Exception:
+            pass
+
+    if event_type in {"payment.received", "customer.payment.received", "erp.payment.received"}:
+        bank_account_id = str(payload.get("bank_account_id") or "").strip()
+        amount = float(payload.get("amount") or 0)
+        if bank_account_id and amount > 0:
+            try:
+                from app.modules.erp.treasury.services.bank_transaction_recorder import record_receipt_credit
+
+                record_receipt_credit(
+                    org_id,
+                    bank_account_id=bank_account_id,
+                    amount=amount,
+                    reference=str(payload.get("reference") or payload.get("receipt_id") or "receipt"),
+                    receipt_date=str(payload.get("payment_date") or payload.get("receipt_date") or "")[:10] or None,
+                    description=str(payload.get("description") or "Customer payment received"),
+                    idempotency_key=str(payload.get("idempotency_key") or f"receipt:{payload.get('receipt_id') or payload.get('entity_id')}"),
+                    counterparty_ref=str(payload.get("customer_id") or ""),
+                )
+                from app.modules.erp.treasury.services.treasury_service import treasury_service
+
+                treasury_service.refresh_cash_position(org_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Treasury receipt credit failed org=%s: %s", org_id, exc)
+
+    if event_type == "webhook.received":
+        entity_type = str(envelope.get("entity_type") or payload.get("entity_type") or "")
+        if entity_type == "payment_gateway":
+            try:
+                from app.modules.erp.treasury.services.bank_feed_service import bank_feed_service
+
+                bank_account_id = str(payload.get("bank_account_id") or "")
+                if bank_account_id:
+                    bank_feed_service.import_feed(
+                        org_id,
+                        bank_account_id=bank_account_id,
+                        provider=str(payload.get("provider") or "payment_gateway"),
+                        payload=payload,
+                        transactions=payload.get("transactions") if isinstance(payload.get("transactions"), list) else None,
+                    )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Payment gateway webhook ingest failed org=%s: %s", org_id, exc)
+
+
+def _handle_tax_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    entity_type = str(payload.get("entity_type") or "").lower()
+    workflow_type = str(payload.get("workflow_key") or payload.get("workflow_type") or "")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    return_id = str(payload.get("entity_id") or metadata.get("return_id") or "").strip()
+
+    if entity_type == "tds_return" or workflow_type == "TDS_FILING":
+        if not return_id:
+            return False
+        try:
+            from app.modules.erp.tax.services.tds_return_service import tds_return_service
+
+            tds_return_service.mark_workflow_approved(org_id, return_id=return_id)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("TDS return workflow approve failed org=%s return=%s: %s", org_id, return_id, exc)
+            return False
+
+    if entity_type == "e_invoice" or workflow_type == "EINVOICE_GENERATION":
+        ar_invoice_id = str(metadata.get("ar_invoice_id") or payload.get("entity_id") or "").strip()
+        if not ar_invoice_id:
+            return False
+        try:
+            from app.modules.erp.tax.services.e_invoice_service import e_invoice_service
+
+            e_invoice_service.mark_workflow_approved(org_id, ar_invoice_id=ar_invoice_id)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("E-invoice workflow approve failed org=%s invoice=%s: %s", org_id, ar_invoice_id, exc)
+            return False
+
+    if entity_type != "gst_return" and workflow_type != "GST_FILING":
+        return False
+    if not return_id:
+        return False
+    try:
+        from app.modules.erp.tax.services.gst_return_service import gst_return_service
+
+        gst_return_service.mark_workflow_approved(org_id, return_id=return_id)
+        return True
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning("GST return workflow approve failed org=%s return=%s: %s", org_id, return_id, exc)
+        return False
+
+
+def _handle_fiscal_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    entity_type = str(payload.get("entity_type") or "").lower()
+    workflow_type = str(payload.get("workflow_key") or payload.get("workflow_type") or "")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    period_id = str(metadata.get("period_id") or payload.get("entity_id") or "").strip()
+    reopen_id = str(metadata.get("reopen_request_id") or payload.get("entity_id") or "").strip()
+
+    if entity_type == "fiscal_period" or workflow_type == "PERIOD_CLOSE":
+        if not period_id:
+            return False
+        try:
+            from app.modules.erp.fiscal.services.close_service import close_service
+
+            close_service.execute_close(org_id, period_id=period_id, actor_id=str(payload.get("approver_user_id") or "workflow"))
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Period close workflow failed org=%s period=%s: %s", org_id, period_id, exc)
+            return False
+
+    if entity_type == "period_reopen" or workflow_type == "PERIOD_REOPEN":
+        if not reopen_id:
+            return False
+        try:
+            from app.modules.erp.fiscal.services.reopen_service import reopen_service
+
+            reopen_service.approve_reopen(
+                org_id,
+                request_id=reopen_id,
+                approved_by=str(payload.get("approver_user_id") or "workflow"),
+                requested_by=str(metadata.get("requested_by") or ""),
+            )
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Period reopen workflow failed org=%s request=%s: %s", org_id, reopen_id, exc)
+            return False
+    return False
+
+
+def _handle_procurement_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    entity_type = str(payload.get("entity_type") or "").lower()
+    workflow_type = str(payload.get("workflow_key") or payload.get("workflow_type") or "")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    entity_id = str(payload.get("entity_id") or "").strip()
+    approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+
+    if entity_type == "purchase_requisition" or workflow_type == "PR_APPROVAL":
+        pr_id = str(metadata.get("pr_id") or entity_id)
+        if not pr_id:
+            return False
+        try:
+            from app.modules.erp.procurement.services.requisition_service import requisition_service
+
+            requisition_service.mark_workflow_approved(org_id, pr_id=pr_id)
+            requisition_service.approve(org_id, pr_id=pr_id, approver_id=approver, skip_workflow_check=True)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("PR workflow failed org=%s pr=%s: %s", org_id, pr_id, exc)
+            return False
+
+    if entity_type == "purchase_order" or workflow_type == "PO_APPROVAL":
+        po_id = str(metadata.get("po_id") or entity_id)
+        if not po_id:
+            return False
+        try:
+            from app.modules.erp.procurement.services.po_service import po_service
+
+            po_service.mark_workflow_approved(org_id, po_id=po_id)
+            po_service.approve(org_id, po_id=po_id, approver_id=approver, skip_workflow_check=True)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("PO workflow failed org=%s po=%s: %s", org_id, po_id, exc)
+            return False
+
+    if entity_type == "goods_receipt" or workflow_type == "GRN_CONFIRMATION":
+        grn_id = str(metadata.get("grn_id") or entity_id)
+        if not grn_id:
+            return False
+        try:
+            from app.modules.erp.procurement.services.grn_service import grn_service
+
+            grn_service.mark_workflow_approved(org_id, grn_id=grn_id)
+            grn_service.confirm(org_id, grn_id=grn_id, actor_id=approver, skip_workflow_check=True)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("GRN workflow failed org=%s grn=%s: %s", org_id, grn_id, exc)
+            return False
+
+    if entity_type == "procurement_exception" or workflow_type == "PROCUREMENT_EXCEPTION":
+        match_id = str(metadata.get("match_id") or entity_id)
+        if not match_id:
+            return False
+        try:
+            from app.modules.erp.procurement.services.matching_service import matching_service
+
+            matching_service.mark_exception_approved(org_id, match_id=match_id)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Procurement exception workflow failed org=%s match=%s: %s", org_id, match_id, exc)
+            return False
+    return False
+
+
+def _handle_expense_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    entity_type = str(payload.get("entity_type") or "").lower()
+    workflow_type = str(payload.get("workflow_key") or payload.get("workflow_type") or "")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    entity_id = str(payload.get("entity_id") or "").strip()
+    approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+
+    if entity_type == "expense_claim" or workflow_type == "EXPENSE_CLAIM_APPROVAL":
+        claim_id = str(metadata.get("claim_id") or entity_id)
+        if not claim_id:
+            return False
+        try:
+            from app.modules.erp.expenses.services.claim_service import claim_service
+
+            claim_service.mark_workflow_approved(org_id, claim_id=claim_id)
+            claim_service.approve(org_id, claim_id=claim_id, approver_id=approver, skip_workflow_check=True)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Expense claim workflow failed org=%s claim=%s: %s", org_id, claim_id, exc)
+            return False
+
+    if entity_type == "expense_policy_exception" or workflow_type == "EXPENSE_POLICY_EXCEPTION":
+        claim_id = str(metadata.get("claim_id") or entity_id)
+        if not claim_id:
+            return False
+        try:
+            from app.modules.erp.expenses.repositories.claim_repository import claim_repository
+            from app.modules.workflows.services.erp_workflow_consumer import handle_entity_created
+
+            claim_repository.set_status(org_id, claim_id=claim_id, status="submitted", workflow_approved=True)
+            handle_entity_created(
+                org_id=org_id,
+                payload={
+                    "entity_type": "expense_claim",
+                    "entity_id": claim_id,
+                    "started_by": approver,
+                    "metadata": metadata,
+                },
+            )
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Expense policy exception workflow failed org=%s claim=%s: %s", org_id, claim_id, exc
+            )
+            return False
+
+    if entity_type == "expense_reimbursement" or workflow_type == "EXPENSE_REIMBURSEMENT":
+        payment_request_id = str(metadata.get("payment_request_id") or entity_id)
+        if not payment_request_id:
+            return False
+        try:
+            from app.modules.erp.expenses.services.reimbursement_service import reimbursement_service
+
+            reimbursement_service.mark_workflow_approved(org_id, payment_request_id=payment_request_id)
+            reimbursement_service.execute(org_id, payment_request_id=payment_request_id, actor_id=approver)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Expense reimbursement workflow failed org=%s payment=%s: %s", org_id, payment_request_id, exc
+            )
+            return False
+    return False
+
+
+def _consume_expense_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"expense.receipt.extracted", "invoice.ai.reviewed"}:
+        document_id = str(payload.get("document_id") or payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
+        if document_id:
+            try:
+                from app.modules.platform.documents.repositories.document_repository import document_repository
+
+                doc = document_repository.get_document(org_id, document_id) or {}
+                doc_type = str(doc.get("document_type") or "").lower()
+                if event_type == "invoice.ai.reviewed" and doc_type not in {"receipt", "expense_receipt"}:
+                    return
+            except Exception:
+                if event_type == "invoice.ai.reviewed":
+                    return
+        if document_id:
+            try:
+                from app.modules.platform.documents.repositories.extraction_repository import extraction_repository
+                from app.modules.erp.expenses.services.ai_expense_service import ai_expense_service
+
+                extraction = extraction_repository.latest_extraction(org_id, document_id) or {}
+                extracted = extraction.get("extracted_data") if isinstance(extraction.get("extracted_data"), dict) else {}
+                if extracted:
+                    employee_id = str(payload.get("employee_id") or payload.get("user_id") or "ai.expense")
+                    ai_expense_service.create_from_extraction(
+                        org_id,
+                        extracted_data=extracted,
+                        source_document_id=document_id,
+                        employee_id=employee_id,
+                        created_by=employee_id,
+                    )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Expense claim from receipt event failed org=%s doc=%s: %s", org_id, document_id, exc
+                )
+
+    if event_type in {"ocr.completed", "document.extracted"}:
+        document_id = str(payload.get("document_id") or envelope.get("entity_id") or "").strip()
+        extraction_type = str(payload.get("extraction_type") or "").lower()
+        if document_id and extraction_type in {"receipt_ocr", "expense_receipt"}:
+            try:
+                from app.modules.platform.documents.repositories.extraction_repository import extraction_repository
+                from app.modules.erp.expenses.services.ai_expense_service import ai_expense_service
+
+                extraction = extraction_repository.latest_extraction(org_id, document_id) or {}
+                extracted = extraction.get("extracted_data") if isinstance(extraction.get("extracted_data"), dict) else {}
+                if extracted:
+                    employee_id = str(payload.get("employee_id") or payload.get("user_id") or "ai.expense")
+                    ai_expense_service.create_from_extraction(
+                        org_id,
+                        extracted_data=extracted,
+                        source_document_id=document_id,
+                        employee_id=employee_id,
+                        created_by=employee_id,
+                    )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Expense claim from OCR event failed org=%s doc=%s: %s", org_id, document_id, exc
+                )
+
+    if event_type == "payment.executed":
+        payment_request_id = str(payload.get("payment_request_id") or envelope.get("entity_id") or "").strip()
+        if payment_request_id:
+            try:
+                from app.modules.erp.treasury.repositories.payment_request_repository import payment_request_repository
+                from app.modules.erp.expenses.services.reimbursement_service import reimbursement_service
+
+                req = payment_request_repository.get(org_id, payment_request_id=payment_request_id) or {}
+                if str(req.get("payment_type") or "") == "reimbursement" and str(req.get("source_type") or "") == "expense_claim":
+                    reimbursement_service.on_payment_executed(
+                        org_id,
+                        source_id=str(req.get("source_id") or ""),
+                        payment_request_id=payment_request_id,
+                    )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Expense reimbursement payment hook failed org=%s payment=%s: %s", org_id, payment_request_id, exc
+                )
+
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
+        _handle_expense_workflow_approval(org_id, payload, event_type=event_type)
+
+
+def _handle_asset_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    entity_type = str(payload.get("entity_type") or "").lower()
+    workflow_type = str(payload.get("workflow_key") or payload.get("workflow_type") or "")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    entity_id = str(payload.get("entity_id") or "").strip()
+    approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+
+    if entity_type == "asset_capitalization" or workflow_type == "ASSET_CAPITALIZATION_APPROVAL":
+        asset_id = str(metadata.get("asset_id") or entity_id)
+        if not asset_id:
+            return False
+        try:
+            from app.modules.erp.assets.services.asset_service import asset_service
+            from app.modules.erp.assets.services.capitalization_service import capitalization_service
+
+            asset_service.mark_workflow_approved(org_id, asset_id=asset_id)
+            capitalization_service.capitalize(org_id, asset_id=asset_id, approver_id=approver, skip_workflow_check=True)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Asset capitalization workflow failed org=%s asset=%s: %s", org_id, asset_id, exc)
+            return False
+
+    if entity_type == "asset_disposal" or workflow_type == "ASSET_DISPOSAL_APPROVAL":
+        asset_id = str(metadata.get("asset_id") or entity_id)
+        sale_amount = float(metadata.get("sale_amount") or payload.get("amount") or 0)
+        if not asset_id:
+            return False
+        try:
+            from app.modules.erp.assets.repositories.asset_repository import asset_repository
+            from app.modules.erp.assets.services.disposal_service import disposal_service
+
+            asset_repository.set_status(org_id, asset_id=asset_id, status=str(
+                (asset_repository.get(org_id, asset_id=asset_id) or {}).get("status") or "active"
+            ), workflow_approved=True)
+            disposal_service.dispose(
+                org_id, asset_id=asset_id, sale_amount=sale_amount, actor_id=approver, skip_workflow_check=True
+            )
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Asset disposal workflow failed org=%s asset=%s: %s", org_id, asset_id, exc)
+            return False
+
+    if entity_type == "asset_impairment" or workflow_type == "ASSET_IMPAIRMENT_APPROVAL":
+        asset_id = str(metadata.get("asset_id") or entity_id)
+        impairment_amount = float(metadata.get("impairment_amount") or payload.get("amount") or 0)
+        if not asset_id or impairment_amount <= 0:
+            return False
+        try:
+            from app.modules.erp.assets.repositories.asset_repository import asset_repository
+            from app.modules.erp.assets.services.impairment_service import impairment_service
+
+            asset_repository.set_status(org_id, asset_id=asset_id, status="active", workflow_approved=True)
+            impairment_service.impair(
+                org_id,
+                asset_id=asset_id,
+                impairment_amount=impairment_amount,
+                actor_id=approver,
+                skip_workflow_check=True,
+            )
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Asset impairment workflow failed org=%s asset=%s: %s", org_id, asset_id, exc)
+            return False
+    return False
+
+
+def _handle_inventory_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    entity_type = str(payload.get("entity_type") or "").lower()
+    workflow_type = str(payload.get("workflow_key") or payload.get("workflow_type") or "")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    entity_id = str(payload.get("entity_id") or "").strip()
+    approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+
+    if entity_type == "inventory_adjustment" or workflow_type == "INVENTORY_ADJUSTMENT_APPROVAL":
+        adjustment_id = str(metadata.get("adjustment_id") or entity_id)
+        item_id = str(metadata.get("item_id") or "")
+        warehouse_id = str(metadata.get("warehouse_id") or "")
+        quantity_variance = float(metadata.get("quantity_variance") or 0)
+        value_variance = float(metadata.get("value_variance") or 0)
+        adjustment_date = str(metadata.get("adjustment_date") or "")[:10] or None
+        if not adjustment_id or not item_id or not warehouse_id or quantity_variance == 0:
+            return False
+        try:
+            from datetime import date
+
+            from app.modules.erp.inventory.services.adjustment_service import adjustment_service
+
+            adjustment_service.mark_workflow_approved(org_id, adjustment_id=adjustment_id)
+            adjustment_service.apply_from_workflow(
+                org_id,
+                adjustment_id=adjustment_id,
+                item_id=item_id,
+                warehouse_id=warehouse_id,
+                quantity_variance=quantity_variance,
+                value_variance=value_variance,
+                adjustment_date=adjustment_date or date.today().isoformat(),
+                reason=str(metadata.get("reason") or ""),
+                actor_id=approver,
+            )
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Inventory adjustment workflow failed org=%s adjustment=%s: %s", org_id, adjustment_id, exc
+            )
+            return False
+    return False
+
+
+def _consume_inventory_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"grn.confirmed", "erp.grn.confirmed"}:
+        grn_id = str(payload.get("grn_id") or envelope.get("entity_id") or "").strip()
+        if grn_id:
+            try:
+                from app.modules.erp.inventory.services.receipt_service import receipt_service
+
+                receipt_service.receive_from_grn(org_id, grn_id=grn_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Inventory receipt from GRN failed org=%s grn=%s: %s", org_id, grn_id, exc
+                )
+
+    if event_type in {"erp.invoice.approved", "invoice.approved"}:
+        invoice_id = str(payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
+        if invoice_id:
+            try:
+                from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
+                from app.modules.erp.inventory.repositories.movement_repository import grn_link_repository
+
+                inv = invoice_repository.get(org_id, invoice_id=invoice_id) or {}
+                grn_id = inv.get("goods_receipt_id")
+                if grn_id:
+                    links = grn_link_repository.list_by_grn(org_id, goods_receipt_id=str(grn_id))
+                    if links and float(inv.get("invoice_amount") or 0) > 0:
+                        grni_total = sum(float(l.get("total_cost") or 0) for l in links)
+                        variance = float(inv.get("invoice_amount") or 0) - grni_total
+                        if abs(variance) > 1.0:
+                            import logging
+
+                            logging.getLogger(__name__).info(
+                                "GRNI reconciliation variance org=%s invoice=%s variance=%s",
+                                org_id,
+                                invoice_id,
+                                variance,
+                            )
+            except Exception:
+                pass
+
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
+        _handle_inventory_workflow_approval(org_id, payload, event_type=event_type)
+
+
+def _consume_asset_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"erp.invoice.approved", "invoice.approved"}:
+        invoice_id = str(payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
+        if invoice_id:
+            try:
+                from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
+                from app.modules.erp.assets.services.candidate_service import candidate_service
+
+                inv = invoice_repository.get(org_id, invoice_id=invoice_id) or {}
+                candidate_service.create_from_ap_invoice(
+                    org_id,
+                    invoice_id=invoice_id,
+                    amount=float(inv.get("invoice_amount") or inv.get("total_amount") or 0),
+                    description=str(inv.get("invoice_number") or inv.get("description") or ""),
+                )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Asset candidate from AP invoice failed org=%s invoice=%s: %s", org_id, invoice_id, exc
+                )
+
+    if event_type in {"expense.claim.approved"}:
+        claim_id = str(payload.get("claim_id") or "").strip()
+        amount = float(payload.get("amount") or 0)
+        if claim_id and amount > 0:
+            try:
+                from app.modules.erp.assets.services.candidate_service import candidate_service
+
+                candidate_service.create_from_expense_claim(
+                    org_id, claim_id=claim_id, amount=amount, description=str(payload.get("claim_number") or "")
+                )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Asset candidate from expense claim failed org=%s claim=%s: %s", org_id, claim_id, exc
+                )
+
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
+        _handle_asset_workflow_approval(org_id, payload, event_type=event_type)
+
+
+def _consume_fiscal_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"reconciliation.completed", "bank.reconciliation.completed"}:
+        period_id = str(payload.get("period_id") or payload.get("fiscal_period_id") or "").strip()
+        if period_id:
+            try:
+                from app.modules.erp.fiscal.services.close_service import close_service
+
+                close_service.complete_checklist_item(
+                    org_id, period_id=period_id, check_name="bank_reconciliation_complete", actor_id="event"
+                )
+            except Exception:
+                pass
+
+    if event_type in {"erp.gst.return.generated", "gst.return.generated"}:
+        period = str(payload.get("period") or payload.get("return_period") or "")[:7]
+        if period:
+            try:
+                from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository
+                from app.modules.erp.fiscal.services.close_service import close_service
+
+                for p in fiscal_period_repository.list(org_id, limit=50):
+                    if str(p.get("start_date") or "")[:7] == period or str(p.get("end_date") or "")[:7] == period:
+                        close_service.complete_checklist_item(
+                            org_id, period_id=str(p["id"]), check_name="gst_validation_complete", actor_id="event"
+                        )
+                        break
+            except Exception:
+                pass
+
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
+        _handle_fiscal_workflow_approval(org_id, payload, event_type=event_type)
+
+    if event_type == "compliance.completed":
+        period = str(payload.get("return_period") or "")[:7]
+        try:
+            from app.modules.erp.fiscal.services.close_service import close_service
+            from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository
+
+            for p in fiscal_period_repository.list(org_id, limit=50):
+                if period and (str(p.get("start_date") or "")[:7] == period or str(p.get("end_date") or "")[:7] == period):
+                    close_service.complete_checklist_item(
+                        org_id, period_id=str(p["id"]), check_name="compliance_obligations_complete", actor_id="event"
+                    )
+                    code = str(payload.get("compliance_code") or "")
+                    if code.startswith("TDS"):
+                        close_service.complete_checklist_item(
+                            org_id, period_id=str(p["id"]), check_name="tds_returns_filed", actor_id="event"
+                        )
+                    break
+        except Exception:
+            pass
+
+
+def _consume_procurement_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"erp.vendor.created", "vendor.created"}:
+        return
+
+    if event_type in {"erp.invoice.approved", "invoice.approved"}:
+        invoice_id = str(payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
+        if invoice_id:
+            try:
+                from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
+                from app.modules.erp.procurement.services.budget_check_service import budget_check_service
+                from app.modules.erp.procurement.repositories.requisition_repository import requisition_repository
+                from app.modules.erp.procurement.repositories.po_repository import po_repository
+
+                inv = invoice_repository.get(org_id, invoice_id=invoice_id) or {}
+                po = po_repository.get(org_id, po_id=str(inv.get("purchase_order_id"))) if inv.get("purchase_order_id") else None
+                if po and po.get("pr_id"):
+                    pr = requisition_repository.get(org_id, pr_id=str(po["pr_id"]))
+                    budget_check_service.consume_spend(
+                        org_id,
+                        cost_center_id=pr.get("cost_center_id") if pr else None,
+                        amount=float(inv.get("total_amount") or 0),
+                    )
+            except Exception:
+                pass
+
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
+        _handle_procurement_workflow_approval(org_id, payload, event_type=event_type)
+
+
+def _consume_tax_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+
+    if event_type in {"erp.invoice.approved", "invoice.approved"}:
+        invoice_id = str(payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
+        if invoice_id:
+            try:
+                from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
+
+                gst_transaction_service.record_from_ap_invoice(org_id, invoice_id=invoice_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Tax AP record failed org=%s invoice=%s: %s", org_id, invoice_id, exc)
+
+    if event_type in {"invoice.issued", "sales.invoice.issued"}:
+        invoice_id = str(payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
+        if invoice_id:
+            try:
+                from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
+
+                gst_transaction_service.record_from_ar_invoice(org_id, invoice_id=invoice_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Tax AR record failed org=%s invoice=%s: %s", org_id, invoice_id, exc)
+            try:
+                from app.modules.erp.tax.services.e_invoice_service import e_invoice_service
+                from app.modules.erp.accounts_receivable.repositories.invoice_repository import ar_invoice_repository
+
+                e_invoice_service.maybe_auto_generate(org_id, ar_invoice_id=invoice_id)
+                inv = ar_invoice_repository.get(org_id, invoice_id=invoice_id) or {}
+                taxable = float(inv.get("subtotal") or 0)
+                from app.modules.erp.tax.services.eway_bill_service import eway_bill_service
+
+                eway_bill_service.maybe_auto_generate(org_id, source_type="ar_invoice", source_id=invoice_id, taxable_value=taxable)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Tax auto e-invoice/eway failed org=%s invoice=%s: %s", org_id, invoice_id, exc)
+
+    if event_type in {"invoice.received"}:
+        invoice_id = str(payload.get("invoice_id") or payload.get("ap_invoice_id") or envelope.get("entity_id") or "").strip()
+        if invoice_id:
+            try:
+                from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
+
+                gst_transaction_service.record_from_ap_invoice(org_id, invoice_id=invoice_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Tax AP record from invoice.received failed org=%s: %s", org_id, exc)
+
+    if event_type in {"receipt.received", "customer.payment.received", "payment.received"}:
+        receipt_id = str(payload.get("receipt_id") or envelope.get("entity_id") or "").strip()
+        if receipt_id:
+            try:
+                from app.modules.erp.tax.events.tax_events import emit_compliance_alert
+
+                emit_compliance_alert(org_id, alert_type="receipt.recorded", summary=f"Customer receipt {receipt_id} recorded for compliance tracking", severity="low")
+            except Exception:
+                pass
+
+    if event_type in {"erp.journal.posted", "journal.posted"}:
+        source_type = str(payload.get("source_type") or "")
+        source_id = str(payload.get("source_id") or envelope.get("entity_id") or "").strip()
+        if source_id and source_type in {"ap_invoice", "ar_invoice"}:
+            try:
+                from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
+
+                gst_transaction_service.record_from_source(org_id, source_type=source_type, source_id=source_id)
+            except Exception:
+                pass
+
+    if event_type in {"erp.payment.completed", "payment.completed"}:
+        payment_id = str(payload.get("payment_id") or envelope.get("entity_id") or "").strip()
+        if payment_id:
+            try:
+                from app.modules.erp.tax.services.tds_service import tds_service
+
+                tds_service.calculate_for_payment(org_id, payment_id=payment_id)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("TDS calc failed org=%s payment=%s: %s", org_id, payment_id, exc)
+
+    if event_type in {"payment.executed"}:
+        payment_request_id = str(payload.get("payment_request_id") or envelope.get("entity_id") or "").strip()
+        if payment_request_id:
+            try:
+                from app.modules.erp.treasury.repositories.payment_request_repository import payment_request_repository
+                from app.modules.erp.tax.services.tax_treasury_bridge_service import tax_treasury_bridge_service
+
+                req = payment_request_repository.get(org_id, payment_request_id=payment_request_id) or {}
+                if str(req.get("payment_type") or "") == "tax_payment":
+                    meta = req.get("metadata") if isinstance(req.get("metadata"), dict) else {}
+                    tax_treasury_bridge_service.handle_tax_payment_executed(
+                        org_id,
+                        payment_request_id=payment_request_id,
+                        amount=float(req.get("amount") or payload.get("amount") or 0),
+                        metadata=meta,
+                    )
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Tax treasury bridge failed org=%s payment=%s: %s", org_id, payment_request_id, exc)
+
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
+        _handle_tax_workflow_approval(org_id, payload, event_type=event_type)
+
+
 def _consume_journal_events(envelope: dict) -> None:
     event_type = str(envelope.get("event_type", ""))
     org_id = str(envelope.get("org_id", ""))
@@ -783,7 +1886,7 @@ def _consume_journal_events(envelope: dict) -> None:
 
                 logging.getLogger(__name__).warning("AP AI invoice failed org=%s doc=%s: %s", org_id, document_id, exc)
 
-    if event_type in {"approval.completed", "workflow.approved"}:
+    if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
         ap_payment_id = str(payload.get("ap_payment_id") or "").strip()
         if not ap_payment_id:
             metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
@@ -801,28 +1904,33 @@ def _consume_journal_events(envelope: dict) -> None:
                 )
             return
 
-        ar_invoice_id = str(payload.get("ar_invoice_id") or "").strip()
-        if not ar_invoice_id:
-            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-            ar_invoice_id = str(metadata.get("ar_invoice_id") or "").strip()
-        if ar_invoice_id:
-            try:
-                from app.modules.erp.accounts_receivable.services.sales_invoice_service import sales_invoice_service
-
-                approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
-                sales_invoice_service.issue_invoice(
-                    org_id, invoice_id=ar_invoice_id, issued_by=approver, auto_post=True, force_credit_approval=True
-                )
-            except Exception as exc:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "AR invoice issue from workflow failed org=%s invoice=%s: %s", org_id, ar_invoice_id, exc
-                )
+        if _handle_ar_workflow_approval(org_id, payload, event_type=event_type):
             return
 
+        if _handle_treasury_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        if _handle_tax_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        if _handle_fiscal_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        if _handle_procurement_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        if _handle_expense_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        if _handle_asset_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        if _handle_inventory_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        ctx = _resolve_workflow_domain_context(org_id, payload)
         ap_invoice_id = str(
-            payload.get("ap_invoice_id") or payload.get("invoice_id") or payload.get("entity_id") or ""
+            ctx.get("ap_invoice_id") or payload.get("ap_invoice_id") or payload.get("invoice_id") or payload.get("entity_id") or ""
         ).strip()
         if ap_invoice_id:
             try:
@@ -951,6 +2059,13 @@ def consume_event(queue: str, envelope: dict) -> None:
     _consume_invoice_ai_reviewed(envelope)
     _consume_workflow_system_task_gl_post(envelope)
     _consume_journal_events(envelope)
+    _consume_treasury_events(envelope)
+    _consume_tax_events(envelope)
+    _consume_fiscal_events(envelope)
+    _consume_procurement_events(envelope)
+    _consume_expense_events(envelope)
+    _consume_asset_events(envelope)
+    _consume_inventory_events(envelope)
     _consume_ar_events(envelope)
     _push_document_realtime(envelope)
     try:

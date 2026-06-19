@@ -526,26 +526,32 @@ Never maintain parallel ledger balances on vouchers alone.
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
-| **API prefix** | `/api/v1/erp/ledger/periods/*` (or dedicated) |
-| **DB tables** | `erp.fiscal_years`, `erp.fiscal_periods` |
+| **Status** | **Built** — see [M12_fiscal.md](./ERP_MODULES/M12_fiscal.md) |
+| **API prefix** | `/api/v1/erp/ledger/*` (+ `/erp/fiscal-periods` aliases) |
+| **DB tables** | `erp.fiscal_years`, `erp.fiscal_periods`, `erp.period_close_checklists`, `erp.period_reopen_requests`, `erp.year_end_runs` |
+| **Migration** | `039_erp_fiscal_engine.sql` |
 | **Phase** | 1 |
 
 ### Purpose
 Control when posting is allowed.
 
 ### Features
-- Fiscal years and periods
-- Soft lock / hard lock
-- Period close and reopen (controlled, audited)
+- Fiscal years and periods (India Apr–Mar default)
+- Soft lock / hard lock / closed
+- Period close checklist + PERIOD_CLOSE workflow
+- Reopen with PERIOD_REOPEN workflow + maker-checker + audit
 - Year-end close, retained earnings carry-forward
+- Canonical posting gate (`posting_validation_service`)
 
 ### Dependencies
 - Module 10 (Journal posting checks)
+- Module 2 (Workflow), Module 4 (Audit), Module 3 (Events)
 
 ### Per-module extension (later)
-- [ ] Close checklist workflow
-- [ ] Events: `erp.period.closed`
+- [x] Close checklist workflow
+- [x] Events: `erp.period.closed`, `erp.period.reopened`, `erp.year_end.completed`
+- [ ] UI period calendar
+- [ ] Multi-entity consolidation hooks (M35)
 
 ---
 
@@ -595,7 +601,7 @@ AP approval, payment approval (Module 2)
 
 ### Per-module extension (later)
 - [ ] Full invoice lifecycle API
-- [ ] 3-way match (with Module 15)
+- [x] 3-way match (with Module 15)
 - [ ] Payment batch API
 
 ---
@@ -632,18 +638,21 @@ Collection prediction, payment behavior, customer risk
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
-| **API prefix** | `/api/v1/erp/procurement/*` (TBD) |
+| **Status** | **Built** — see [M15_procurement.md](./ERP_MODULES/M15_procurement.md) |
+| **API prefix** | `/api/v1/erp/procurement/*` |
+| **DB tables** | `erp.purchase_requisitions`, `erp.purchase_orders`, `erp.goods_receipts`, `erp.procurement_matches`, `erp.procurement_policies`, `erp.budget_envelopes` |
+| **Migration** | `040_erp_procurement_engine.sql` |
 | **Phase** | 2+ |
 
 ### Purpose
-PR → PO → GRN → Invoice matching.
+PR → PO → GRN → Invoice matching (enterprise spend control).
 
 ### Critical logic
-**3-way match:** PO ↔ GRN ↔ AP Invoice
+**3-way match:** PO ↔ GRN ↔ AP Invoice (canonical in M15; consumed by M13 AP)
 
 ### Dependencies
-- Module 13 (AP)
+- Module 13 (AP vendor master + invoices)
+- Module 2 (Workflow), Module 4 (Audit), Module 3 (Events)
 
 ---
 
@@ -651,14 +660,20 @@ PR → PO → GRN → Invoice matching.
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
+| **Status** | **Implemented** |
+| **API prefix** | `/api/v1/erp/expenses/*` |
+| **DB tables** | `erp.expense_claims`, `expense_claim_items`, `expense_receipts`, `expense_policies`, `employee_advances`, `corporate_card_transactions` |
 | **Phase** | 2+ |
+| **Docs** | [M16_expense.md](ERP_MODULES/M16_expense.md) |
 
 ### Features
-Reimbursements, travel claims, receipt OCR, approvals
+Reimbursements, travel claims, receipt OCR (M6), policy validation, workflow approvals, treasury payout
 
 ### AI
-Policy violation detection, duplicate claims
+Expense classifier, duplicate detection, fraud scoring stub, spend analyzer
+
+### Dependencies
+- M6 Documents (`receipt_ocr`), M2 Workflows, M10 Journals, M12 Fiscal, M24 Treasury
 
 ---
 
@@ -666,13 +681,14 @@ Policy violation detection, duplicate claims
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
+| **Status** | **Implemented** |
 | **API prefix** | `/api/v1/erp/assets/*` |
-| **DB tables** | `erp.assets`, `erp.asset_depreciation` |
-| **Phase** | 5 (or late Phase 2) |
+| **DB tables** | `erp.asset_categories`, `erp.assets`, `erp.asset_depreciation`, `erp.asset_transfers`, `erp.asset_impairments`, `erp.asset_disposals`, `erp.asset_capitalization_candidates` |
+| **Phase** | 2+ |
+| **Docs** | [M17_assets.md](ERP_MODULES/M17_assets.md) |
 
 ### Features
-Capitalization, depreciation, transfer, disposal
+Capitalization, straight-line depreciation, transfer, impairment, disposal, asset register
 
 ### Straight-line depreciation
 ```text
@@ -683,19 +699,19 @@ Depreciation = (Cost - Salvage Value) / Useful Life
 Companies Act, IND-AS / IFRS readiness
 
 ### Dependencies
-- Journal engine for depreciation postings
+- M8 COA, M10 Journals, M12 Fiscal, M13 AP, M15 Procurement, M16 Expenses
 
 ---
 
-## Module 18 — Inventory (Optional / Later)
+## Module 18 — Inventory (Finance-Centric)
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **Deferred** — finance-connected inventory only |
-| **Phase** | Future |
+| **Status** | **Built** — see [M18_inventory.md](./ERP_MODULES/M18_inventory.md) |
+| **Phase** | 5 — Enterprise |
 
 ### Valuation
-FIFO, weighted average → stock journals via Module 10
+FIFO, weighted average → stock journals via Module 10; GRNI two-phase with M15/M13
 
 ---
 
@@ -709,16 +725,16 @@ Critical for India market.
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
-| **API prefix** | `/api/v1/erp/gst/*` |
-| **DB tables** | `erp.gst_registrations`, `erp.gst_transactions`, `erp.gst_returns` |
-| **Phase** | 2 |
+| **Status** | **Done** — implemented as [M14 Tax](./ERP_MODULES/M14_tax.md) (`erp/tax`) |
+| **API prefix** | `/api/v1/gst/*` |
+| **DB tables** | `erp.gst_registrations`, `erp.gst_transactions`, `erp.gst_returns`, `erp.itc_ledger`, `erp.e_invoices`, `erp.eway_bills` |
+| **Phase** | 4 — Compliance |
 
 ### Purpose
-GST compliance: ledgers, returns, e-invoice readiness.
+Cross-cutting GST compliance engine: calculation, ledger, ITC, returns (GSTR-1/3B/9), e-invoice, e-way, GSTR-2B reconciliation. Consumed by AP, AR, journals, and reporting — not a standalone silo.
 
 ### Features
-CGST/SGST/IGST, ITC, reverse charge, e-invoice/IRN, e-way bill, GSTR-1, GSTR-3B
+CGST/SGST/IGST, ITC, reverse charge, e-invoice/IRN, e-way bill, GSTR-1, GSTR-3B, GSTR-9, GSTR-2B reconciliation
 
 ### Calculation
 ```text
@@ -729,7 +745,10 @@ GST Amount = Taxable Value × GST Rate
 GST Act, e-invoicing thresholds, ITC rules
 
 ### Dependencies
-- AP/AR invoices; COA (GST ledgers); Journal for tax postings
+- AP/AR invoices; COA (GST ledgers via `gst_account_mappings`); Journal for tax postings
+
+### Implementation note
+Module numbering: master map **M19** = implementation doc **M14** (`modules/erp/tax/`). Government APIs use M7 connectors (`stub_gst` default; production when `GSTN_*` / `IRP_*` / `EWAY_*` env configured).
 
 ---
 
@@ -737,10 +756,11 @@ GST Act, e-invoicing thresholds, ITC rules
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
-| **API prefix** | `/api/v1/erp/tds/*` |
-| **DB tables** | `erp.tds_deductions`, `erp.tds_returns` |
+| **Status** | **Done** (~98%) |
+| **API prefix** | `/api/v1/tds/*` |
+| **DB tables** | `erp.tds_sections`, `erp.tds_rules`, `erp.tds_transactions`, `erp.tds_challans`, `erp.tds_returns`, `erp.tcs_transactions` |
 | **Phase** | 2 |
+| **Doc** | [M14_tax.md](M14_tax.md) |
 
 ### Features
 Section mapping (194C, 194J, 206C, etc.), challans, Form 16A/26Q readiness
@@ -754,11 +774,14 @@ Section mapping (194C, 194J, 206C, etc.), challans, Form 16A/26Q readiness
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
+| **Status** | **Done** (~95%) |
+| **API prefix** | `/api/v1/erp/compliance/*` (aliases: `/api/v1/compliance/*`) |
+| **Package** | `modules/erp/compliance/` |
+| **Migration** | `046_erp_compliance_engine.sql` |
 | **Phase** | 2+ |
 
 ### Features
-Filing reminders, due dates, penalties, escalations (scheduler + notifications)
+Rule-driven obligations, reminders, escalations, penalties (stub), dashboard, filing readiness, GST/TDS/fiscal integration. See [M21_compliance.md](ERP_MODULES/M21_compliance.md).
 
 ---
 
@@ -770,19 +793,20 @@ Filing reminders, due dates, penalties, escalations (scheduler + notifications)
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
-| **API prefix** | `/api/v1/erp/banking/*` |
-| **DB tables** | `erp.bank_accounts`, `erp.bank_transactions` |
+| **Status** | **Done** (~95%) |
+| **API prefix** | `/api/v1/erp/banking/*` (alias: `/api/v1/banking/*`) |
+| **Package** | `modules/erp/banking/` |
+| **DB tables** | `erp.bank_accounts`, `erp.bank_transactions`, `erp.bank_beneficiaries`, `erp.payment_requests` |
 | **Phase** | 2 |
 
 ### Features
-Bank accounts, statement import, API banking (future), payment execution
+Bank accounts, statement import (CSV/Excel/MT940), payment execution, receipts, beneficiaries. See [M22_banking.md](ERP_MODULES/M22_banking.md).
 
 ### Integrations
-ICICI, HDFC, Axis, RazorpayX (via Module 7)
+ICICI, HDFC, Axis, RazorpayX via M7 (stub until credentials)
 
 ### Dependencies
-- Module 13 payments; Journal for bank postings
+M13 AP payments; M14 AR receipts; M10 Journal; M12 Fiscal
 
 ---
 
@@ -1115,19 +1139,19 @@ When you request implementation of a module, we will add a section (or file `ERP
 | M9 | General Ledger | 2 | 1 | **Build** |
 | M10 | Journal Engine | 2 | 1 | **Build** |
 | M11 | Voucher Engine | 2 | 1 | **Build** |
-| M12 | Fiscal Periods | 2 | 1 | **Build** |
+| M12 | Fiscal Periods | 2 | 1 | **Built** |
 | M13 | Accounts Payable | 3 | 2 | **Build** |
 | M14 | Accounts Receivable | 3 | 3 | **Build** |
-| M15 | Procurement | 3 | 2+ | **Build** |
-| M16 | Expense Management | 3 | 2+ | **Build** |
-| M17 | Fixed Assets | 3 | 5 | **Build** |
-| M18 | Inventory | 3 | Future | Defer |
-| M19 | GST Engine | 4 | 2 | **Build** |
-| M20 | TDS/TCS Engine | 4 | 2 | **Build** |
-| M21 | Compliance Calendar | 4 | 2+ | **Build** |
-| M22 | Banking | 5 | 2 | **Build** |
-| M23 | Reconciliation | 5 | 2–3 | **Build** |
-| M24 | Treasury | 5 | 3 | **Build** |
+| M15 | Procurement | 3 | 2+ | **Built** |
+| M16 | Expense Management | 3 | 2+ | **Done** |
+| M17 | Fixed Assets | 3 | 2+ | **Done** |
+| M18 | Inventory | 3 | 2+ | **Done** |
+| M19 | GST Engine | 4 | 2 | **Done** (see M14_tax.md) |
+| M20 | TDS/TCS Engine | 4 | 2 | **Done** (see M14_tax.md) |
+| M21 | Compliance Calendar | 4 | 2+ | **Done** (see M21_compliance.md) |
+| M22 | Banking | 5 | 2 | **Done** (see M22_banking.md) |
+| M23 | Reconciliation | 5 | 2–3 | **Done** (see M23_reconciliation.md) |
+| M24 | Treasury | 5 | 3 | **Done** (see M24_treasury.md) |
 | M25 | AI Invoice Intelligence | 6 | 4 | Reuse OS |
 | M26 | Workflow Intelligence | 6 | 4 | Reuse OS |
 | M27 | Memory System | 6 | 4 | Reuse OS |

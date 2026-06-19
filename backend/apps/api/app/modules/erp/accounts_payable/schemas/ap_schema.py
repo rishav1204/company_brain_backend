@@ -54,6 +54,8 @@ class InvoiceCreateRequest(BaseModel):
     source_document_id: str | None = None
     company_id: str | None = None
     expense_account_id: str | None = None
+    purchase_order_id: str | None = None
+    goods_receipt_id: str | None = None
     lines: list[InvoiceLineInput] = Field(default_factory=list)
 
 

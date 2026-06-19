@@ -33,6 +33,7 @@ class CollectionService:
         invoice_allocations: list[dict],
         company_id: str | None = None,
         created_by: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict:
         customer = customer_repository.get(org_id, customer_id=customer_id)
         if not customer:
@@ -40,6 +41,27 @@ class CollectionService:
         receipt_validator.validate_mode(payment_mode)
         if amount <= 0:
             raise ValueError("Receipt amount must be positive")
+
+        if idempotency_key:
+            existing = receipt_repository.find_by_idempotency_key(org_id, idempotency_key=idempotency_key)
+            if existing:
+                return existing
+
+        duplicate = receipt_repository.find_duplicate_record(
+            org_id,
+            customer_id=customer_id,
+            receipt_date=receipt_date,
+            amount=amount,
+            payment_mode=payment_mode,
+        )
+        if duplicate:
+            raise ValueError(
+                f"Duplicate receipt detected (id={duplicate.get('id')}, number={duplicate.get('receipt_number')})"
+            )
+
+        receipt_meta: dict = {"allocations": invoice_allocations}
+        if idempotency_key:
+            receipt_meta["idempotency_key"] = idempotency_key
 
         receipt = receipt_repository.create(
             org_id,
@@ -51,7 +73,7 @@ class CollectionService:
             bank_account_id=bank_account_id,
             company_id=company_id,
             created_by=created_by,
-            metadata={"allocations": invoice_allocations},
+            metadata=receipt_meta,
         )
         rid = str(receipt["id"])
         for alloc in invoice_allocations:
@@ -79,6 +101,13 @@ class CollectionService:
         customer = customer_repository.get(org_id, customer_id=str(receipt["customer_id"])) or {}
         receivable_id = resolve_receivable_account(org_id, customer)
         bank_id = str(receipt.get("bank_account_id") or "")
+        if bank_id:
+            try:
+                from app.modules.erp.treasury.services.bank_account_service import bank_account_service
+
+                bank_id = bank_account_service.resolve_ledger_account(org_id, bank_account_id=bank_id)
+            except Exception:
+                pass
         if not receivable_id or not bank_id:
             raise ValueError("Receivable and bank accounts required")
 
@@ -113,7 +142,15 @@ class CollectionService:
                     org_id, invoice_id=str(alloc["invoice_id"]), amount=float(alloc["amount"])
                 )
             customer_balance_service.refresh_customer(org_id, customer_id=str(receipt["customer_id"]))
-            emit_payment_received(org_id, receipt_id=receipt_id, amount=amount, customer_id=str(receipt["customer_id"]))
+            emit_payment_received(
+                org_id,
+                receipt_id=receipt_id,
+                amount=amount,
+                customer_id=str(receipt["customer_id"]),
+                bank_account_id=str(receipt.get("bank_account_id") or ""),
+                receipt_date=str(receipt.get("receipt_date") or ""),
+                journal_id=jid,
+            )
             ar_realtime_service.push_payment_received(org_id, receipt_id=receipt_id, amount=amount)
             self._audit(org_id, receipt_id=receipt_id, action="ar.receipt.completed", actor_id=completed_by)
             return {"receipt_id": receipt_id, "status": "completed", "journal_id": jid, "post_result": post_result}

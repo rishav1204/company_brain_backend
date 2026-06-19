@@ -41,6 +41,8 @@ def create_invoice(request: InvoiceCreateRequest, context=Depends(require_ap_adm
             created_by=context.user_id,
             expense_account_id=request.expense_account_id,
             lines=[l.model_dump() for l in request.lines],
+            purchase_order_id=request.purchase_order_id,
+            goods_receipt_id=request.goods_receipt_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

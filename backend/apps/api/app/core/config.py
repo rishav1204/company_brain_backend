@@ -136,6 +136,7 @@ class Settings(BaseModel):
     enable_dev_auth_routes: bool = os.getenv("ENABLE_DEV_AUTH_ROUTES", "true").lower() == "true"
     enable_worker_routes: bool = os.getenv("ENABLE_WORKER_ROUTES", "true").lower() == "true"
     dev_use_postgres: bool = os.getenv("DEV_USE_POSTGRES", "false").lower() == "true"
+    allow_direct_ap_execute: bool = os.getenv("ALLOW_DIRECT_AP_EXECUTE", "false").lower() == "true"
     scheduler_org_ids: str = os.getenv("SCHEDULER_ORG_IDS", "org-demo")
     event_queue_inflight_seconds: int = int(os.getenv("EVENT_QUEUE_INFLIGHT_SECONDS", "120"))
     iam_use_db_auth: bool = os.getenv("IAM_USE_DB_AUTH", "true").lower() == "true"
@@ -174,6 +175,17 @@ class Settings(BaseModel):
 
     integrations_credentials_key: str = os.getenv("INTEGRATIONS_CREDENTIALS_KEY", "")
     integrations_api_key_rate_limit_per_minute: int = int(os.getenv("INTEGRATIONS_API_KEY_RATE_LIMIT_PER_MINUTE", "120"))
+    gstn_base_url: str = os.getenv("GSTN_BASE_URL", "")
+    gstn_username: str = os.getenv("GSTN_USERNAME", "")
+    gstn_password: str = os.getenv("GSTN_PASSWORD", "")
+    gstn_api_key: str = os.getenv("GSTN_API_KEY", "")
+    irp_base_url: str = os.getenv("IRP_BASE_URL", "")
+    irp_client_id: str = os.getenv("IRP_CLIENT_ID", "")
+    irp_client_secret: str = os.getenv("IRP_CLIENT_SECRET", "")
+    eway_base_url: str = os.getenv("EWAY_BASE_URL", "")
+    eway_username: str = os.getenv("EWAY_USERNAME", "")
+    eway_password: str = os.getenv("EWAY_PASSWORD", "")
+    gst_connector_provider: str = os.getenv("GST_CONNECTOR_PROVIDER", "auto")
 
     def dev_auth_routes_enabled(self) -> bool:
         if not self.enable_dev_auth_routes:

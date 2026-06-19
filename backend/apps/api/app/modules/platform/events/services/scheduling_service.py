@@ -43,6 +43,15 @@ class SchedulingService:
             trace_id=trace_id,
         )
 
+    def emit_compliance_job(self, org_id: str, *, trace_id: str | None = None) -> dict:
+        return platform_event_service.publish(
+            event_type="scheduler.compliance.daily",
+            org_id=org_id,
+            source="platform.scheduler",
+            payload={"job": "compliance_daily"},
+            trace_id=trace_id,
+        )
+
     def emit_notification_digest(self, org_id: str, *, trace_id: str | None = None) -> dict:
         return platform_event_service.publish(
             event_type="scheduler.notifications.digest",
@@ -57,6 +66,7 @@ class SchedulingService:
             "sla": self.emit_sla_scan(org_id),
             "escalation": self.emit_escalation_scan(org_id),
             "reconciliation": self.emit_reconciliation_job(org_id),
+            "compliance": self.emit_compliance_job(org_id),
             "notification_digest": self.emit_notification_digest(org_id),
         }
         for org in settings.scheduler_org_ids.split(","):

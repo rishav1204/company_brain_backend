@@ -11,8 +11,20 @@ def process_ai_event(envelope: dict) -> dict:
     if event_type in {"payment.risk.detected", "risk.detected"}:
         log_event("platform.ai.risk", org_id=org_id, payload=payload)
         return {"status": "completed"}
-    if event_type in {"reconciliation.match.suggested", "invoice.ai.reviewed"}:
+    if event_type in {"reconciliation.match.suggested", "invoice.ai.reviewed", "ai.reconciliation.suggested"}:
         log_event("platform.ai.reconciliation", org_id=org_id, payload=payload)
+        if event_type == "ai.reconciliation.suggested":
+            try:
+                from app.modules.erp.treasury.ai.reconciliation_assistant import suggest_reconciliation_matches
+
+                log_event(
+                    "platform.ai.reconciliation.enrichment",
+                    org_id=org_id,
+                    entity_id=envelope.get("entity_id"),
+                    summary=payload.get("summary"),
+                )
+            except Exception:
+                pass
         return {"status": "completed"}
     if event_type == "agent.run.requested":
         event_bus.publish(

@@ -9,4 +9,10 @@ def process_reconciliation_event(org_id: str, envelope: dict) -> dict:
     from app.modules.workflows.services.scheduled_workflow_service import scheduled_workflow_service
 
     started = scheduled_workflow_service.run_due(org_id, trace_id=str(envelope.get("trace_id", "")))
-    return {"status": "completed", "started_count": len(started)}
+    try:
+        from app.modules.erp.reconciliation.jobs.reconciliation_scan_job import run_reconciliation_scan
+
+        scan = run_reconciliation_scan(org_id)
+    except Exception:
+        scan = {}
+    return {"status": "completed", "started_count": len(started), **scan}

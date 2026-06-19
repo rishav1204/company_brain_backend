@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.modules.erp.accounts_payable.engine.account_resolver import resolve_expense_account
-from app.modules.erp.accounts_payable.engine.payable_engine import build_liability_journal_lines, resolve_default_payable_account
+from app.modules.erp.accounts_payable.engine.payable_engine import resolve_default_payable_account
 from app.modules.erp.accounts_payable.repositories.invoice_line_repository import invoice_line_repository
 from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
 from app.modules.erp.accounts_payable.repositories.vendor_repository import vendor_repository
@@ -35,6 +35,8 @@ class InvoiceService:
         lines: list[dict] | None = None,
         expense_account_id: str | None = None,
         metadata: dict | None = None,
+        purchase_order_id: str | None = None,
+        goods_receipt_id: str | None = None,
     ) -> dict:
         vendor = vendor_repository.get(org_id, vendor_id=vendor_id)
         if not vendor:
@@ -78,6 +80,8 @@ class InvoiceService:
             company_id=company_id,
             created_by=created_by,
             metadata=invoice_meta,
+            purchase_order_id=purchase_order_id,
+            goods_receipt_id=goods_receipt_id,
         )
         iid = str(invoice["id"])
         if lines:
@@ -94,6 +98,18 @@ class InvoiceService:
 
         emit_invoice_created(org_id, invoice_id=iid, amount=total_amount, metadata={"vendor_id": vendor_id})
         self._audit(org_id, invoice_id=iid, action="ap.invoice.created", actor_id=created_by)
+        if purchase_order_id:
+            try:
+                from app.modules.erp.procurement.services.matching_service import matching_service
+
+                matching_service.run_match(
+                    org_id,
+                    po_id=purchase_order_id,
+                    grn_id=goods_receipt_id,
+                    ap_invoice_id=iid,
+                )
+            except Exception:
+                pass
         return self.get_invoice(org_id, invoice_id=iid)
 
     def get_invoice(self, org_id: str, *, invoice_id: str) -> dict:
@@ -205,6 +221,20 @@ class InvoiceService:
             raise ValueError("Invoice not found")
         invoice_validator.ensure_approvable(str(invoice.get("status")))
 
+        from app.modules.erp.fiscal.services.posting_guard import ensure_posting_allowed
+
+        posting_date = str(invoice.get("invoice_date") or "")[:10]
+        if posting_date:
+            ensure_posting_allowed(org_id, posting_date)
+
+        from app.modules.erp.procurement.services.matching_service import matching_service
+
+        matching_service.ensure_invoice_approvable(
+            org_id,
+            ap_invoice_id=invoice_id,
+            purchase_order_id=invoice.get("purchase_order_id"),
+        )
+
         from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation, enforce_maker_checker
 
         try:
@@ -218,6 +248,7 @@ class InvoiceService:
 
         vendor = vendor_repository.get(org_id, vendor_id=str(invoice["vendor_id"])) or {}
         meta = invoice.get("metadata") if isinstance(invoice.get("metadata"), dict) else {}
+        vendor_meta = vendor.get("metadata") if isinstance(vendor.get("metadata"), dict) else {}
         expense_id = expense_account_id or meta.get("expense_account_id")
         if not expense_id:
             expense_id = resolve_expense_account(org_id)
@@ -226,6 +257,9 @@ class InvoiceService:
             raise ValueError("Expense and payable accounts required for journal creation")
 
         lines_data = invoice_line_repository.list_by_invoice(org_id, invoice_id=invoice_id)
+        fixed_asset_lines = [l for l in lines_data if str(l.get("line_type")) == "fixed_asset" and l.get("account_id")]
+        if fixed_asset_lines:
+            expense_id = str(fixed_asset_lines[0]["account_id"])
         gst_lines = [
             {
                 "account_id": l.get("account_id"),
@@ -236,16 +270,52 @@ class InvoiceService:
             for l in lines_data
             if str(l.get("line_type")) == "gst"
         ]
-        journal_lines = build_liability_journal_lines(
-            org_id,
-            expense_account_id=str(expense_id),
-            payable_account_id=str(payable_id),
-            invoice_amount=float(invoice.get("invoice_amount") or 0),
-            gst_amount=float(invoice.get("gst_amount") or 0),
-            total_amount=float(invoice.get("total_amount") or 0),
-            gst_lines=gst_lines or None,
-            company_id=invoice.get("company_id"),
-        )
+        grn_id = invoice.get("goods_receipt_id")
+        use_grni = False
+        is_rcm = bool(meta.get("reverse_charge") or meta.get("is_rcm"))
+        if grn_id:
+            try:
+                from app.modules.erp.inventory.repositories.movement_repository import grn_link_repository
+
+                grn_links = grn_link_repository.list_by_grn(org_id, goods_receipt_id=str(grn_id))
+                use_grni = bool(grn_links)
+            except Exception:
+                use_grni = False
+
+        if is_rcm:
+            from app.modules.erp.tax.services.gst_posting_service import build_rcm_journal_lines
+
+            journal_lines = build_rcm_journal_lines(
+                org_id,
+                expense_account_id=str(expense_id),
+                payable_account_id=str(payable_id),
+                invoice_amount=float(invoice.get("invoice_amount") or 0),
+                gst_amount=float(invoice.get("gst_amount") or 0),
+                gst_lines=gst_lines or None,
+                company_id=invoice.get("company_id"),
+            )
+        elif use_grni:
+            from app.modules.erp.inventory.engine.cogs_engine import build_grni_clearing_lines
+
+            journal_lines = build_grni_clearing_lines(
+                org_id,
+                invoice_amount=float(invoice.get("invoice_amount") or 0),
+                payable_account_id=str(payable_id),
+                gst_lines=gst_lines or None,
+            )
+        else:
+            from app.modules.erp.tax.services.gst_posting_service import build_purchase_journal_lines
+
+            journal_lines = build_purchase_journal_lines(
+                org_id,
+                expense_account_id=str(expense_id),
+                payable_account_id=str(payable_id),
+                invoice_amount=float(invoice.get("invoice_amount") or 0),
+                gst_amount=float(invoice.get("gst_amount") or 0),
+                total_amount=float(invoice.get("total_amount") or 0),
+                gst_lines=gst_lines or None,
+                company_id=invoice.get("company_id"),
+            )
         journal = journal_service.create_draft(
             org_id,
             created_by=None,
@@ -266,6 +336,20 @@ class InvoiceService:
         invoice_repository.set_status(
             org_id, invoice_id=invoice_id, status="approved", approved_by=approver_id, journal_id=jid
         )
+        try:
+            from app.modules.erp.tax.services.tds_service import tds_service
+
+            tds_preview = tds_service.preview_for_invoice(
+                org_id,
+                vendor_id=str(invoice["vendor_id"]),
+                gross_amount=float(invoice.get("invoice_amount") or invoice.get("total_amount") or 0),
+                expense_category=str(meta.get("expense_category") or ""),
+                payment_type=str(meta.get("payment_type") or vendor_meta.get("vendor_type") or ""),
+            )
+            meta["tds_preview"] = tds_preview
+            invoice_repository.patch_metadata(org_id, invoice_id=invoice_id, metadata=meta)
+        except Exception:
+            pass
         emit_invoice_approved(org_id, invoice_id=invoice_id)
         vendor_balance_service.refresh_vendor(org_id, vendor_id=str(invoice["vendor_id"]))
         ap_realtime_service.push_invoice_approved(org_id, invoice_id=invoice_id, approver_id=approver_id)

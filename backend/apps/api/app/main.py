@@ -14,6 +14,16 @@ from app.modules.erp.gl.routes.router import erp_gl_router
 from app.modules.erp.journals.routes.router import erp_journals_router
 from app.modules.erp.accounts_payable.routes.router import erp_ap_router
 from app.modules.erp.accounts_receivable.routes.router import erp_ar_router
+from app.modules.erp.banking.routes.router import erp_m22_banking_router, legacy_banking_router
+from app.modules.erp.reconciliation.routes.router import erp_m23_reconciliation_router, legacy_reconciliation_alias
+from app.modules.erp.treasury.routes.treasury_router import erp_m24_treasury_router, erp_treasury_router, legacy_treasury_router
+from app.modules.erp.tax.routes.tax_router import erp_compliance_router, erp_gst_router, erp_tds_router
+from app.modules.erp.compliance.routes.router import erp_m21_compliance_router
+from app.modules.erp.fiscal.routes.router import erp_fiscal_router
+from app.modules.erp.procurement.routes.router import erp_procurement_router
+from app.modules.erp.expenses.routes.router import erp_expenses_router
+from app.modules.erp.assets.routes.router import erp_assets_router
+from app.modules.erp.inventory.routes.router import erp_inventory_router
 from app.modules.platform.governance.middleware.audit_middleware import AuditCaptureMiddleware
 from app.modules.platform.governance.middleware.governance_middleware import GovernanceEnforcementMiddleware
 from app.modules.platform.governance.middleware.trace_middleware import GovernanceTraceMiddleware
@@ -101,6 +111,21 @@ app.include_router(erp_gl_router, prefix=settings.api_prefix)
 app.include_router(erp_journals_router, prefix=settings.api_prefix)
 app.include_router(erp_ap_router, prefix=settings.api_prefix)
 app.include_router(erp_ar_router, prefix=settings.api_prefix)
+app.include_router(erp_m22_banking_router, prefix=settings.api_prefix)
+app.include_router(legacy_banking_router, prefix=settings.api_prefix)
+app.include_router(erp_m23_reconciliation_router, prefix=settings.api_prefix)
+app.include_router(legacy_reconciliation_alias, prefix=settings.api_prefix)
+app.include_router(erp_m24_treasury_router, prefix=settings.api_prefix)
+app.include_router(legacy_treasury_router, prefix=settings.api_prefix)
+app.include_router(erp_gst_router, prefix=settings.api_prefix)
+app.include_router(erp_tds_router, prefix=settings.api_prefix)
+app.include_router(erp_compliance_router, prefix=settings.api_prefix)
+app.include_router(erp_m21_compliance_router, prefix=settings.api_prefix)
+app.include_router(erp_fiscal_router, prefix=settings.api_prefix)
+app.include_router(erp_procurement_router, prefix=settings.api_prefix)
+app.include_router(erp_expenses_router, prefix=settings.api_prefix)
+app.include_router(erp_assets_router, prefix=settings.api_prefix)
+app.include_router(erp_inventory_router, prefix=settings.api_prefix)
 app.include_router(companies.router, prefix=settings.api_prefix)
 app.include_router(observability.router, prefix=settings.api_prefix)
 app.include_router(ingestion.router, prefix=settings.api_prefix)

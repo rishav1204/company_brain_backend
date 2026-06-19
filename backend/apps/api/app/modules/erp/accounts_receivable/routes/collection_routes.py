@@ -28,6 +28,7 @@ def record_receipt(request: ReceiptRecordRequest, context=Depends(require_ar_adm
             company_id=request.company_id,
             created_by=context.user_id,
             invoice_allocations=request.invoice_allocations,
+            idempotency_key=request.idempotency_key,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

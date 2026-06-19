@@ -37,6 +37,21 @@ class VendorBankRepository:
                 )
                 return dict(cur.fetchone() or {"id": bid})
 
+    def get(self, org_id: str, *, bank_account_id: str) -> dict | None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text, vendor_id::text, ifsc_code, bank_name, is_primary, verified, created_at::text
+                    FROM erp.vendor_bank_accounts
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    """,
+                    (org_id, bank_account_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
     def list_by_vendor(self, org_id: str, *, vendor_id: str) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)

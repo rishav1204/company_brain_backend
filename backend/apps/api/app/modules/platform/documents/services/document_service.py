@@ -29,6 +29,13 @@ def _decode_base64_content(raw: str | None) -> bytes:
         return b""
 
 
+def _ocr_extraction_type(document_type: str) -> str:
+    dt = str(document_type or "").lower()
+    if dt in {"receipt", "expense_receipt"}:
+        return "receipt_ocr"
+    return "invoice_ocr"
+
+
 class DocumentService:
     def schema_ready(self) -> bool:
         return document_repository.schema_ready()
@@ -89,7 +96,7 @@ class DocumentService:
         if duplicate:
             emit_duplicate_detected(org_id, document_id=str(row["id"]), matched_document_id=str(duplicate.get("matched_document_id", "")))
         if enqueue_ocr:
-            emit_ocr_requested(org_id, document_id=str(row["id"]), extraction_type="invoice_ocr")
+            emit_ocr_requested(org_id, document_id=str(row["id"]), extraction_type=_ocr_extraction_type(document_type))
         return {
             **row,
             "signed_url": storage_service.signed_download_url(str(row.get("storage_path", ""))),
@@ -189,7 +196,7 @@ class DocumentService:
                 matched_document_id=str(duplicate.get("matched_document_id", "")),
             )
         if enqueue_ocr:
-            emit_ocr_requested(org_id, document_id=str(row["id"]), extraction_type="invoice_ocr")
+            emit_ocr_requested(org_id, document_id=str(row["id"]), extraction_type=_ocr_extraction_type(document_type))
         # Request scan asynchronously for direct uploads.
         emit_malware_scan_requested(org_id, document_id=str(row["id"]))
         return {**row, "signed_url": storage_service.signed_download_url(storage_path)}

@@ -17,5 +17,6 @@ opentelemetry-exporter-otlp
 pip-audit
 cloudinary
 pypdf
+reportlab
 boto3
 google-cloud-documentai

@@ -116,5 +116,49 @@ class ReceiptRepository:
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
+    def find_by_idempotency_key(self, org_id: str, *, idempotency_key: str) -> dict | None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text, receipt_number, amount, status, customer_id::text
+                    FROM erp.customer_receipts
+                    WHERE org_id = %s::uuid
+                      AND metadata->>'idempotency_key' = %s
+                    LIMIT 1
+                    """,
+                    (org_id, idempotency_key),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def find_duplicate_record(
+        self,
+        org_id: str,
+        *,
+        customer_id: str,
+        receipt_date: str,
+        amount: float,
+        payment_mode: str,
+    ) -> dict | None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text, receipt_number, status
+                    FROM erp.customer_receipts
+                    WHERE org_id = %s::uuid AND customer_id = %s::uuid
+                      AND receipt_date = %s::date AND amount = %s::numeric
+                      AND payment_mode = %s
+                      AND status IN ('recorded', 'processing', 'completed')
+                    LIMIT 1
+                    """,
+                    (org_id, customer_id, receipt_date, amount, payment_mode),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
 
 receipt_repository = ReceiptRepository()

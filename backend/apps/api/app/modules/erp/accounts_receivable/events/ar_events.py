@@ -41,9 +41,10 @@ def emit_collection_required(org_id: str, *, invoice_id: str, stage: str) -> Non
     })
 
 
-def emit_payment_received(org_id: str, *, receipt_id: str, amount: float, customer_id: str) -> None:
+def emit_payment_received(org_id: str, *, receipt_id: str, amount: float, customer_id: str, bank_account_id: str | None = None, receipt_date: str | None = None, journal_id: str | None = None) -> None:
     _publish("payment.received", org_id, entity_id=receipt_id, payload={
         "receipt_id": receipt_id, "amount": amount, "customer_id": customer_id,
+        "bank_account_id": bank_account_id, "receipt_date": receipt_date, "journal_id": journal_id,
     })
 
 

@@ -38,7 +38,15 @@ def schedule_payment(request: PaymentScheduleRequest, context=Depends(require_ap
             company_id=request.company_id,
             created_by=context.user_id,
         )
-        emit_payment_scheduled(context.org_id, payment_id=str(item["id"]), amount=request.amount)
+        emit_payment_scheduled(
+            context.org_id,
+            payment_id=str(item["id"]),
+            amount=request.amount,
+            vendor_id=request.vendor_id,
+            bank_account_id=request.bank_account_id,
+            payment_date=request.payment_date,
+            created_by=context.user_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"request_id": context.request_id, "item": item}
@@ -65,6 +73,12 @@ def execute_payment(
             created_by=(row or {}).get("created_by"),
             human_approved=True,
         )
+        from app.core.config import settings
+        if not settings.allow_direct_ap_execute and settings.app_env not in ("dev", "test"):
+            raise HTTPException(
+                status_code=409,
+                detail="Direct AP execute deprecated — use POST /erp/banking/payments/{id}/execute after treasury approval",
+            )
         item = payment_service.execute_payment(
             context.org_id,
             payment_id=payment_id,

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from app.modules.erp.coa.repositories.account_repository import account_repository
-from app.modules.erp.gl.services.fiscal_period_service import fiscal_period_service
+from app.modules.erp.fiscal.exceptions import PeriodClosedError
+from app.modules.erp.fiscal.services.posting_validation_service import posting_validation_service
 from app.modules.erp.gl.validators.double_entry_validator import validate_double_entry
 
 JOURNAL_TYPES = {
@@ -50,7 +51,10 @@ class JournalValidator:
                 raise ValueError(f"Account not postable: {aid}")
 
     def validate_fiscal_period(self, org_id: str, *, posting_date: str, company_id: str | None = None) -> None:
-        fiscal_period_service.resolve_open_period(org_id, posting_date=posting_date, company_id=company_id)
+        try:
+            posting_validation_service.validate_period_open(org_id, posting_date, company_id=company_id)
+        except PeriodClosedError as exc:
+            raise ValueError(exc.message) from exc
 
     def ensure_editable(self, journal_status: str) -> None:
         if journal_status not in EDITABLE_STATUSES:

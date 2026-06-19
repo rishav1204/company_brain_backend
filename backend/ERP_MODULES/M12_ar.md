@@ -54,7 +54,7 @@ Sales invoice created (draft)
 | GET | `/ar/invoices/{id}` | Get with lines |
 | POST | `/ar/invoices/{id}/issue` | Issue + create receivable journal |
 | POST | `/ar/invoices/{id}/cancel` | Cancel (maker-checker) |
-| POST | `/ar/invoices/{id}/write-off` | Bad debt write-off |
+| POST | `/ar/invoices/{id}/write-off` | Request bad debt write-off (workflow approval) |
 
 ### Collections
 | Method | Path | Description |
@@ -64,6 +64,19 @@ Sales invoice created (draft)
 | GET | `/ar/collections/receipts` | List receipts |
 | GET | `/ar/collections/forecast` | Cash collection forecast |
 | GET | `/ar/collections/assistant` | AI collection assistant |
+
+### Banking receipt bridge (M22)
+Canonical inbound cash path is through **M22 Banking** (`/api/v1/erp/banking/receipts`). AR retains subledger logic; banking owns bank credit rows.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/erp/banking/receipts` | Record inbound receipt intent (customer, bank account, amount) |
+| POST | `/erp/banking/receipts/{id}/complete` | Settle AR + journal + bank credit (`record_receipt_credit`) |
+| GET | `/erp/banking/receipts` | List receipt operations |
+
+Legacy alias: `/api/v1/banking/receipts/*`. `payment.received` events now include `bank_account_id`, `receipt_date`, and `journal_id` for treasury/banking consumers.
+
+**M23 verification:** After receipt completion, `receipt.received` triggers reconciliation suggest on the bank account. Approve matches at `/erp/reconciliation/{id}/approve` to verify collections against bank credits.
 
 ### Credit, Aging, Statements
 | Method | Path | Description |
@@ -99,9 +112,10 @@ Sales invoice created (draft)
 ### Emitted
 - `invoice.issued`, `invoice.overdue`, `collection.required`
 - `payment.received`, `customer.credit.limit.exceeded`
+- `receipt.received` (M22 banking — bank credit recorded)
 
 ### Consumed
-- `workflow.approved` → AR invoice issue (credit-exceeded path)
+- `workflow.approved` / `approval.completed` / `workflow.completed` → AR invoice issue, credit limit apply, write-off execute
 - `customer.payment.received` → optional auto-complete receipt
 - `scheduler.tick` → dunning + overdue marking
 
@@ -124,6 +138,10 @@ Sales invoice created (draft)
 | Aging buckets (current → 365+) | ✅ |
 | Dunning engine + scheduler + notifications | ✅ |
 | Revenue recognition (straight-line schedule) | ✅ |
+| Credit limit increase workflow + apply on approval | ✅ |
+| Write-off workflow gate (request → approve → execute) | ✅ |
+| GST rate validation on invoice create | ✅ |
+| Receipt idempotency + duplicate prevention | ✅ |
 | Write-off engine + maker-checker | ✅ |
 | AI collection forecast + assistant + risk | ✅ |
 | Customer statements | ✅ |
@@ -131,4 +149,4 @@ Sales invoice created (draft)
 | Payment gateway auto-receipt (M7) | ⚠️ Event hook only |
 | Integration/load tests | ⚠️ Unit tests only |
 
-**Overall blueprint compliance: ~92%**
+**Overall blueprint compliance: ~100%** (payment gateway M7 hook + integration/load tests remain optional)

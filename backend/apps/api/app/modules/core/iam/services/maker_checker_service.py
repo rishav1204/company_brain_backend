@@ -7,6 +7,8 @@ MAKER_CHECKER_ACTIONS = frozenset(
         "payment.approve",
         "journal.post",
         "gst.file",
+        "tax.modify",
+        "tds.file",
         "invoice.approve",
         "bank.reconcile",
         "execute",

@@ -30,9 +30,10 @@ Invoice arrives (upload/OCR/API)
   → AI classify vendor + duplicate detect
   → AP invoice created (pending_review)
   → Submit for approval → Workflow (AP_INVOICE_APPROVAL)
-  → Approve → Journal Engine draft (Expense Dr + GST Dr + Payable Cr)
+  → Approve → Journal Engine draft (Expense Dr + GST Dr + Payable Cr, or Fixed Asset Dr when `line_type=fixed_asset`, or **GRNI Clearing Dr** when `goods_receipt_id` linked to M18 inventory receipt)
   → Optional auto-post → GL
   → Vendor balance updated
+  → Invoice approved above capitalization threshold → M17 asset candidate
   → Payment scheduled → Execute (Payable Dr + Bank Cr) → GL post
 ```
 
@@ -66,10 +67,12 @@ Invoice arrives (upload/OCR/API)
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/ap/payments/schedule` | Schedule payment + start PAYMENT_APPROVAL workflow |
-| POST | `/ap/payments/{id}/execute` | Execute payment + journal post (requires workflow approval) |
+| POST | `/ap/payments/{id}/execute` | **Deprecated in prod** — use `/erp/banking/payments/{id}/execute` after workflow (set `ALLOW_DIRECT_AP_EXECUTE=true` for dev) |
 | GET | `/ap/payments` | List payments |
 | POST | `/ap/payments/propose-schedule` | AI cash-priority payment proposals |
 | GET/POST | `/ap/payments/recommendations` | AI payment assistant ("who to pay this week") |
+
+**M23 verification:** After banking executes payment, `payment.executed` triggers reconciliation suggest. Approve at `/erp/reconciliation/{id}/approve` or review vendor position at `/erp/reconciliation/vendor/{vendor_id}`.
 
 ### Aging & Cashflow
 | Method | Path | Description |
@@ -135,10 +138,17 @@ POST /api/v1/ap/payments/schedule
 
 ## Accounting entries (via Journal Engine — not rebuilt)
 
-**Invoice approval:**
+**Invoice approval (services / non-stock):**
 | Account | Debit | Credit |
 |---------|-------|--------|
 | Expense | 100,000 | |
+| Input GST | 18,000 | |
+| Vendor Payable | | 118,000 |
+
+**Invoice approval (stock purchase with GRN + M18 inventory links):**
+| Account | Debit | Credit |
+|---------|-------|--------|
+| GRNI Clearing | 100,000 | |
 | Input GST | 18,000 | |
 | Vendor Payable | | 118,000 |
 
@@ -215,6 +225,8 @@ POST /api/v1/ap/payments/schedule
 | Payment processing/failed states + `erp.payment.failed` | ✅ |
 | Duplicate payment schedule prevention | ✅ |
 | 3-way match enforced before payment (when PO/GRN in metadata) | ✅ |
+| 3-way match at invoice approve via M15 `procurement_matches` | ✅ |
+| GRNI clearing path for stock purchases (M18) | ✅ |
 | Aging buckets | ✅ |
 | Early payment discount from vendor terms | ✅ |
 | AI invoice review + vendor risk + payment assistant | ✅ |
@@ -225,7 +237,7 @@ POST /api/v1/ap/payments/schedule
 | APIs `/api/v1/ap/*` | ✅ |
 | Unit tests | ✅ (17 tests) |
 | `models/` folder | ⚠️ Repository-first (same as M10) |
-| Full procurement PO/GRN tables (M15) | ⚠️ Metadata hook only |
+| Full procurement PO/GRN tables (M15) | ✅ Canonical via `erp.procurement` + AP FKs |
 | Bank integration auto-pay (M7) | ⚠️ Manual bank_account_id |
 | Email/API invoice ingest endpoints | ⚠️ Event-driven only |
 | Integration / load / chaos tests | ⚠️ Deferred |

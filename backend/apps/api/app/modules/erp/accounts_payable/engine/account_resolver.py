@@ -7,6 +7,7 @@ TAX_CODE_TO_GST_TYPE = {
     "CGST_INPUT": "cgst_input",
     "SGST_INPUT": "sgst_input",
     "IGST_INPUT": "igst_input",
+    "REVERSE_CHARGE": "reverse_charge",
 }
 
 

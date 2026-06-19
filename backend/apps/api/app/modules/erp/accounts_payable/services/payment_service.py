@@ -94,7 +94,15 @@ class PaymentService:
         meta["workflow_approved"] = True
         return payment_repository.update_metadata(org_id, payment_id=payment_id, metadata=meta)
 
-    def execute_payment(self, org_id: str, *, payment_id: str, executed_by: str, payable_account_id: str | None = None) -> dict:
+    def execute_payment(
+        self,
+        org_id: str,
+        *,
+        payment_id: str,
+        executed_by: str,
+        payable_account_id: str | None = None,
+        skip_bank_transaction: bool = False,
+    ) -> dict:
         payment = payment_repository.get(org_id, payment_id=payment_id)
         if not payment:
             raise ValueError("Payment not found")
@@ -108,6 +116,20 @@ class PaymentService:
             if not inv:
                 continue
             inv_meta = inv.get("metadata") if isinstance(inv.get("metadata"), dict) else {}
+            po_id = inv.get("purchase_order_id")
+            if po_id:
+                try:
+                    from app.modules.erp.procurement.services.matching_service import matching_service
+
+                    match = matching_service.get_for_invoice(org_id, ap_invoice_id=str(alloc.get("invoice_id")))
+                    if match and str(match.get("match_status")) in {"exception", "rejected"}:
+                        raise ValueError(
+                            f"Three-way match failed for invoice {inv.get('id')}: status {match.get('match_status')}"
+                        )
+                except ValueError:
+                    raise
+                except Exception:
+                    pass
             po_amount = inv_meta.get("po_amount")
             grn_amount = inv_meta.get("grn_amount")
             if po_amount is not None and grn_amount is not None:
@@ -134,17 +156,35 @@ class PaymentService:
         vendor = vendor_repository.get(org_id, vendor_id=str(payment["vendor_id"])) or {}
         payable_id = payable_account_id or resolve_default_payable_account(org_id, vendor)
         bank_id = str(payment.get("bank_account_id") or "")
+        if bank_id:
+            try:
+                from app.modules.erp.treasury.services.bank_account_service import bank_account_service
+
+                bank_id = bank_account_service.resolve_ledger_account(org_id, bank_account_id=bank_id)
+            except Exception:
+                pass
         if not payable_id or not bank_id:
             raise ValueError("Payable and bank accounts required")
 
         amount = float(payment.get("amount") or 0)
         payment_repository.set_status(org_id, payment_id=payment_id, status="processing")
         try:
-            journal_lines = build_payment_journal_lines(
+            from app.modules.erp.tax.services.tax_account_setup_service import tax_account_setup_service
+            from app.modules.erp.tax.services.tds_service import tds_service
+
+            tax_account_setup_service.ensure_tax_accounts(org_id, company_id=payment.get("company_id"))
+            tds_result = tds_service.deduct(
+                org_id,
+                payment_id=payment_id,
+                payable_account_id=payable_id,
+                bank_account_id=bank_id,
+            )
+            journal_lines = tds_result.get("journal_lines") or build_payment_journal_lines(
                 payable_account_id=payable_id,
                 bank_account_id=bank_id,
                 amount=amount,
             )
+            bank_payment_amount = float(tds_result.get("net_amount") or amount)
             journal = journal_service.create_draft(
                 org_id,
                 created_by=None,
@@ -170,8 +210,30 @@ class PaymentService:
                 )
 
             vendor_balance_service.refresh_vendor(org_id, vendor_id=str(payment["vendor_id"]))
-            emit_payment_completed(org_id, payment_id=payment_id, amount=amount, trace_id=None)
-            ap_realtime_service.push_payment_completed(org_id, payment_id=payment_id, amount=amount)
+            bank_tx_id = None
+            if not skip_bank_transaction:
+                try:
+                    from app.modules.erp.treasury.services.bank_transaction_recorder import record_payment_debit
+
+                    treasury_bank_id = str(payment.get("bank_account_id") or "")
+                    bank_tx = record_payment_debit(
+                        org_id,
+                        bank_account_id=treasury_bank_id,
+                        amount=bank_payment_amount,
+                        reference=str(payment.get("payment_reference") or payment_id),
+                        payment_date=str(payment.get("payment_date") or "")[:10],
+                        description=f"AP payment {payment.get('payment_reference')}",
+                        idempotency_key=f"ap-payment-tx:{payment_id}",
+                        counterparty_ref=str(payment.get("vendor_id") or ""),
+                    )
+                    bank_tx_id = bank_tx.get("id")
+                except Exception:
+                    pass
+            emit_payment_completed(
+                org_id, payment_id=payment_id, amount=bank_payment_amount, trace_id=None,
+                journal_id=jid,
+            )
+            ap_realtime_service.push_payment_completed(org_id, payment_id=payment_id, amount=bank_payment_amount)
             self._audit(org_id, payment_id=payment_id, action="ap.payment.completed", actor_id=executed_by)
 
             return {
@@ -179,6 +241,12 @@ class PaymentService:
                 "status": "completed",
                 "journal_id": jid,
                 "post_result": post_result,
+                "bank_transaction_id": bank_tx_id,
+                "tds": {
+                    "tds_amount": tds_result.get("tds_amount", 0),
+                    "net_amount": bank_payment_amount,
+                    "section_code": tds_result.get("section_code"),
+                },
             }
         except Exception as exc:
             payment_repository.set_status(org_id, payment_id=payment_id, status="failed")
