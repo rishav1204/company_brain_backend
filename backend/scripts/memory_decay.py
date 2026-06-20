@@ -1,20 +1,22 @@
-from datetime import datetime, timedelta, timezone
+"""Run M27 memory cleanup (delegates to finance_os.memory_cleanup_service)."""
 
+from __future__ import annotations
 
-def classify_memory_retention(memory_type: str, created_at: datetime) -> str:
-    now = datetime.now(timezone.utc)
-    age = now - created_at
-    if memory_type == "short_term" and age > timedelta(days=7):
-        return "expire"
-    if memory_type in {"long_term", "workflow"} and age > timedelta(days=730):
-        return "archive"
-    if memory_type == "decision":
-        return "retain"
-    if age > timedelta(days=30):
-        return "review"
-    return "retain"
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+API_ROOT = ROOT / "apps" / "api"
+if str(API_ROOT) not in sys.path:
+    sys.path.insert(0, str(API_ROOT))
+
+from app.modules.finance_os.memory.services.memory_cleanup_service import apply_cleanup
 
 
 if __name__ == "__main__":
-    sample = classify_memory_retention("short_term", datetime.now(timezone.utc) - timedelta(days=9))
-    print({"result": sample})
+    org_id = os.environ.get("ORG_ID", "")
+    if not org_id:
+        print("Set ORG_ID env var")
+        sys.exit(1)
+    print(apply_cleanup(org_id))

@@ -1,27 +1,33 @@
 from __future__ import annotations
 
-import re
+from app.modules.finance_os.invoice_ai.ai.invoice_extractor import extract_regex
+from app.modules.finance_os.invoice_ai.ai.llm_invoice_extractor import InvoiceExtractor as M25InvoiceExtractor
+
+_m25_extractor = M25InvoiceExtractor()
 
 
 class InvoiceExtractor:
-    def extract(self, text: str) -> dict:
-        amount_match = re.search(r"total[:\s]*([0-9]+(?:\.[0-9]{1,2})?)", text, re.IGNORECASE)
-        invoice_match = re.search(r"invoice(?:\s*no\.?|\s*#)?[:\s]*([A-Za-z0-9\-_/]+)", text, re.IGNORECASE)
-        gstin_match = re.search(r"gstin[:\s]*([0-9A-Z]{10,15})", text, re.IGNORECASE)
-        total = float(amount_match.group(1)) if amount_match else 0.0
+    """Platform stub — delegates to M25 invoice extractor."""
+
+    def extract(self, text: str, org_id: str | None = None) -> dict:
+        if org_id:
+            result = _m25_extractor.extract(org_id, text)
+        else:
+            result = extract_regex(text)
         return {
-            "invoice_number": invoice_match.group(1) if invoice_match else "",
-            "invoice_date": "",
-            "vendor_name": "",
-            "gstin": gstin_match.group(1) if gstin_match else "",
-            "line_items": [],
-            "subtotal": total,
+            "invoice_number": result.get("invoice_number") or "",
+            "invoice_date": result.get("invoice_date") or "",
+            "vendor_name": result.get("vendor_name") or "",
+            "gstin": result.get("vendor_gstin") or result.get("gstin") or "",
+            "line_items": result.get("line_items") or [],
+            "subtotal": float(result.get("taxable_amount") or result.get("subtotal") or 0),
             "cgst": 0.0,
             "sgst": 0.0,
-            "igst": 0.0,
+            "igst": float(result.get("gst_amount") or 0),
             "cess": 0.0,
-            "total_amount": total,
+            "total_amount": float(result.get("total_amount") or 0),
             "raw_text_preview": text[:2000],
+            "extraction_confidence": result.get("extraction_confidence"),
         }
 
 

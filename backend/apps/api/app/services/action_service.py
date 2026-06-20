@@ -90,6 +90,24 @@ def execute_action(
         )
     elif normalized_tool == "erp" and normalized_method == "writeback":
         result = integration_service.push_erp(params)
+    elif normalized_tool == "memory" and normalized_method == "search":
+        from app.modules.finance_os.memory.services.retrieval_service import search_memories
+
+        hits = search_memories(
+            org_id,
+            str(params.get("query", "")),
+            memory_type=params.get("memory_type"),
+            entity_type=params.get("entity_type"),
+            entity_id=params.get("entity_id"),
+            top_k=int(params.get("top_k", 5)),
+        )
+        return {"status": "completed", "target": "memory", "detail": "search", "items": hits}
+    elif normalized_tool == "graph" and normalized_method == "traverse":
+        from app.modules.finance_os.graph.services.lineage_service import lineage
+
+        entity_id = str(params.get("entity_id") or params.get("entityId") or "")
+        result = lineage(org_id, entity_id, max_depth=int(params.get("max_depth", 5)))
+        return {"status": "completed", "target": "graph", "detail": "traverse", "result": result}
     else:
         result = IntegrationResult(status="error", target=normalized_tool, detail=f"unsupported_tool_or_method:{normalized_tool}.{normalized_method}")
 

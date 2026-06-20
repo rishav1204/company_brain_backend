@@ -77,7 +77,14 @@ def create_memory(request: MemoryRecordRequest, context=Depends(build_request_co
         org_id=context.org_id,
         source="api.memory",
         trace_id=context.request_id,
-        payload={"memory_record_id": row["id"]},
+        payload={
+            "memory_record_id": row["id"],
+            "subject_ref": request.subject_ref,
+            "memory_type": request.memory_type,
+            "relevance_score": request.relevance_score,
+            "title": request.payload_jsonb.get("title") if isinstance(request.payload_jsonb, dict) else None,
+            "content": request.payload_jsonb.get("content") if isinstance(request.payload_jsonb, dict) else None,
+        },
         principal=principal_from_request_context(context),
     )
     audit_repo.create_log(

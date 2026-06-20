@@ -6,18 +6,24 @@ _RELATION_TARGET_LABELS = {
     "REQUIRES_APPROVAL": "Workflow",
     "PAID_BY": "Payment",
     "RELATES_TO": "Invoice",
-    "REFERENCES": "Vendor",
+    "REFERENCES": "PurchaseOrder",
     "GOVERNS": "Vendor",
     "APPROVES": "Invoice",
     "ASSIGNED_TO": "Workflow",
-    "BLOCKED_BY": "Workflow",
+    "BLOCKED_BY": "Incident",
     "IMPACTS": "KPI",
+    "GENERATED": "Journal",
+    "SETTLED_BY": "BankTransaction",
+    "REPORTED_IN": "GSTReturn",
+    "MATCHED_IN": "Reconciliation",
+    "FILED_AS": "Compliance",
+    "CAPITALIZED_AS": "Asset",
 }
 
 
 def _resolve_to_label(relation: str | None, from_label: str) -> str:
-    if relation == "BLOCKED_BY" and from_label == "Incident":
-        return "Workflow"
+    if relation == "BLOCKED_BY" and from_label == "Workflow":
+        return "Incident"
     if relation == "IMPACTS" and from_label == "Decision":
         return "KPI"
     if relation == "RELATES_TO" and from_label == "PurchaseOrder":
@@ -34,15 +40,15 @@ def _resolve_to_label(relation: str | None, from_label: str) -> str:
 def query_related_entities(org_id: str, subject_ref: str | None) -> list[str]:
     if not subject_ref:
         return []
-    related = []
-    workflow_ids = graph_data_repo.list_workflow_ids(org_id=org_id)
-    invoice_ids = graph_data_repo.list_invoice_ids(org_id=org_id)
-    if subject_ref in workflow_ids:
-        related.append(f"Workflow:{subject_ref} -> BLOCKED_BY -> Incident:intercompany-mismatch")
-    if subject_ref in invoice_ids:
-        related.append(f"Invoice:{subject_ref} -> REQUIRES_APPROVAL -> User:finance-manager")
-    neo4j_related = neo4j_service.query_related(org_id=org_id, subject_id=subject_ref)
-    return related + neo4j_related
+    try:
+        from app.modules.finance_os.graph.engine.lineage_engine import format_neighbors
+
+        neighbors = neo4j_service.get_entity_neighbors(org_id, subject_ref)
+        if neighbors:
+            return format_neighbors(neighbors)
+    except Exception:
+        pass
+    return neo4j_service.query_related(org_id=org_id, subject_id=subject_ref)
 
 
 def upsert_graph_event(

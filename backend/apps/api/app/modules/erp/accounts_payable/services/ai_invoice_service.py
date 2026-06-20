@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
+from app.modules.finance_os.invoice_ai.services.anomaly_service import anomaly_service
+from app.modules.finance_os.invoice_ai.services.confidence_service import confidence_service
+from app.modules.finance_os.invoice_ai.services.duplicate_service import duplicate_service
+from app.modules.finance_os.invoice_ai.services.extraction_service import extraction_service
+from app.modules.finance_os.invoice_ai.services.prediction_service import prediction_service
 from app.modules.erp.accounts_payable.ai.duplicate_detector import detect_duplicate_signals
 from app.modules.erp.accounts_payable.ai.invoice_reviewer import review_invoice_extraction
 from app.modules.erp.accounts_payable.ai.vendor_classifier import classify_vendor_from_extraction
@@ -15,8 +20,102 @@ from app.modules.erp.accounts_payable.services.invoice_service import invoice_se
 from app.modules.erp.accounts_payable.services.vendor_service import vendor_service
 from app.modules.platform.documents.ai.ledger_suggester import suggest_ledger_accounts
 
+_AUTO_DRAFT_BANDS = {"auto_suggest", "review_suggested"}
+
 
 class AiInvoiceService:
+    def create_from_document(
+        self,
+        org_id: str,
+        *,
+        document_id: str,
+        created_by: str | None = None,
+        company_id: str | None = None,
+        invoice_type: str = "purchase",
+    ) -> dict:
+        from app.modules.finance_os.invoice_ai.pipelines.invoice_pipeline import invoice_pipeline
+
+        pipeline_result = invoice_pipeline.run(org_id, document_id=document_id, invoice_type=invoice_type)
+        return self.create_from_m25(
+            org_id,
+            extraction_id=pipeline_result["extraction_id"],
+            source_document_id=document_id,
+            created_by=created_by,
+            company_id=company_id,
+            pipeline_result=pipeline_result,
+        )
+
+    def create_from_m25(
+        self,
+        org_id: str,
+        *,
+        extraction_id: str,
+        source_document_id: str | None = None,
+        created_by: str | None = None,
+        company_id: str | None = None,
+        pipeline_result: dict | None = None,
+    ) -> dict:
+        extraction = extraction_service.get(org_id, extraction_id)
+        if not extraction:
+            raise ValueError("M25 extraction not found")
+
+        dup = duplicate_service.latest(org_id, extraction_id) or {}
+        anomalies = anomaly_service.list_for_extraction(org_id, extraction_id)
+        predictions = prediction_service.list_suggestions(org_id, extraction_id=extraction_id)
+
+        if pipeline_result:
+            band = str(pipeline_result.get("confidence_band") or extraction.get("confidence_band") or "manual_review")
+            auto_eligible = bool(pipeline_result.get("auto_draft_eligible"))
+        else:
+            conf = confidence_service.evaluate(
+                extraction=extraction,
+                predictions=predictions,
+                duplicate_status=str(dup.get("status") or "clean"),
+                anomaly_count=len(anomalies),
+            )
+            band = conf["confidence_band"]
+            auto_eligible = conf["auto_draft_eligible"]
+
+        if str(dup.get("status")) == "confirmed":
+            raise ValueError("Duplicate invoice blocked: confirmed duplicate")
+        if any(str(a.get("severity")) == "high" for a in anomalies):
+            raise ValueError("High severity anomaly blocks auto AP draft")
+        if band not in _AUTO_DRAFT_BANDS and not auto_eligible:
+            raise ValueError(f"Confidence band {band} requires manual review before AP draft")
+
+        extracted_data = self._m25_to_extracted(extraction, predictions)
+        return self.create_from_extraction(
+            org_id,
+            extracted_data=extracted_data,
+            source_document_id=source_document_id or extraction.get("document_id"),
+            created_by=created_by,
+            company_id=company_id,
+        )
+
+    def _m25_to_extracted(self, extraction: dict, predictions: list[dict]) -> dict:
+        ledger_pred = next((p for p in predictions if p.get("prediction_type") == "ledger"), None)
+        gst_pred = next((p for p in predictions if p.get("prediction_type") == "gst"), None)
+        meta = extraction.get("metadata") if isinstance(extraction.get("metadata"), dict) else {}
+        return {
+            "invoice_number": extraction.get("invoice_number"),
+            "invoice": extraction.get("invoice_number"),
+            "invoice_date": extraction.get("invoice_date"),
+            "date": extraction.get("invoice_date"),
+            "due_date": extraction.get("due_date"),
+            "vendor_name": extraction.get("vendor_name"),
+            "vendor": extraction.get("vendor_name"),
+            "gstin": extraction.get("vendor_gstin"),
+            "subtotal": extraction.get("taxable_amount"),
+            "amount": extraction.get("taxable_amount"),
+            "gst_amount": extraction.get("gst_amount"),
+            "total_amount": extraction.get("total_amount"),
+            "total": extraction.get("total_amount"),
+            "line_items": meta.get("line_items") or [],
+            "expense_account_id": (ledger_pred or {}).get("suggested_account_id"),
+            "suggested_gst_code": (gst_pred or {}).get("suggested_gst_code"),
+            "m25_extraction_id": extraction.get("id"),
+        }
+
     def create_from_extraction(
         self,
         org_id: str,
@@ -30,7 +129,7 @@ class AiInvoiceService:
         vendor_name = str(vendor_info.get("vendor_name") or extracted_data.get("vendor") or "Unknown Vendor")
         gstin = vendor_info.get("gstin") or extracted_data.get("gstin")
         ai_review = review_invoice_extraction(extracted_data, vendor_gstin=gstin)
-        ledger_suggestions = suggest_ledger_accounts(extracted_data)
+        ledger_suggestions = suggest_ledger_accounts(extracted_data, org_id=org_id)
 
         vendor_id = vendor_info.get("vendor_id")
         vendor_row: dict | None = None
@@ -72,7 +171,7 @@ class AiInvoiceService:
         if signals.get("block"):
             raise ValueError(f"Duplicate invoice blocked: {signals.get('reason')}")
 
-        expense_account_id = resolve_expense_account(org_id, extracted_data)
+        expense_account_id = extracted_data.get("expense_account_id") or resolve_expense_account(org_id, extracted_data)
         gst_line_defs = build_gst_lines_from_extraction(org_id, extracted_data, company_id=company_id)
         invoice_lines: list[dict] = []
         if expense_account_id and subtotal > 0:
@@ -102,6 +201,7 @@ class AiInvoiceService:
             "early_payment_discount_rate": discount_rate,
             "early_payment_discount_days": discount_days,
             "cost_center_id": extracted_data.get("cost_center_id"),
+            "m25_extraction_id": extracted_data.get("m25_extraction_id"),
         }
 
         result = invoice_service.create_invoice(

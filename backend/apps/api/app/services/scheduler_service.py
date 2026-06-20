@@ -7,6 +7,13 @@ from app.services.repositories import memory_repo
 
 def run_scheduled_jobs_once(org_id: str) -> dict:
     decay_summary = apply_memory_decay(org_id=org_id)
+    m27_decay: dict = {}
+    try:
+        from app.modules.finance_os.memory.services.memory_cleanup_service import apply_cleanup
+
+        m27_decay = apply_cleanup(org_id)
+    except Exception as exc:
+        m27_decay = {"error": str(exc)}
     workflow_summary: dict = {}
     platform_summary: dict = {}
     try:
@@ -42,6 +49,7 @@ def run_scheduled_jobs_once(org_id: str) -> dict:
         "ran_at": now,
         "org_id": org_id,
         "decay_summary": decay_summary,
+        "m27_decay_summary": m27_decay,
         "platform_summary": platform_summary,
         "workflow_summary": workflow_summary,
         "memory_records_total": len(memory_repo.list_all_for_decay(org_id=org_id)),

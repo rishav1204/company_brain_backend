@@ -22,9 +22,36 @@ from app.services.repositories import agents_repo, audit_repo
 router = APIRouter(tags=["agents"])
 
 
-@router.post("/agents/run", response_model=AgentRunResponse)
-def run_agent(request: AgentRunRequest, context=Depends(build_request_context)) -> AgentRunResponse:
-    enforce_finance_route_access(context, object_type="agent", mode="write", required_scope="agent.run")
+def _run_agent_flow(context, request: AgentRunRequest) -> tuple[dict | object, float]:
+    from app.modules.finance_os.agents.pipelines.agent_orchestration_pipeline import (
+        agent_orchestration_pipeline,
+        is_finance_os_agent,
+    )
+
+    if is_finance_os_agent(request.agent_type):
+        result = agent_orchestration_pipeline.run(
+            context.org_id,
+            request.agent_type,
+            request.trigger_type,
+            request.payload,
+            trace_id=context.request_id,
+            principal_roles=context.roles,
+            principal_attrs=context.attrs,
+            user_id=context.user_id,
+        )
+        platform_run_id = result.get("platform_run_id")
+        if platform_run_id:
+            row = agents_repo.get_run(org_id=context.org_id, run_id=platform_run_id)
+            if row:
+                return row, result.get("confidence", 0.0)
+        return {
+            "status": result["status"],
+            "flow_result": result.get("flow_result"),
+            "execution_id": result.get("execution_id"),
+            "recommendations": result.get("recommendations"),
+            "run_id": platform_run_id,
+        }, result.get("confidence", 0.0)
+
     flow_result = run_langgraph_flow(
         org_id=context.org_id,
         agent_type=request.agent_type,
@@ -33,13 +60,24 @@ def run_agent(request: AgentRunRequest, context=Depends(build_request_context)) 
         principal_roles=context.roles,
         principal_attrs=context.attrs,
     )
-    row = agents_repo.create_run(
-        org_id=context.org_id,
-        agent_type=request.agent_type,
-        trigger_type=request.trigger_type,
-        status=flow_result["status"],
-        outputs={"message": "Run evaluated", "payload": request.payload, "flow_result": flow_result},
-    )
+    return flow_result, 0.85
+
+
+@router.post("/agents/run", response_model=AgentRunResponse)
+def run_agent(request: AgentRunRequest, context=Depends(build_request_context)) -> AgentRunResponse:
+    enforce_finance_route_access(context, object_type="agent", mode="write", required_scope="agent.run")
+    flow_result, confidence = _run_agent_flow(context, request)
+    if isinstance(flow_result, dict) and flow_result.get("run_id") and agents_repo.get_run(org_id=context.org_id, run_id=str(flow_result["run_id"])):
+        row = agents_repo.get_run(org_id=context.org_id, run_id=str(flow_result["run_id"]))
+    else:
+        status = flow_result["status"] if isinstance(flow_result, dict) else getattr(flow_result, "status", "completed")
+        row = agents_repo.create_run(
+            org_id=context.org_id,
+            agent_type=request.agent_type,
+            trigger_type=request.trigger_type,
+            status=status,
+            outputs={"message": "Run evaluated", "payload": request.payload, "flow_result": flow_result if isinstance(flow_result, dict) else dict(flow_result)},
+        )
     event_bus.publish(
         event_type="agent.run.started",
         org_id=context.org_id,
@@ -61,7 +99,7 @@ def run_agent(request: AgentRunRequest, context=Depends(build_request_context)) 
         request_id=context.request_id,
         run_id=row["run_id"],
         status=row["status"],
-        confidence=0.95,
+        confidence=confidence if confidence else 0.85,
         verification_status="policy_checked",
     )
 
@@ -72,6 +110,16 @@ def get_agent_run(run_id: str, context=Depends(build_request_context)) -> AgentR
     row = agents_repo.get_run(org_id=context.org_id, run_id=run_id)
     if not row:
         raise HTTPException(status_code=404, detail="Agent run not found")
+    outputs = row["outputs"] or {}
+    flow_conf = None
+    if isinstance(outputs, dict):
+        fr = outputs.get("flow_result")
+        if isinstance(fr, dict) and fr.get("confidence") is not None:
+            flow_conf = float(fr["confidence"])
+        elif isinstance(outputs.get("flow_result"), dict):
+            nested = outputs["flow_result"]
+            if isinstance(nested, dict) and nested.get("confidence") is not None:
+                flow_conf = float(nested["confidence"])
     return AgentRunStateResponse(
         request_id=context.request_id,
         run_id=row["run_id"],
@@ -81,7 +129,7 @@ def get_agent_run(run_id: str, context=Depends(build_request_context)) -> AgentR
         started_at=row["started_at"],
         ended_at=row["ended_at"],
         outputs=row["outputs"],
-        confidence=0.94,
+        confidence=flow_conf if flow_conf is not None else 0.85,
         verification_status="verified",
     )
 

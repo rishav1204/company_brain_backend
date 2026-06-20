@@ -1,4 +1,5 @@
 from app.schemas.common import Citation
+from app.services.graph_service import query_related_entities
 from app.services.llm_provider import llm_provider
 from app.services.repositories import retrieval_repo
 
@@ -82,10 +83,13 @@ def explain_query(org_id: str, query: str, subject_ref: str | None = None) -> tu
             "Primary bottleneck is delayed approval on a high-risk vendor invoice. "
             "Recommended action is manager escalation followed by CFO review if amount threshold is crossed."
         )
-    graph_trace = [
-        "Invoice -> BLOCKED_BY -> ApprovalStep",
-        "ApprovalStep -> ASSIGNED_TO -> FinanceManager",
-        "Decision -> IMPACTS -> AP Cycle Time KPI",
-    ]
+    try:
+        from app.modules.finance_os.graph.bridges.retrieval_bridge import graph_trace_for_subject
+
+        graph_trace = graph_trace_for_subject(org_id, subject_ref)
+    except Exception:
+        graph_trace = []
+    if not graph_trace:
+        graph_trace = query_related_entities(org_id=org_id, subject_ref=subject_ref)
     _, citations = retrieve_context(org_id=org_id, query=query, subject_ref=subject_ref, top_k=5)
     return answer, graph_trace, citations

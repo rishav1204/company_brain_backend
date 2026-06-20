@@ -391,6 +391,8 @@ All business logic. Services are imported by routes and by each other.
 | File | Description |
 |------|-------------|
 | [`services/memory_service.py`](apps/api/app/services/memory_service.py) | Memory decay/retention classification logic. |
+| [`modules/finance_os/memory/`](apps/api/app/modules/finance_os/memory/) | **M27 Enterprise Financial Memory:** canonical `finance_os.memory_*` tables, importance gating, embeddings, ranked retrieval, summarization/decay, event ingestion, `/finance-os/memory` APIs. Projects slim rows to `memory_records` for backward compatibility. |
+| [`modules/finance_os/graph/`](apps/api/app/modules/finance_os/graph/) | **M28 Operational Graph Engine:** Neo4j relationship intelligence — incremental ERP event ingestion, lineage/dependency/causality engines, `/finance-os/graph` APIs. Wraps platform `neo4j_service` / `graph_extraction_service`; audit in `finance_os.graph_sync_events` only. |
 | [`services/learning_governance_service.py`](apps/api/app/services/learning_governance_service.py) | Governance loop: feedback triage, labeling approval, shadow eval, promotion, canary advance, rollback. |
 | [`services/training_eval_service.py`](apps/api/app/services/training_eval_service.py) | Eval run metrics computation. |
 | [`services/benchmark_eval_service.py`](apps/api/app/services/benchmark_eval_service.py) | Benchmark-grounded eval against QA gold dataset. |

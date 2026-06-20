@@ -106,7 +106,8 @@ When migration `012` is applied, list/timeline read from `workflow.*` and map st
 | **Retries / DLQ** | Per-step `retry` policy in definition; exhausted retries recorded in `workflow.step_failures` |
 | **Queues** | `workflow.approvals` consumer processes `workflow.advance.requested` after approve |
 | **Realtime** | Redis pub/sub when `REDIS_URL` set; in-memory fallback per API process |
-| **Metrics** | Workflow latency + approval bottleneck on `/metrics` and `/workflows/metrics/summary` |
+| **Metrics** | Workflow latency + approval bottleneck on `/metrics` and `/workflows/metrics/summary` (+ M26 `workflow_intelligence_health`) |
+| **M26 handoff** | Stage events `workflow.stage.entered/completed`; on completion M26 ingests snapshots — see [`M26_workflow_intelligence.md`](M26_workflow_intelligence.md) |
 | **Scheduled workflows** | `workflow.scheduled_workflows` — cron-driven `BANK_RECONCILIATION` via scheduler |
 | **DB constraints** | Migration `014`: immutable approvals trigger, DLQ table, latency samples |
 

@@ -61,7 +61,21 @@ def retrieve_hybrid_context(
     ann_shortlist = vector_context[: max(top_k * 2, 5)]
     graph_context = query_related_entities(org_id=org_id, subject_ref=subject_ref)
     memory_rows = memory_repo.list_high_relevance(org_id=org_id, min_relevance=0.7)
+    if subject_ref:
+        memory_rows = [r for r in memory_rows if r.get("subject_ref") == subject_ref]
     memory_context = [f"Memory:{row['subject_ref']} -> {row['payload_jsonb']}" for row in memory_rows]
+    try:
+        from app.modules.finance_os.memory.engine.retrieval_engine import search as m27_search
+
+        m27_hits = m27_search(org_id, query, entity_type=None, entity_id=None, top_k=top_k, include_legacy=False)
+        if subject_ref and ":" in subject_ref:
+            et, eid = subject_ref.split(":", 1)
+            m27_hits = m27_search(org_id, query, entity_type=et, entity_id=eid, top_k=top_k, include_legacy=False)
+        memory_context.extend(
+            [f"M27:{h.get('memory_type')}:{h.get('title')} -> {h.get('content')}" for h in m27_hits]
+        )
+    except Exception:
+        pass
     lexical_context = [f"Doc:{doc['id']} -> {doc.get('citation', '')}" for doc in metadata_filtered_docs]
 
     source_trust = {"erp": 0.2, "bank": 0.3, "crm": 0.1, "docs": 0.15, "ticketing": 0.1}

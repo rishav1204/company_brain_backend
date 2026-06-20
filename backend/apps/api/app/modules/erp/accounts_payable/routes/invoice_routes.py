@@ -173,13 +173,21 @@ def cancel_invoice(invoice_id: str, context=Depends(require_ap_admin)) -> dict:
 @router.post("/invoices/ai/from-document")
 def create_ai_invoice(request: AiInvoiceFromDocumentRequest, context=Depends(require_ap_admin)) -> dict:
     try:
-        item = ai_invoice_service.create_from_extraction(
-            context.org_id,
-            extracted_data=request.extracted_data,
-            source_document_id=request.document_id,
-            created_by=context.user_id,
-            company_id=request.company_id,
-        )
+        if request.document_id and not request.extracted_data:
+            item = ai_invoice_service.create_from_document(
+                context.org_id,
+                document_id=request.document_id,
+                created_by=context.user_id,
+                company_id=request.company_id,
+            )
+        else:
+            item = ai_invoice_service.create_from_extraction(
+                context.org_id,
+                extracted_data=request.extracted_data or {},
+                source_document_id=request.document_id,
+                created_by=context.user_id,
+                company_id=request.company_id,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"request_id": context.request_id, "item": item}

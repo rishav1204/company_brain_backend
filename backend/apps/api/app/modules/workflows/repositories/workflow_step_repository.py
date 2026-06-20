@@ -35,7 +35,19 @@ class WorkflowStepRepository:
                     """,
                     (step_id, org_id, workflow_instance_id, step_key, step_type, assigned_to, due_at, Json(metadata or {})),
                 )
-                return cur.fetchone()
+                row = cur.fetchone()
+        try:
+            from app.modules.workflows.events.workflow_events import emit_workflow_stage_entered
+
+            emit_workflow_stage_entered(
+                org_id,
+                workflow_instance_id=workflow_instance_id,
+                step_id=step_id,
+                step_key=step_key,
+            )
+        except Exception:
+            pass
+        return row
 
     def update_step_status(
         self,
@@ -58,9 +70,30 @@ class WorkflowStepRepository:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE workflow.workflow_steps SET {', '.join(sets)} WHERE id = %s::uuid AND org_id = %s::uuid",
+                    f"""
+                    UPDATE workflow.workflow_steps
+                    SET {', '.join(sets)}
+                    WHERE id = %s::uuid AND org_id = %s::uuid
+                    RETURNING id::text AS id, workflow_instance_id::text AS workflow_instance_id,
+                              step_key, assigned_to::text AS assigned_to,
+                              EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at))::int AS duration_s
+                    """,
                     tuple(params),
                 )
+                row = cur.fetchone()
+        if completed and row:
+            try:
+                from app.modules.workflows.events.workflow_events import emit_workflow_stage_completed
+
+                emit_workflow_stage_completed(
+                    org_id,
+                    workflow_instance_id=str(row.get("workflow_instance_id") or ""),
+                    step_id=step_id,
+                    step_key=str(row.get("step_key") or ""),
+                    duration_ms=int(row.get("duration_s") or 0) * 1000,
+                )
+            except Exception:
+                pass
 
     def list_steps(self, org_id: str, workflow_instance_id: str) -> list[dict[str, Any]]:
         with get_db_conn() as conn:

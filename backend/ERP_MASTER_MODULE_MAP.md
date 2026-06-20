@@ -1152,11 +1152,11 @@ When you request implementation of a module, we will add a section (or file `ERP
 | M22 | Banking | 5 | 2 | **Done** (see M22_banking.md) |
 | M23 | Reconciliation | 5 | 2–3 | **Done** (see M23_reconciliation.md) |
 | M24 | Treasury | 5 | 3 | **Done** (see M24_treasury.md) |
-| M25 | AI Invoice Intelligence | 6 | 4 | Reuse OS |
-| M26 | Workflow Intelligence | 6 | 4 | Reuse OS |
-| M27 | Memory System | 6 | 4 | Reuse OS |
-| M28 | Graph Engine | 6 | 4 | Reuse OS |
-| M29 | AI Agents | 6 | 4 | Reuse OS |
+| M25 | AI Invoice Intelligence | 6 | 4 | **Done** (see M25_invoice_ai.md) |
+| M26 | Workflow Intelligence | 6 | 4 | **Done** (see M26_workflow_intelligence.md) |
+| M27 | Memory System | 6 | 4 | **Done** (see M27_memory.md) |
+| M28 | Graph Engine | 6 | 4 | **Done** (see M28_graph.md) |
+| M29 | AI Agents | 6 | 4 | **Done** (see M29_agents.md) |
 | M30 | Forecasting | 6 | 5 | Build/extend |
 | M31 | Reporting | 7 | 2+ | **Build** |
 | M32 | Analytics & BI | 7 | 4–5 | Build |
@@ -1171,6 +1171,9 @@ When you request implementation of a module, we will add a section (or file `ERP
 
 | Date | Change |
 |------|--------|
+| 2026-06-18 | M29 AI Agent Orchestration — finance_os agents, domain planners, confidence, workflow launcher |
+| 2026-06-18 | M26 Workflow Intelligence — finance_os snapshots, bottleneck/SLA/optimization, M2 stage events |
+| 2026-06-18 | M25 AI Invoice Intelligence — finance_os schema, pipeline, APIs, AP bridge |
 | 2026-05-23 | Initial master module map — planning only, no implementation |
 
 ---

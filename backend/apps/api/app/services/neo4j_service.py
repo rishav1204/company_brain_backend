@@ -65,6 +65,37 @@ class Neo4jService:
         "Incident",
         "Policy",
         "KPI",
+        "Journal",
+        "GSTReturn",
+        "Reconciliation",
+        "BankTransaction",
+        "Compliance",
+        "Asset",
+    }
+
+    ALLOWED_REL_TYPES = {
+        "OWNS",
+        "PART_OF",
+        "APPROVES",
+        "BLOCKED_BY",
+        "CAUSED_BY",
+        "IMPACTS",
+        "REFERENCES",
+        "VIOLATES",
+        "RELATED_TO",
+        "RELATES_TO",
+        "PRECEDES",
+        "ISSUED",
+        "PAID_BY",
+        "REQUIRES_APPROVAL",
+        "ASSIGNED_TO",
+        "GOVERNS",
+        "GENERATED",
+        "SETTLED_BY",
+        "REPORTED_IN",
+        "MATCHED_IN",
+        "FILED_AS",
+        "CAPITALIZED_AS",
     }
 
     def __init__(self) -> None:
@@ -143,25 +174,7 @@ class Neo4jService:
     ) -> dict:
         if from_label not in self.ALLOWED_LABELS or to_label not in self.ALLOWED_LABELS:
             return {"status": "error", "detail": "Label not allowed"}
-        allowed_rel_types = {
-            "OWNS",
-            "PART_OF",
-            "APPROVES",
-            "BLOCKED_BY",
-            "CAUSED_BY",
-            "IMPACTS",
-            "REFERENCES",
-            "VIOLATES",
-            "RELATED_TO",
-            "RELATES_TO",
-            "PRECEDES",
-            "ISSUED",
-            "PAID_BY",
-            "REQUIRES_APPROVAL",
-            "ASSIGNED_TO",
-            "GOVERNS",
-        }
-        if rel_type not in allowed_rel_types:
+        if rel_type not in self.ALLOWED_REL_TYPES:
             return {"status": "error", "detail": f"Relationship type not allowed: {rel_type}"}
         query = f"""
         MERGE (a:{from_label} {{id: $from_id, org_id: $org_id}})
@@ -217,6 +230,124 @@ class Neo4jService:
         try:
             with self.driver.session() as session:
                 rows = session.run(query, org_id=org_id, limit=max(1, min(limit, 100)))
+                return [dict(row) for row in rows]
+        except (Neo4jError, ServiceUnavailable, OSError):
+            return []
+
+    def traverse_lineage(
+        self,
+        org_id: str,
+        entity_id: str,
+        *,
+        direction: str = "both",
+        max_depth: int = 6,
+    ) -> list[dict]:
+        depth = max(1, min(max_depth, 10))
+        if direction == "out":
+            pattern = f"(start)-[r*1..{depth}]->(m)"
+        elif direction == "in":
+            pattern = f"(start)<-[r*1..{depth}]-(m)"
+        else:
+            pattern = f"(start)-[r*1..{depth}]-(m)"
+        query = f"""
+        MATCH (start {{id: $id, org_id: $org_id}})
+        MATCH {pattern}
+        WHERE m.org_id = $org_id
+        RETURN labels(start)[0] AS start_label, start.id AS start_id,
+               [rel IN r | type(rel)] AS rel_types,
+               labels(m)[0] AS end_label, m.id AS end_id
+        LIMIT 100
+        """
+        try:
+            with self.driver.session() as session:
+                rows = session.run(query, id=entity_id, org_id=org_id)
+                return [dict(row) for row in rows]
+        except (Neo4jError, ServiceUnavailable, OSError):
+            return []
+
+    def traverse_dependencies(
+        self,
+        org_id: str,
+        entity_id: str,
+        *,
+        max_depth: int = 4,
+    ) -> list[dict]:
+        depth = max(1, min(max_depth, 8))
+        query = f"""
+        MATCH (target {{id: $id, org_id: $org_id}})<-[r*1..{depth}]-(dep)
+        WHERE dep.org_id = $org_id
+        RETURN labels(dep)[0] AS dependent_label, dep.id AS dependent_id,
+               [rel IN r | type(rel)] AS rel_types
+        LIMIT 100
+        """
+        try:
+            with self.driver.session() as session:
+                rows = session.run(query, id=entity_id, org_id=org_id)
+                return [dict(row) for row in rows]
+        except (Neo4jError, ServiceUnavailable, OSError):
+            return []
+
+    def search_nodes(
+        self,
+        org_id: str,
+        *,
+        label: str | None = None,
+        query_text: str = "",
+        limit: int = 20,
+    ) -> list[dict]:
+        lim = max(1, min(limit, 100))
+        label_filter = f":{label}" if label and label in self.ALLOWED_LABELS else ""
+        query = f"""
+        MATCH (n{label_filter})
+        WHERE n.org_id = $org_id
+          AND ($q = '' OR toString(n.id) CONTAINS $q OR toString(coalesce(n.name, '')) CONTAINS $q)
+        RETURN labels(n)[0] AS label, n.id AS id
+        LIMIT $limit
+        """
+        try:
+            with self.driver.session() as session:
+                rows = session.run(query, org_id=org_id, q=query_text, limit=lim)
+                return [dict(row) for row in rows]
+        except (Neo4jError, ServiceUnavailable, OSError):
+            return []
+
+    def find_causal_paths(
+        self,
+        org_id: str,
+        start_id: str,
+        *,
+        end_label: str = "Compliance",
+        max_depth: int = 8,
+    ) -> list[dict]:
+        if end_label not in self.ALLOWED_LABELS:
+            return []
+        depth = max(1, min(max_depth, 12))
+        query = f"""
+        MATCH (start {{id: $start_id, org_id: $org_id}}), (end:{end_label} {{org_id: $org_id}})
+        MATCH p = shortestPath((start)-[*1..{depth}]-(end))
+        WHERE all(n IN nodes(p) WHERE n.org_id = $org_id)
+        RETURN [n IN nodes(p) | {{label: labels(n)[0], id: n.id}}] AS path_nodes,
+               [rel IN relationships(p) | type(rel)] AS rel_types
+        LIMIT 10
+        """
+        try:
+            with self.driver.session() as session:
+                rows = session.run(query, start_id=start_id, org_id=org_id)
+                return [dict(row) for row in rows]
+        except (Neo4jError, ServiceUnavailable, OSError):
+            return []
+
+    def get_entity_neighbors(self, org_id: str, entity_id: str, *, limit: int = 25) -> list[dict]:
+        query = """
+        MATCH (n {id: $id, org_id: $org_id})-[r]-(m)
+        WHERE m.org_id = $org_id
+        RETURN labels(n)[0] AS from_label, n.id AS from_id,
+               type(r) AS rel_type, labels(m)[0] AS to_label, m.id AS to_id
+        LIMIT $limit
+        """
+        try:
+            with self.driver.session() as session:
+                rows = session.run(query, id=entity_id, org_id=org_id, limit=max(1, min(limit, 100)))
                 return [dict(row) for row in rows]
         except (Neo4jError, ServiceUnavailable, OSError):
             return []

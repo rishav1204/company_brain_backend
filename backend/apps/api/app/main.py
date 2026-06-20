@@ -24,6 +24,11 @@ from app.modules.erp.procurement.routes.router import erp_procurement_router
 from app.modules.erp.expenses.routes.router import erp_expenses_router
 from app.modules.erp.assets.routes.router import erp_assets_router
 from app.modules.erp.inventory.routes.router import erp_inventory_router
+from app.modules.finance_os.invoice_ai.routes.router import router as finance_os_invoice_ai_router
+from app.modules.finance_os.workflow_intelligence.routes.router import router as finance_os_workflow_intelligence_router
+from app.modules.finance_os.memory.routes.router import router as finance_os_memory_router
+from app.modules.finance_os.graph.routes.router import router as finance_os_graph_router
+from app.modules.finance_os.agents.routes.router import router as finance_os_agents_router
 from app.modules.platform.governance.middleware.audit_middleware import AuditCaptureMiddleware
 from app.modules.platform.governance.middleware.governance_middleware import GovernanceEnforcementMiddleware
 from app.modules.platform.governance.middleware.trace_middleware import GovernanceTraceMiddleware
@@ -126,6 +131,11 @@ app.include_router(erp_procurement_router, prefix=settings.api_prefix)
 app.include_router(erp_expenses_router, prefix=settings.api_prefix)
 app.include_router(erp_assets_router, prefix=settings.api_prefix)
 app.include_router(erp_inventory_router, prefix=settings.api_prefix)
+app.include_router(finance_os_invoice_ai_router, prefix=settings.api_prefix)
+app.include_router(finance_os_workflow_intelligence_router, prefix=settings.api_prefix)
+app.include_router(finance_os_memory_router, prefix=settings.api_prefix)
+app.include_router(finance_os_graph_router, prefix=settings.api_prefix)
+app.include_router(finance_os_agents_router, prefix=settings.api_prefix)
 app.include_router(companies.router, prefix=settings.api_prefix)
 app.include_router(observability.router, prefix=settings.api_prefix)
 app.include_router(ingestion.router, prefix=settings.api_prefix)

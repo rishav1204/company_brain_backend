@@ -107,11 +107,11 @@ def extract_relationships_for_org(org_id: str) -> dict:
             upsert_graph_event(org_id=org_id, node_type="Incident", node_id=incident_id)
             upsert_graph_event(
                 org_id=org_id,
-                node_type="Incident",
-                node_id=incident_id,
+                node_type="Workflow",
+                node_id=workflow["workflow_id"],
                 relation="BLOCKED_BY",
-                target_id=workflow["workflow_id"],
-                to_label="Workflow",
+                target_id=incident_id,
+                to_label="Incident",
             )
         extracted += 1
 
@@ -148,6 +148,74 @@ def extract_relationships_for_org(org_id: str) -> dict:
 
     for journal in graph_data_repo.list_journal_entries(org_id=org_id):
         upsert_graph_event(org_id=org_id, node_type="KPI", node_id=f"gl-{journal['account_code']}")
+        extracted += 1
+
+    for invoice in graph_data_repo.list_erp_ap_invoices_with_vendor(org_id=org_id):
+        invoice_id = invoice["invoice_id"]
+        upsert_graph_event(org_id=org_id, node_type="Invoice", node_id=invoice_id)
+        vendor_id = invoice.get("vendor_id")
+        if vendor_id:
+            upsert_graph_event(
+                org_id=org_id,
+                node_type="Vendor",
+                node_id=vendor_id,
+                relation="ISSUED",
+                target_id=invoice_id,
+                to_label="Invoice",
+            )
+        extracted += 1
+
+    for payment in graph_data_repo.list_erp_ap_payments_with_allocations(org_id=org_id):
+        payment_id = payment["payment_id"]
+        invoice_id = payment.get("invoice_id")
+        upsert_graph_event(org_id=org_id, node_type="Payment", node_id=payment_id)
+        if invoice_id:
+            upsert_graph_event(
+                org_id=org_id,
+                node_type="Invoice",
+                node_id=invoice_id,
+                relation="PAID_BY",
+                target_id=payment_id,
+                to_label="Payment",
+            )
+        extracted += 1
+
+    for journal in graph_data_repo.list_erp_journals_with_source(org_id=org_id):
+        journal_id = journal["journal_id"]
+        upsert_graph_event(org_id=org_id, node_type="Journal", node_id=journal_id)
+        source_id = journal.get("source_id")
+        if source_id and journal.get("source_type") == "invoice":
+            upsert_graph_event(
+                org_id=org_id,
+                node_type="Invoice",
+                node_id=source_id,
+                relation="GENERATED",
+                target_id=journal_id,
+                to_label="Journal",
+            )
+        extracted += 1
+
+    for bt in graph_data_repo.list_erp_bank_transactions(org_id=org_id):
+        upsert_graph_event(org_id=org_id, node_type="BankTransaction", node_id=bt["bank_transaction_id"])
+        extracted += 1
+
+    for gst in graph_data_repo.list_erp_gst_returns(org_id=org_id):
+        upsert_graph_event(org_id=org_id, node_type="GSTReturn", node_id=gst["gst_return_id"])
+        extracted += 1
+
+    for asset in graph_data_repo.list_erp_assets_with_source(org_id=org_id):
+        asset_id = asset["asset_id"]
+        invoice_id = asset.get("source_invoice_id")
+        upsert_graph_event(org_id=org_id, node_type="Asset", node_id=asset_id)
+        if invoice_id:
+            upsert_graph_event(
+                org_id=org_id,
+                node_type="Invoice",
+                node_id=invoice_id,
+                relation="CAPITALIZED_AS",
+                target_id=asset_id,
+                to_label="Asset",
+            )
         extracted += 1
 
     return {"status": "ok", "relationships_extracted": extracted}

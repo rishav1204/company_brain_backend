@@ -1323,6 +1323,99 @@ class GraphDataRepository:
                 )
                 return [dict(row) for row in cur.fetchall()]
 
+    def _safe_query(self, org_id: str, sql: str) -> list[dict]:
+        try:
+            with get_db_conn() as conn:
+                set_rls_org(conn, org_id)
+                with conn.cursor() as cur:
+                    cur.execute(sql, (org_id,))
+                    return [dict(row) for row in cur.fetchall()]
+        except Exception:
+            return []
+
+    def list_erp_ap_invoices_with_vendor(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS invoice_id, COALESCE(vendor_id::text, '') AS vendor_id, status
+            FROM erp.ap_invoices WHERE org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_ap_payments_with_allocations(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT p.id::text AS payment_id, a.invoice_id::text AS invoice_id, p.status
+            FROM erp.ap_payments p
+            JOIN erp.ap_payment_allocations a ON a.payment_id = p.id AND a.org_id = p.org_id
+            WHERE p.org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_ar_invoices_with_customer(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS invoice_id, COALESCE(customer_id::text, '') AS customer_id, status
+            FROM erp.ar_invoices WHERE org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_journals_with_source(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS journal_id, source_type, source_id::text AS source_id, status
+            FROM erp.journals WHERE org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_bank_transactions(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS bank_transaction_id, reference, amount, reconciliation_status
+            FROM erp.bank_transactions WHERE org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_bank_reconciliations(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS reconciliation_id, bank_account_id::text AS bank_account_id, status
+            FROM erp.bank_reconciliations WHERE org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_gst_returns(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS gst_return_id, return_period, status
+            FROM erp.gst_returns WHERE org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_gst_transactions(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS gst_tx_id, source_type, source_id::text AS source_id
+            FROM erp.gst_transactions WHERE org_id = %s::uuid
+            """,
+        )
+
+    def list_erp_assets_with_source(self, org_id: str) -> list[dict]:
+        return self._safe_query(
+            org_id,
+            """
+            SELECT id::text AS asset_id, source_invoice_id::text AS source_invoice_id, status
+            FROM erp.assets WHERE org_id = %s::uuid AND source_invoice_id IS NOT NULL
+            """,
+        )
+
 
 class TrainingEvalRepository:
     def create_qa_gold_example(

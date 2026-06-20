@@ -119,6 +119,64 @@ def emit_approval_completed(org_id: str, approval_id: str, decision: str, *, tra
         trace_id=trace_id,
         payload={"approval_id": approval_id, "decision": decision},
     )
+    if str(decision).lower() == "approved":
+        emit_workflow_approved(org_id, approval_id, trace_id=trace_id)
+
+
+def emit_workflow_approved(org_id: str, approval_id: str, *, trace_id: str | None = None) -> None:
+    _publish(
+        event_type="workflow.approved",
+        org_id=org_id,
+        source="workflow.engine",
+        trace_id=trace_id,
+        payload={"approval_id": approval_id},
+    )
+
+
+def emit_workflow_stage_entered(
+    org_id: str,
+    *,
+    workflow_instance_id: str,
+    step_id: str,
+    step_key: str,
+    trace_id: str | None = None,
+) -> None:
+    _publish(
+        event_type="workflow.stage.entered",
+        org_id=org_id,
+        source="workflow.engine",
+        trace_id=trace_id,
+        payload={
+            "workflow_instance_id": workflow_instance_id,
+            "step_id": step_id,
+            "step_key": step_key,
+        },
+    )
+
+
+def emit_workflow_stage_completed(
+    org_id: str,
+    *,
+    workflow_instance_id: str,
+    step_id: str,
+    step_key: str,
+    duration_ms: int | None = None,
+    trace_id: str | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "workflow_instance_id": workflow_instance_id,
+        "step_id": step_id,
+        "step_key": step_key,
+    }
+    if duration_ms is not None:
+        payload["duration_ms"] = duration_ms
+    _publish(
+        event_type="workflow.stage.completed",
+        org_id=org_id,
+        source="workflow.engine",
+        trace_id=trace_id,
+        payload=payload,
+    )
 
 
 def emit_approval_rejected(org_id: str, approval_id: str, *, trace_id: str | None = None) -> None:

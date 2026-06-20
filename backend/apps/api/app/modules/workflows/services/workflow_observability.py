@@ -63,7 +63,14 @@ def record_workflow_latency(org_id: str, instance_id: str, duration_ms: int) -> 
         pass
 
 
-def record_approval_wait(org_id: str, approval_id: str, duration_ms: int) -> None:
+def record_approval_wait(
+    org_id: str,
+    approval_id: str,
+    duration_ms: int,
+    *,
+    step_key: str | None = None,
+    assignee_id: str | None = None,
+) -> None:
     metrics_store.record_approval_wait(duration_ms)
     key = f"{org_id}:{approval_id}"
     with _bottleneck_lock:
@@ -78,6 +85,8 @@ def record_approval_wait(org_id: str, approval_id: str, duration_ms: int) -> Non
             org_id=org_id,
             metric_type="approval_wait",
             duration_ms=duration_ms,
+            step_key=step_key,
+            assignee_id=assignee_id,
         )
     except Exception:
         pass

@@ -99,7 +99,73 @@ def _consume_extract_event(envelope: dict) -> None:
 
 def _consume_graph_event(envelope: dict) -> None:
     org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload") or {}
+    if payload.get("entity_id") or payload.get("entity_type"):
+        try:
+            from app.modules.finance_os.graph.pipelines.graph_ingestion_pipeline import graph_ingestion_pipeline
+
+            graph_ingestion_pipeline.run_from_event(envelope)
+            return
+        except Exception:
+            pass
     extract_relationships_for_org(org_id=org_id)
+
+
+def _consume_graph_ingestion(envelope: dict) -> None:
+    """M28: incremental ERP event graph mutations."""
+    event_type = str(envelope.get("event_type", ""))
+    domain_events = {
+        "erp.invoice.created",
+        "invoice.created",
+        "invoice.received",
+        "erp.invoice.approved",
+        "approval.requested",
+        "approval.completed",
+        "approval.rejected",
+        "workflow.completed",
+        "workflow.stage.completed",
+        "workflow.failed",
+        "sla.breached",
+        "journal.posted",
+        "erp.journal.posted",
+        "payment.executed",
+        "erp.payment.completed",
+        "bank.transaction.imported",
+        "bank.statement.imported",
+        "reconciliation.completed",
+        "reconciliation.adjustment.posted",
+        "erp.gst.return.generated",
+        "gst.transaction.recorded",
+        "compliance.completed",
+        "irn.generated",
+        "invoice.anomaly_detected",
+        "liquidity_alert.created",
+        "workflow.bottleneck.detected",
+    }
+    if event_type not in domain_events:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from app.modules.finance_os.graph.pipelines.graph_ingestion_pipeline import graph_ingestion_pipeline
+
+        graph_ingestion_pipeline.run_from_event(envelope)
+    except Exception:
+        pass
+    if event_type == "workflow.bottleneck.detected":
+        try:
+            from app.modules.finance_os.graph.bridges.m26_bridge import annotate_workflow_bottleneck
+
+            payload = envelope.get("payload") or {}
+            wf_id = str(payload.get("workflow_instance_id") or payload.get("workflow_id") or "")
+            bottleneck = str(payload.get("top_bottleneck") or payload.get("bottleneck_stage") or "")
+            if wf_id and bottleneck:
+                annotate_workflow_bottleneck(org_id, workflow_id=wf_id, bottleneck_stage=bottleneck)
+        except Exception:
+            pass
 
 
 def _consume_agent_run_event(envelope: dict) -> None:
@@ -155,6 +221,15 @@ def _consume_agent_run_event(envelope: dict) -> None:
 def _consume_memory_event(envelope: dict) -> None:
     payload = envelope.get("payload", {})
     org_id = str(envelope.get("org_id", ""))
+    if payload.get("memory_record_id") and not payload.get("content") and not payload.get("subject_ref"):
+        return
+    try:
+        from app.modules.finance_os.memory.pipelines.memory_ingestion_pipeline import memory_ingestion_pipeline
+
+        memory_ingestion_pipeline.run_from_event(envelope)
+        return
+    except Exception:
+        pass
     subject_ref = str(payload.get("subject_ref", "")).strip()
     if not subject_ref:
         return
@@ -632,24 +707,31 @@ def _push_document_realtime(envelope: dict) -> None:
         pass
 
 
-def _consume_invoice_ai_reviewed(envelope: dict) -> None:
-    """
-    Wire OCR/AI completion -> AP invoice (single source of truth).
-    Source event is emitted by OCR worker as `invoice.ai.reviewed`.
-    """
+def _consume_m25_invoice_pipeline(envelope: dict) -> None:
+    """Single M25 entry: OCR/extraction events trigger invoice intelligence pipeline."""
     event_type = str(envelope.get("event_type", ""))
-    if event_type != "invoice.ai.reviewed":
+    if event_type not in {"ocr.completed", "document.extracted", "invoice.ai.reviewed"}:
         return
     org_id = str(envelope.get("org_id", ""))
     if not org_id:
         return
     payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
     review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
-    if str(review.get("status", "")).lower() != "ocr_completed":
-        return
-    document_id = str(payload.get("invoice_id") or review.get("document_id") or "").strip()
+
+    if event_type == "invoice.ai.reviewed":
+        if str(review.get("status", "")).lower() != "ocr_completed":
+            return
+
+    document_id = str(
+        payload.get("document_id")
+        or payload.get("invoice_id")
+        or review.get("document_id")
+        or envelope.get("entity_id")
+        or ""
+    ).strip()
     if not document_id:
         return
+
     try:
         from app.modules.platform.documents.repositories.document_repository import document_repository
 
@@ -659,51 +741,180 @@ def _consume_invoice_ai_reviewed(envelope: dict) -> None:
             return
     except Exception:
         pass
-    try:
-        from app.modules.platform.documents.repositories.extraction_repository import extraction_repository
 
-        extraction = extraction_repository.latest_extraction(org_id, document_id) or {}
-    except Exception:
-        extraction = {}
-    extracted = extraction.get("extracted_data") if isinstance(extraction.get("extracted_data"), dict) else {}
-    if not extracted:
+    try:
+        from app.modules.finance_os.invoice_ai.pipelines.invoice_pipeline import invoice_pipeline
+
+        invoice_pipeline.run(org_id, document_id=document_id)
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "M25 invoice pipeline failed org=%s doc=%s: %s", org_id, document_id, exc
+        )
+
+
+def _consume_invoice_predicted(envelope: dict) -> None:
+    """AP auto-draft when M25 confidence band allows and no hard blocks."""
+    event_type = str(envelope.get("event_type", ""))
+    if event_type != "invoice.predicted":
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+    if not payload.get("auto_draft_eligible"):
+        return
+    extraction_id = str(payload.get("extraction_id") or "").strip()
+    document_id = str(payload.get("document_id") or "").strip()
+    if not extraction_id:
         return
 
-    ap_invoice_id: str | None = None
     try:
         from app.modules.erp.accounts_payable.services.ai_invoice_service import ai_invoice_service
 
-        result = ai_invoice_service.create_from_extraction(
+        ai_invoice_service.create_from_m25(
             org_id,
-            extracted_data=extracted,
-            source_document_id=document_id,
+            extraction_id=extraction_id,
+            source_document_id=document_id or None,
             created_by="ai.invoice",
+            pipeline_result=payload,
         )
-        ap_invoice_id = str((result.get("invoice") or {}).get("id") or "")
+    except ValueError:
+        return
     except Exception as exc:
         import logging
 
         logging.getLogger(__name__).warning(
-            "AP invoice from invoice.ai.reviewed failed org=%s doc=%s: %s", org_id, document_id, exc
-        )
-        return
-
-    if not ap_invoice_id:
-        return
-
-    try:
-        from app.modules.erp.accounts_payable.services.invoice_service import invoice_service
-
-        invoice_service.submit_for_approval(org_id, invoice_id=ap_invoice_id, actor_id="ai.invoice")
-    except Exception as exc:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "AP invoice submit from invoice.ai.reviewed failed org=%s invoice=%s: %s",
+            "AP draft from invoice.predicted failed org=%s extraction=%s: %s",
             org_id,
-            ap_invoice_id,
+            extraction_id,
             exc,
+        pass
+
+
+def _consume_agents_trigger(envelope: dict) -> None:
+    """M29: auto-trigger Finance OS domain agents from ERP/AI events."""
+    from app.modules.finance_os.agents.orchestrator.task_router import EVENT_AGENT_MAP
+
+    event_type = str(envelope.get("event_type", ""))
+    if event_type not in EVENT_AGENT_MAP:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from app.modules.finance_os.agents.pipelines.agent_orchestration_pipeline import agent_orchestration_pipeline
+        from app.modules.finance_os.agents.repositories.execution_repository import execution_repository
+
+        if not execution_repository.schema_ready():
+            return
+        payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+        payload = {**payload, "source_event_type": event_type, "event_type": event_type}
+        entity_id = str(payload.get("entity_id") or payload.get("invoice_id") or payload.get("object_id") or "")
+        if entity_id:
+            payload.setdefault("entity_id", entity_id)
+        agent_orchestration_pipeline.run(
+            org_id,
+            EVENT_AGENT_MAP[event_type],
+            "event",
+            payload,
+            trace_id=str(envelope.get("trace_id") or ""),
+            source_event_type=event_type,
         )
+    except Exception:
+        pass
+
+
+def _consume_memory_ingestion(envelope: dict) -> None:
+    """M27: ingest meaningful domain events into finance_os memory."""
+    event_type = str(envelope.get("event_type", ""))
+    domain_events = {
+        "payment.executed",
+        "erp.payment.completed",
+        "approval.completed",
+        "approval.rejected",
+        "workflow.approved",
+        "workflow.intelligence.completed",
+        "invoice.predicted",
+        "invoice.duplicate_detected",
+        "invoice.anomaly_detected",
+        "erp.invoice.approved",
+        "journal.posted",
+        "erp.journal.posted",
+        "liquidity_alert.created",
+        "cash.forecast.updated",
+        "treasury.risk.detected",
+        "compliance.alert.generated",
+        "compliance.alert",
+        "gst.mismatch.detected",
+        "reconciliation.completed",
+        "reconciliation.adjustment.posted",
+        "decision.recorded",
+    }
+    if event_type not in domain_events:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from app.modules.finance_os.memory.pipelines.memory_ingestion_pipeline import memory_ingestion_pipeline
+
+        memory_ingestion_pipeline.run_from_event(envelope)
+    except Exception:
+        pass
+
+
+def _consume_workflow_intelligence(envelope: dict) -> None:
+    """M26: workflow intelligence pipeline on lifecycle events."""
+    event_type = str(envelope.get("event_type", ""))
+    trigger_events = {
+        "workflow.completed",
+        "workflow.failed",
+        "workflow.stage.completed",
+        "approval.completed",
+        "sla.breached",
+    }
+    if event_type not in trigger_events:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+    instance_id = str(payload.get("workflow_instance_id") or "").strip()
+    if not instance_id and event_type in {"approval.completed", "approval.rejected"}:
+        approval_id = str(payload.get("approval_id") or "").strip()
+        if approval_id:
+            try:
+                from app.modules.workflows.repositories import approval_repo
+
+                appr = approval_repo.get_approval(org_id, approval_id) or {}
+                instance_id = str(appr.get("workflow_instance_id") or "")
+            except Exception:
+                instance_id = ""
+    if not instance_id:
+        return
+    try:
+        from app.modules.finance_os.workflow_intelligence.pipelines.workflow_intelligence_pipeline import (
+            workflow_intelligence_pipeline,
+        )
+
+        workflow_intelligence_pipeline.run(
+            org_id,
+            workflow_instance_id=instance_id,
+            trace_id=str(envelope.get("trace_id") or ""),
+        )
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "M26 workflow intelligence failed org=%s instance=%s: %s", org_id, instance_id, exc
+        )
+
+
+def _consume_invoice_ai_reviewed(envelope: dict) -> None:
+    """Deprecated alias — pipeline handled by _consume_m25_invoice_pipeline."""
+    return
 
 
 def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
@@ -1857,35 +2068,6 @@ def _consume_journal_events(envelope: dict) -> None:
         return
     payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
 
-    if event_type in {"invoice.extracted", "ocr.completed", "document.extracted", "invoice.received"}:
-        document_id = str(payload.get("document_id") or envelope.get("entity_id") or "").strip()
-        extracted = payload.get("extracted_data") if isinstance(payload.get("extracted_data"), dict) else {}
-        if not document_id or not extracted:
-            try:
-                from app.modules.platform.documents.repositories.extraction_repository import extraction_repository
-
-                ext = extraction_repository.latest_extraction(org_id, document_id) or {}
-                extracted = ext.get("extracted_data") if isinstance(ext.get("extracted_data"), dict) else {}
-            except Exception as exc:
-                import logging
-
-                logging.getLogger(__name__).warning("invoice extraction lookup failed org=%s: %s", org_id, exc)
-                extracted = {}
-        if document_id and extracted:
-            try:
-                from app.modules.erp.accounts_payable.services.ai_invoice_service import ai_invoice_service
-
-                ai_invoice_service.create_from_extraction(
-                    org_id,
-                    extracted_data=extracted,
-                    source_document_id=document_id,
-                    created_by="event.invoice.extracted",
-                )
-            except Exception as exc:
-                import logging
-
-                logging.getLogger(__name__).warning("AP AI invoice failed org=%s doc=%s: %s", org_id, document_id, exc)
-
     if event_type in {"approval.completed", "workflow.approved", "workflow.completed"}:
         ap_payment_id = str(payload.get("ap_payment_id") or "").strip()
         if not ap_payment_id:
@@ -2056,6 +2238,12 @@ def consume_event(queue: str, envelope: dict) -> None:
     _consume_document_intelligence_event(envelope)
     _consume_document_security_event(envelope)
     _consume_coa_events(envelope)
+    _consume_workflow_intelligence(envelope)
+    _consume_m25_invoice_pipeline(envelope)
+    _consume_memory_ingestion(envelope)
+    _consume_graph_ingestion(envelope)
+    _consume_agents_trigger(envelope)
+    _consume_invoice_predicted(envelope)
     _consume_invoice_ai_reviewed(envelope)
     _consume_workflow_system_task_gl_post(envelope)
     _consume_journal_events(envelope)

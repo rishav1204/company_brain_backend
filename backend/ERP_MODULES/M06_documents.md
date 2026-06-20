@@ -71,6 +71,17 @@ Providers implemented:
 
 - Realtime events are pushed to workflow realtime hub and are **enriched with preview URLs** for UI.
 
+### M25 handoff (Invoice Intelligence)
+
+After OCR completes and `documents.extractions` is written, **M25** (`finance_os.invoice_ai`) is the canonical intelligence path:
+
+- Event consumers trigger `invoice_pipeline.run(document_id)` on `ocr.completed` / `document.extracted` / `invoice.ai.reviewed`
+- M25 persists enriched records to `finance_os.invoice_extractions` (+ predictions, duplicates, anomalies)
+- AP auto-draft is gated by M25 confidence bands via `invoice.predicted` → `ai_invoice_service.create_from_m25`
+- M6 remains source of truth for files, OCR, and raw extractions; M25 enriches without replacing M6 tables
+
+See [`M25_invoice_ai.md`](M25_invoice_ai.md).
+
 ---
 
 ## Environment variables

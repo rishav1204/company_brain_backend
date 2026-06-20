@@ -99,11 +99,19 @@ def workflow_metrics(context=Depends(require_workflow_permission("workflow.read"
             latency = latency_repo.aggregate(context.org_id, metric_type="workflow_completion")
     except Exception:
         latency = {}
+    m26_health = {}
+    try:
+        from app.modules.finance_os.workflow_intelligence.services.workflow_insight_service import workflow_insight_service
+
+        m26_health = workflow_insight_service.health(context.org_id)
+    except Exception:
+        m26_health = {}
     return {
         "request_id": context.request_id,
         **counts,
         "workflow_latency": latency,
         "approval_bottleneck": approval_bottleneck_summary(context.org_id),
+        "workflow_intelligence_health": m26_health,
         "workflow_latency_avg_ms": (
             snap.workflow_latency_ms_total // snap.workflow_latency_samples if snap.workflow_latency_samples else 0
         ),

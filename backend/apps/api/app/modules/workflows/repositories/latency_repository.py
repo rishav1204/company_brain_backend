@@ -13,16 +13,20 @@ class LatencyRepository:
         metric_type: str,
         duration_ms: int,
         workflow_instance_id: str | None = None,
+        step_key: str | None = None,
+        assignee_id: str | None = None,
     ) -> None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO workflow.latency_samples (org_id, workflow_instance_id, metric_type, duration_ms)
-                    VALUES (%s::uuid, %s::uuid, %s, %s)
+                    INSERT INTO workflow.latency_samples (
+                        org_id, workflow_instance_id, metric_type, duration_ms, step_key, assignee_id
+                    )
+                    VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s::uuid)
                     """,
-                    (org_id, workflow_instance_id, metric_type, duration_ms),
+                    (org_id, workflow_instance_id, metric_type, duration_ms, step_key, assignee_id),
                 )
 
     def aggregate(self, org_id: str, *, metric_type: str, limit: int = 500) -> dict[str, Any]:

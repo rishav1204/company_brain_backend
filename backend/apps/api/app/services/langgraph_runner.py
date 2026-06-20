@@ -66,6 +66,24 @@ def _normalize_agent_key(agent_type: str) -> str:
         "close_orchestration_agent": "close_orchestration_agent",
         "cashflow_risk": "cashflow_risk_agent",
         "cashflow_risk_agent": "cashflow_risk_agent",
+        "workflow_intelligence_copilot": "workflow_intelligence_copilot",
+        "workflow_intelligence_agent": "workflow_intelligence_copilot",
+        "memory_copilot": "memory_copilot",
+        "memory_agent": "memory_copilot",
+        "graph_copilot": "graph_copilot",
+        "graph_agent": "graph_copilot",
+        "ap_agent": "ap_agent",
+        "ap_exception": "ap_agent",
+        "ap_exception_agent": "ap_agent",
+        "reconciliation_agent": "reconciliation_agent",
+        "gst_agent": "gst_agent",
+        "close_agent": "close_agent",
+        "close_orchestration": "close_agent",
+        "close_orchestration_agent": "close_agent",
+        "collections_agent": "collections_agent",
+        "treasury_agent": "treasury_agent",
+        "cashflow_risk": "treasury_agent",
+        "cashflow_risk_agent": "treasury_agent",
     }
     return mapping.get(key, key)
 
@@ -135,6 +153,148 @@ def _plan_actions_node(state: GraphRuntimeState) -> None:
             ),
         ]
         state.checkpoint("plan_actions", "ok", {"planner": "domain_rulebook", "count": len(state.proposed_actions)})
+        return
+    if agent_key in {"workflow_intelligence_copilot", "workflow_intelligence_agent"}:
+        wf_type = str(state.payload.get("workflow_type") or "AP_INVOICE_APPROVAL")
+        state.proposed_actions = [
+            ToolAction(
+                tool="email",
+                method="send",
+                params={
+                    "to": str(state.payload.get("owner_email", "finance-ops@example.com")),
+                    "subject": f"Workflow intelligence advisory: {wf_type}",
+                    "body": "Review bottleneck and SLA recommendations in Finance OS workflow intelligence.",
+                },
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "workflow_intelligence_rulebook", "count": 1})
+        return
+    if agent_key in {"memory_copilot", "memory_agent"}:
+        query = str(state.payload.get("query") or state.payload.get("question") or "finance patterns")
+        state.proposed_actions = [
+            ToolAction(
+                tool="memory",
+                method="search",
+                params={"query": query, "top_k": int(state.payload.get("top_k", 8))},
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "memory_rulebook", "count": 1})
+        return
+    if agent_key in {"graph_copilot", "graph_agent"}:
+        entity_id = str(state.payload.get("entity_id") or state.payload.get("subject_ref") or "")
+        state.proposed_actions = [
+            ToolAction(
+                tool="graph",
+                method="traverse",
+                params={"entity_id": entity_id, "max_depth": int(state.payload.get("max_depth", 6))},
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "graph_rulebook", "count": 1})
+        return
+    if agent_key == "ap_agent":
+        entity_id = str(state.payload.get("entity_id") or state.payload.get("invoice_id") or "")
+        state.proposed_actions = [
+            ToolAction(
+                tool="memory",
+                method="search",
+                params={"query": f"AP invoice {entity_id}", "top_k": 5},
+            ),
+            ToolAction(
+                tool="graph",
+                method="traverse",
+                params={"entity_id": entity_id, "max_depth": 4},
+            ),
+            ToolAction(
+                tool="email",
+                method="send",
+                params={
+                    "to": str(state.payload.get("owner_email", "ap-ops@example.com")),
+                    "subject": "AP agent review recommended",
+                    "body": "Review AP exception and approve workflow if needed.",
+                },
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "ap_agent_rulebook", "count": len(state.proposed_actions)})
+        return
+    if agent_key == "reconciliation_agent":
+        entity_id = str(state.payload.get("entity_id") or state.payload.get("bank_account_id") or "")
+        state.proposed_actions = [
+            ToolAction(
+                tool="memory",
+                method="search",
+                params={"query": "reconciliation mismatch", "entity_id": entity_id, "top_k": 5},
+            ),
+            ToolAction(
+                tool="slack",
+                method="postMessage",
+                params={"channel": "#recon-alerts", "text": f"Reconciliation review for {entity_id}"},
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "reconciliation_agent_rulebook", "count": len(state.proposed_actions)})
+        return
+    if agent_key == "gst_agent":
+        entity_id = str(state.payload.get("entity_id") or state.payload.get("return_id") or "")
+        state.proposed_actions = [
+            ToolAction(
+                tool="memory",
+                method="search",
+                params={"query": "GST compliance", "top_k": 5},
+            ),
+            ToolAction(
+                tool="email",
+                method="send",
+                params={
+                    "to": str(state.payload.get("owner_email", "tax-ops@example.com")),
+                    "subject": "GST review package ready",
+                    "body": f"GST agent prepared review for {entity_id}; filing requires human approval.",
+                },
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "gst_agent_rulebook", "count": len(state.proposed_actions)})
+        return
+    if agent_key == "close_agent":
+        state.proposed_actions = [
+            ToolAction(
+                tool="workflow",
+                method="updateStatus",
+                params={"workflow_id": state.payload.get("workflow_id"), "state": "close_orchestration_running"},
+            ),
+            ToolAction(
+                tool="jira",
+                method="createIssue",
+                params={"summary": "Period close checklist", "description": "Agent-initiated close orchestration."},
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "close_agent_rulebook", "count": len(state.proposed_actions)})
+        return
+    if agent_key == "collections_agent":
+        entity_id = str(state.payload.get("entity_id") or state.payload.get("invoice_id") or "")
+        state.proposed_actions = [
+            ToolAction(
+                tool="email",
+                method="send",
+                params={
+                    "to": str(state.payload.get("customer_email", "collections@example.com")),
+                    "subject": "Payment reminder",
+                    "body": f"Collections follow-up recommended for {entity_id}.",
+                },
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "collections_agent_rulebook", "count": 1})
+        return
+    if agent_key == "treasury_agent":
+        state.proposed_actions = [
+            ToolAction(
+                tool="email",
+                method="send",
+                params={
+                    "to": str(state.payload.get("owner_email", "treasury@example.com")),
+                    "subject": "Liquidity advisory",
+                    "body": "Treasury agent detected liquidity risk; review cash position.",
+                },
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "treasury_agent_rulebook", "count": 1})
         return
 
     if llm_provider.is_ready():
@@ -227,6 +387,15 @@ def _policy_gate_node(state: GraphRuntimeState) -> None:
 
 
 def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None) -> dict:
+    from app.modules.finance_os.agents.orchestrator.forbidden_actions import is_forbidden_action
+
+    if is_forbidden_action(action.tool, action.method):
+        return {
+            "status": "error",
+            "target": action.tool,
+            "detail": "forbidden_action",
+            "response_code": 403,
+        }
     if action.tool == "workflow":
         from app.modules.workflows.engine.workflow_state_machine import legacy_state_to_status
         from app.modules.workflows.services.workflow_service import workflow_service
@@ -250,6 +419,28 @@ def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None) -> 
                     "response_code": 409,
                 }
         return {"status": "completed", "target": "workflow", "detail": "workflow_state_updated", "response_code": 200}
+    if action.tool == "memory" and action.method == "search":
+        return execute_action(
+            org_id=org_id,
+            actor_id="agent-runtime",
+            tool="memory",
+            method="search",
+            params=action.params,
+            attrs=attrs,
+            roles=["tenant_admin"],
+            human_approved=False,
+        )
+    if action.tool == "graph" and action.method == "traverse":
+        return execute_action(
+            org_id=org_id,
+            actor_id="agent-runtime",
+            tool="graph",
+            method="traverse",
+            params=action.params,
+            attrs=attrs,
+            roles=["tenant_admin"],
+            human_approved=False,
+        )
     if action.tool in {"slack", "email", "jira", "linear", "erp"}:
         method = action.method
         if action.tool == "email" and method == "postMessage":
@@ -270,7 +461,20 @@ def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None) -> 
 
 
 def _execute_actions_node(state: GraphRuntimeState) -> None:
-    state.tool_results = [tool_adapter(state.org_id, action, attrs=state.principal_attrs) for action in state.proposed_actions]
+    from app.modules.finance_os.agents.orchestrator.forbidden_actions import filter_actions
+
+    allowed, blocked = filter_actions(state.proposed_actions)
+    if blocked:
+        state.status = "failed"
+        state.failure_contract = {
+            "code": "FORBIDDEN_ACTION",
+            "retryable": False,
+            "step": "tool_execution",
+            "detail": ",".join(blocked),
+        }
+        state.checkpoint("execute_actions", "blocked", {"blocked": blocked})
+        return
+    state.tool_results = [tool_adapter(state.org_id, action, attrs=state.principal_attrs) for action in allowed]
     failed = [item for item in state.tool_results if str(item.get("status", "")).lower() != "completed"]
     if failed:
         first_error = str(failed[0].get("detail", "execution_failed"))
@@ -319,6 +523,10 @@ def run_langgraph_flow(
         principal_attrs=principal_attrs or {},
     )
     state.checkpoint("init", "entered", {"agent_type": agent_type, "trigger_type": trigger_type})
+
+    agent_context = payload.get("agent_context") if isinstance(payload, dict) else None
+    if agent_context:
+        state.payload["agent_context"] = agent_context
 
     _plan_actions_node(state)
     _policy_gate_node(state)

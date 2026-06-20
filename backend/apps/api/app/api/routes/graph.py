@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends
 
 from app.api.deps import build_request_context
-from app.services.graph_extraction_service import extract_relationships_for_org
+from app.modules.finance_os.graph.services.finance_graph_service import get_entity
+from app.modules.finance_os.graph.services.graph_projection_service import rebuild_org
+from app.modules.finance_os.graph.services.lineage_service import lineage
+from app.modules.finance_os.graph.services.dependency_service import dependencies
+from app.modules.finance_os.graph.services.causality_service import root_cause
+from app.modules.finance_os.graph.services.graph_search_service import search
 from app.services.graph_service import query_related_entities
 from app.services.neo4j_service import neo4j_service
 
@@ -21,7 +26,7 @@ def graph_bootstrap(context=Depends(build_request_context)) -> dict:
 
 @router.post("/graph/extract")
 def graph_extract(context=Depends(build_request_context)) -> dict:
-    result = extract_relationships_for_org(org_id=context.org_id)
+    result = rebuild_org(context.org_id, trace_id=context.request_id)
     return {
         "request_id": context.request_id,
         "result": result,

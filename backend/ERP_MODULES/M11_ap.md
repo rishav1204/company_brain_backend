@@ -61,7 +61,7 @@ Invoice arrives (upload/OCR/API)
 | POST | `/ap/invoices/{id}/confirm-review` | Confirm AI review → submit for approval |
 | POST | `/ap/invoices/{id}/approve` | Approve + create liability journal |
 | POST | `/ap/invoices/{id}/cancel` | Cancel |
-| POST | `/ap/invoices/ai/from-document` | AI invoice from OCR extraction |
+| POST | `/ap/invoices/ai/from-document` | Run M25 pipeline + AP draft when confidence allows |
 
 ### Payments
 | Method | Path | Description |
@@ -173,8 +173,8 @@ POST /api/v1/ap/payments/schedule
 - `payment.scheduled`, `erp.payment.completed`, `erp.payment.failed`
 
 ### Consumed
-- `invoice.extracted`, `ocr.completed`, `document.extracted`, `invoice.received` → `ai_invoice_service`
-- `invoice.ai.reviewed` → AP invoice + auto-submit for approval (unified path)
+- `ocr.completed`, `document.extracted`, `invoice.ai.reviewed` → M25 `invoice_pipeline.run`
+- `invoice.predicted` → `ai_invoice_service.create_from_m25` when `auto_draft_eligible`
 - `workflow.approved`, `approval.completed` → invoice approve OR payment workflow approval
 - `payment.completed` → journal post (existing consumer)
 
@@ -184,8 +184,8 @@ POST /api/v1/ap/payments/schedule
 | Vendor classification | `ai/vendor_classifier.py` |
 | Invoice review (suspicious GST, unusual vendor) | `ai/invoice_reviewer.py` |
 | Vendor risk scoring | `ai/vendor_risk.py` |
-| Ledger/expense/GST suggestions | `engine/account_resolver.py` + `ledger_suggester` |
-| Duplicate detection | `ai/duplicate_detector.py` + DB checksum |
+| Ledger/expense/GST suggestions | M25 `finance_os.invoice_ai` + `engine/account_resolver.py` |
+| Duplicate detection | M25 weighted scoring + AP checksum |
 | Payment optimizer + assistant | `ai/payment_optimizer.py` + `/payments/recommendations` |
 | Cashflow forecast | `ai/cashflow_predictor.py` |
 
