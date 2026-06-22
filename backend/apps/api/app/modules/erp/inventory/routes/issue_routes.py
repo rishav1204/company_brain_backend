@@ -9,7 +9,7 @@ from app.modules.erp.inventory.services.issue_service import issue_service
 router = APIRouter()
 
 
-@router.post("")
+@router.post("/")
 def create_issue(request: IssueRequest, context=Depends(require_inventory_issue)) -> dict:
     try:
         movement = issue_service.issue(

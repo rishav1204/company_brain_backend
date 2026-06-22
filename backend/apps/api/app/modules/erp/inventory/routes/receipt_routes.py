@@ -9,7 +9,7 @@ from app.modules.erp.inventory.services.receipt_service import receipt_service
 router = APIRouter()
 
 
-@router.post("")
+@router.post("/")
 def create_receipt(request: ReceiptRequest, context=Depends(require_inventory_receive)) -> dict:
     try:
         movement = receipt_service.receive_manual(

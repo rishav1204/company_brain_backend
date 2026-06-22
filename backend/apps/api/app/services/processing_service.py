@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 
+from app.core.config import settings
+
 
 @dataclass
 class ChunkConfig:
-    chunk_size_tokens: int = 800
-    overlap_ratio: float = 0.25
+    chunk_size_tokens: int = settings.retrieval_chunk_size_tokens
+    overlap_ratio: float = settings.retrieval_chunk_overlap_ratio
 
 
 def chunk_text(text: str, config: ChunkConfig | None = None) -> list[str]:

@@ -249,6 +249,26 @@ class SalesInvoiceService:
         if auto_post:
             post_result = posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=issued_by)
 
+        try:
+            from app.modules.erp.vouchers.services.voucher_projection_service import voucher_projection_service
+
+            voucher_projection_service.project_operational(
+                org_id,
+                voucher_type="sales",
+                reference_type="ar_invoice",
+                reference_id=invoice_id,
+                source_module="accounts_receivable",
+                journal_id=jid,
+                voucher_date=posting_date or str(invoice.get("invoice_date")),
+                narration=f"AR Invoice {invoice.get('invoice_number')}",
+                company_id=invoice.get("company_id"),
+                created_by=issued_by,
+                status="posted" if auto_post else "journal_generated",
+                total_amount=float(invoice.get("total_amount") or 0),
+            )
+        except Exception:
+            pass
+
         return {"invoice_id": invoice_id, "status": "issued", "journal_id": jid, "post_result": post_result, "credit_check": credit}
 
     def cancel_invoice(self, org_id: str, *, invoice_id: str, actor_id: str | None) -> dict:

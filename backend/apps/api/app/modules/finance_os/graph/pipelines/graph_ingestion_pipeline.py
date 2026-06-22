@@ -5,10 +5,18 @@ from app.modules.finance_os.graph.engine.graph_sync_engine import apply_mutation
 from app.modules.finance_os.graph.events.graph_events import emit_graph_updated, emit_root_cause_generated
 from app.modules.finance_os.graph.repositories.sync_audit_repository import sync_audit_repository
 from app.modules.finance_os.graph.ai.root_cause_detector import detect_root_cause
+from app.modules.platform.billing.billing_hooks import billing_ai_operation
 
 
 class GraphIngestionPipeline:
     def run_from_event(self, envelope: dict) -> dict | None:
+        org_id = str(envelope.get("org_id", ""))
+        if not org_id:
+            return None
+        with billing_ai_operation(org_id, feature="graph_engine", operation_code="graph_ingest"):
+            return self._run_from_event_inner(envelope)
+
+    def _run_from_event_inner(self, envelope: dict) -> dict | None:
         event_type = str(envelope.get("event_type", ""))
         payload = envelope.get("payload") or {}
         org_id = str(envelope.get("org_id", ""))

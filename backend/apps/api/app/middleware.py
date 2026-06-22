@@ -76,6 +76,19 @@ class RequestMiddleware(BaseHTTPMiddleware):
             metrics_store.incr_request_error()
             return JSONResponse(status_code=401, content={"detail": "Missing authenticated org or bearer token"})
 
+        if org_id != "token-org-scope":
+            try:
+                from app.modules.platform.billing.exceptions import BillingDenied
+                from app.modules.platform.billing.services.usage_service import usage_service
+
+                usage_service.check_quota(org_id, "api_calls_monthly", increment=1)
+            except BillingDenied as exc:
+                metrics_store.incr_request_error()
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.message, "code": exc.code},
+                )
+
         limit_key = org_id
         decision = rate_limiter.check(limit_key)
         if not decision.allowed:
@@ -95,6 +108,13 @@ class RequestMiddleware(BaseHTTPMiddleware):
                 response: Response = await call_next(request)
             if response.status_code >= 400:
                 metrics_store.incr_request_error()
+            elif org_id and org_id != "token-org-scope":
+                try:
+                    from app.modules.platform.billing.services.usage_service import usage_service
+
+                    usage_service.record(org_id, "api_calls")
+                except Exception:
+                    pass
             response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
             return response
         except Exception:

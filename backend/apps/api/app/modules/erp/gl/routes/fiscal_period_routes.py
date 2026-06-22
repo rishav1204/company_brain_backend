@@ -1,3 +1,5 @@
+"""Deprecated: fiscal periods moved to /api/v1/erp/ledger/periods (erp.fiscal M12)."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query

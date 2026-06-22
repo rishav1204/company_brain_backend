@@ -70,6 +70,7 @@ class InvoiceRepository:
                            source_document_id::text, journal_id::text, duplicate_checksum,
                            ai_confidence, metadata, created_by::text, approved_by::text,
                            company_id::text, purchase_order_id::text, goods_receipt_id::text,
+                           document_type, reference_invoice_id::text, voucher_id::text,
                            created_at::text, updated_at::text
                     FROM erp.ap_invoices
                     WHERE org_id = %s::uuid AND id = %s::uuid
@@ -286,6 +287,60 @@ class InvoiceRepository:
                     (org_id,),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
+
+    def create_note(
+        self,
+        org_id: str,
+        *,
+        vendor_id: str,
+        document_type: str,
+        reference_invoice_id: str,
+        invoice_number: str,
+        invoice_date: str,
+        due_date: str,
+        invoice_amount: float,
+        gst_amount: float,
+        total_amount: float,
+        company_id: str | None = None,
+        created_by: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        iid = str(uuid4())
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO erp.ap_invoices (
+                      id, org_id, company_id, vendor_id, invoice_number, invoice_date, due_date,
+                      invoice_amount, gst_amount, total_amount, created_by, metadata,
+                      document_type, reference_invoice_id
+                    )
+                    VALUES (
+                      %s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::date,
+                      %s::numeric,%s::numeric,%s::numeric,%s::uuid,%s::jsonb,%s,%s::uuid
+                    )
+                    RETURNING id::text, invoice_number, document_type, status, total_amount
+                    """,
+                    (
+                        iid, org_id, company_id, vendor_id, invoice_number,
+                        invoice_date, due_date, invoice_amount, gst_amount, total_amount,
+                        created_by, Json(metadata or {}), document_type, reference_invoice_id,
+                    ),
+                )
+                return dict(cur.fetchone() or {"id": iid})
+
+    def link_voucher(self, org_id: str, *, invoice_id: str, voucher_id: str) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE erp.ap_invoices SET voucher_id = %s::uuid, updated_at = NOW()
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    """,
+                    (voucher_id, org_id, invoice_id),
+                )
 
 
 invoice_repository = InvoiceRepository()

@@ -1064,7 +1064,7 @@ Use `permissions` from login / `/me` (or decode JWT). Common keys:
 IAM_USE_DB_AUTH=true
 IAM_ACCESS_TOKEN_TTL_SECONDS=900
 IAM_REFRESH_TOKEN_TTL_SECONDS=604800
-POSTGRES_DSN=postgresql://postgres:Prashant%40123@localhost:5432/company_brain
+POSTGRES_DSN=${POSTGRES_DSN}
 ```
 
 ---

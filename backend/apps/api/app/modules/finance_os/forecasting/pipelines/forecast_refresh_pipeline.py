@@ -18,6 +18,7 @@ from app.modules.finance_os.forecasting.services.forecast_explanation_service im
 from app.modules.finance_os.forecasting.events.forecast_events import (
     emit_forecast_generated,
 )
+from app.modules.platform.billing.billing_hooks import billing_ai_operation
 
 
 SUPPORTED_HORIZONS = [7, 30, 60, 90, 180, 365]
@@ -40,6 +41,11 @@ def _sum_outstanding(items: list[dict]) -> float:
 
 
 def run_refresh(org_id: str, *, as_of_date: str | None = None, horizons: list[int] | None = None, trace_id: str | None = None) -> dict:
+    with billing_ai_operation(org_id, feature="forecasting", operation_code="forecast_generation"):
+        return _run_refresh_inner(org_id, as_of_date=as_of_date, horizons=horizons, trace_id=trace_id)
+
+
+def _run_refresh_inner(org_id: str, *, as_of_date: str | None = None, horizons: list[int] | None = None, trace_id: str | None = None) -> dict:
     if not forecast_repository.schema_ready():
         return {"status": "skipped", "reason": "schema_not_ready"}
 

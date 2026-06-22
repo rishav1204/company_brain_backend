@@ -6,7 +6,11 @@ from app.api.deps import build_request_context
 from app.core.request_context import RequestContext
 
 
+from app.modules.platform.billing.security.billing_enforce import enforce_billing
+
+
 def require_tax_admin(context: RequestContext = Depends(build_request_context)) -> RequestContext:
+    enforce_billing(context.org_id, "gst")
     roles = [r.lower() for r in (context.roles or [])]
     perms = [p.lower() for p in (context.permissions or [])]
     if "*" in perms:
@@ -19,6 +23,7 @@ def require_tax_admin(context: RequestContext = Depends(build_request_context)) 
 
 
 def require_tax_read(context: RequestContext = Depends(build_request_context)) -> RequestContext:
+    enforce_billing(context.org_id, "gst")
     roles = [r.lower() for r in (context.roles or [])]
     perms = [p.lower() for p in (context.permissions or [])]
     if "*" in perms:

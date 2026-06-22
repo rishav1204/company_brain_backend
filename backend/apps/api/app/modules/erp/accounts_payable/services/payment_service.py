@@ -236,6 +236,26 @@ class PaymentService:
             ap_realtime_service.push_payment_completed(org_id, payment_id=payment_id, amount=bank_payment_amount)
             self._audit(org_id, payment_id=payment_id, action="ap.payment.completed", actor_id=executed_by)
 
+            try:
+                from app.modules.erp.vouchers.services.voucher_projection_service import voucher_projection_service
+
+                voucher_projection_service.project_operational(
+                    org_id,
+                    voucher_type="payment",
+                    reference_type="ap_payment",
+                    reference_id=payment_id,
+                    source_module="accounts_payable",
+                    journal_id=jid,
+                    voucher_date=str(payment.get("payment_date")),
+                    narration=f"Payment {payment.get('payment_reference')}",
+                    company_id=payment.get("company_id"),
+                    created_by=executed_by,
+                    status="posted",
+                    total_amount=amount,
+                )
+            except Exception:
+                pass
+
             return {
                 "payment_id": payment_id,
                 "status": "completed",

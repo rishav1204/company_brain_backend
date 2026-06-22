@@ -112,7 +112,7 @@ class PaymentExecutionService:
             elif payment_type == "internal_transfer":
                 dest_ledger = bank_account_service.resolve_ledger_account(org_id, bank_account_id=str(meta.get("dest_bank_account_id") or ""))
                 lines = build_internal_transfer_lines(source_bank_ledger_id=bank_ledger, dest_bank_ledger_id=dest_ledger, amount=amount)
-                journal = journal_service.create_draft(org_id, created_by=None, journal_type="transfer", posting_date=date.today().isoformat(), description=f"Internal transfer {row.get('payment_reference')}", source_type="banking_transfer", source_id=payment_request_id, company_id=row.get("company_id"), lines=lines, idempotency_key=f"banking-transfer:{payment_request_id}")
+                journal = journal_service.create_draft(org_id, created_by=None, journal_type="contra", posting_date=date.today().isoformat(), description=f"Internal transfer {row.get('payment_reference')}", source_type="banking_transfer", source_id=payment_request_id, company_id=row.get("company_id"), lines=lines, idempotency_key=f"banking-transfer:{payment_request_id}")
                 jid = str(journal["journal"]["id"])
                 journal_approval_service.approve(org_id, journal_id=jid, approver_id=executed_by, skip_maker_checker=True)
                 if auto_post:
@@ -132,6 +132,27 @@ class PaymentExecutionService:
             bank_tx = record_payment_debit(org_id, bank_account_id=bank_account_id, amount=amount, reference=str(row.get("payment_reference") or payment_request_id), payment_date=str(row.get("scheduled_date") or "")[:10] or None, description=f"Payment {payment_type}", idempotency_key=f"payment:{payment_request_id}", counterparty_ref=str(row.get("beneficiary_ref") or ""), source_type="payment_request", source_id=payment_request_id)
             payment_request_repository.set_status(org_id, payment_request_id=payment_request_id, status="completed", journal_id=result.get("journal_id"))
             emit_payment_executed(org_id, payment_request_id=payment_request_id, amount=amount, journal_id=result.get("journal_id"), bank_transaction_id=str(bank_tx.get("id") or ""), ap_payment_id=str(ap_payment_id) if ap_payment_id else None)
+            jid = str(result.get("journal_id") or "")
+            if jid and payment_type == "internal_transfer":
+                try:
+                    from app.modules.erp.vouchers.services.voucher_projection_service import voucher_projection_service
+
+                    voucher_projection_service.project_operational(
+                        org_id,
+                        voucher_type="contra",
+                        reference_type="banking_transfer",
+                        reference_id=payment_request_id,
+                        source_module="banking",
+                        journal_id=jid,
+                        voucher_date=str(row.get("scheduled_date") or date.today().isoformat())[:10],
+                        narration=f"Internal transfer {row.get('payment_reference')}",
+                        company_id=row.get("company_id"),
+                        created_by=executed_by,
+                        status="posted" if auto_post else "journal_generated",
+                        total_amount=amount,
+                    )
+                except Exception:
+                    pass
             return {"payment_request_id": payment_request_id, "status": "completed", "bank_transaction_id": bank_tx.get("id"), "rail_result": rail_result, **result}
         except Exception as exc:
             payment_request_repository.set_status(org_id, payment_request_id=payment_request_id, status="failed")

@@ -1,3 +1,6 @@
+# Reference defaults for local development. Loaded by app/core/config.py when APP_ENV=dev.
+# Secrets must come from environment variables or apps/api/.env — never commit real passwords here.
+
 app:
   name: company-brain-finance-api
   env: dev
@@ -16,11 +19,11 @@ auth:
 
 databases:
   postgres:
-    dsn: postgresql://postgres:postgres@localhost:5432/company_brain
+    dsn: ${POSTGRES_DSN}
   neo4j:
     uri: bolt://localhost:7687
     user: neo4j
-    password: password
+    password: ${NEO4J_PASSWORD}
 
 queue:
   provider: redis-bullmq

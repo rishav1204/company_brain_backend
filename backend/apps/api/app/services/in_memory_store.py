@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from app.core.config import DEV_ORG_ID
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -13,7 +15,7 @@ class InMemoryStore:
         self.invoices: dict[str, dict] = {
             "inv-1001": {
                 "id": "inv-1001",
-                "org_id": "org-demo",
+                "org_id": DEV_ORG_ID,
                 "invoice_number": "INV-1001",
                 "vendor": "Acme Corp",
                 "vendor_id": "vend-1",
@@ -26,7 +28,7 @@ class InMemoryStore:
         self.payments: dict[str, dict] = {
             "pay-1001": {
                 "id": "pay-1001",
-                "org_id": "org-demo",
+                "org_id": DEV_ORG_ID,
                 "invoice_id": "inv-1001",
                 "amount": 5000.0,
                 "status": "Pending",
@@ -35,7 +37,7 @@ class InMemoryStore:
         self.workflows: dict[str, dict] = {
             "wf-close-1": {
                 "id": "wf-close-1",
-                "org_id": "org-demo",
+                "org_id": DEV_ORG_ID,
                 "workflow_type": "close",
                 "state": "blocked",
                 "owner_user_id": "user-cfo-1",
@@ -44,7 +46,7 @@ class InMemoryStore:
             },
             "wf-ap-1": {
                 "id": "wf-ap-1",
-                "org_id": "org-demo",
+                "org_id": DEV_ORG_ID,
                 "workflow_type": "ap_exception",
                 "state": "pending_approval",
                 "owner_user_id": "user-ap-1",
@@ -69,7 +71,7 @@ class InMemoryStore:
         self.documents: dict[str, dict] = {
             "doc-policy-1": {
                 "id": "doc-policy-1",
-                "org_id": "org-demo",
+                "org_id": DEV_ORG_ID,
                 "title": "AP Policy",
                 "doc_type": "policy",
                 "citation": "Payment > 50K needs CFO approval.",

@@ -20,7 +20,7 @@ def list_movements(
     return {"request_id": context.request_id, "items": items}
 
 
-@router.get("")
+@router.get("/")
 def list_valuations(
     context=Depends(require_inventory_read),
     valuation_date: str | None = Query(default=None),

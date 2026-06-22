@@ -120,3 +120,55 @@ def write_off_invoice(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"request_id": context.request_id, "item": item}
+
+
+@router.post("/invoices/{invoice_id}/credit-note")
+def create_ar_credit_note(
+    invoice_id: str,
+    request: SalesInvoiceCreateRequest,
+    context=Depends(require_ar_admin),
+) -> dict:
+    from app.modules.erp.accounts_receivable.services.note_service import ar_note_service
+
+    try:
+        item = ar_note_service.create_credit_note(
+            context.org_id,
+            reference_invoice_id=invoice_id,
+            invoice_number=request.invoice_number,
+            invoice_date=request.invoice_date,
+            due_date=request.due_date,
+            amount=request.subtotal,
+            gst_amount=request.gst_amount,
+            total_amount=request.total_amount,
+            created_by=context.user_id,
+            narration=request.invoice_number,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"request_id": context.request_id, "item": item}
+
+
+@router.post("/invoices/{invoice_id}/debit-note")
+def create_ar_debit_note(
+    invoice_id: str,
+    request: SalesInvoiceCreateRequest,
+    context=Depends(require_ar_admin),
+) -> dict:
+    from app.modules.erp.accounts_receivable.services.note_service import ar_note_service
+
+    try:
+        item = ar_note_service.create_debit_note(
+            context.org_id,
+            reference_invoice_id=invoice_id,
+            invoice_number=request.invoice_number,
+            invoice_date=request.invoice_date,
+            due_date=request.due_date,
+            amount=request.subtotal,
+            gst_amount=request.gst_amount,
+            total_amount=request.total_amount,
+            created_by=context.user_id,
+            narration=request.invoice_number,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"request_id": context.request_id, "item": item}

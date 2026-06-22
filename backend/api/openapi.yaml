@@ -35,6 +35,8 @@ paths:
   /auth/password/login:
     post:
       summary: Dev password login to mint JWT
+      deprecated: true
+      description: Prefer POST /auth/login when IAM_USE_DB_AUTH=true.
       responses:
         "200":
           description: JWT token response
@@ -91,11 +93,15 @@ paths:
   /workflows:
     get:
       summary: List workflows by filters
+      deprecated: true
+      description: Use GET /workflows/definitions (v2 workflow engine).
       responses:
         "200": { description: Workflows list }
   /workflows/{id}/actions:
     post:
       summary: Execute workflow action
+      deprecated: true
+      description: Use POST /workflows/start or POST /approvals/{approval_id}/decide.
       parameters:
         - in: path
           name: id
@@ -106,6 +112,8 @@ paths:
   /workflows/{id}/timeline:
     get:
       summary: Get workflow timeline
+      deprecated: true
+      description: Use GET /workflows/instances/{workflow_id}/audit (v2).
       parameters:
         - in: path
           name: id
@@ -113,32 +121,54 @@ paths:
           required: true
       responses:
         "200": { description: Timeline response }
+  /workflows/definitions:
+    get:
+      summary: List workflow definitions (v2)
+      responses:
+        "200": { description: Workflow definitions }
+  /workflows/start:
+    post:
+      summary: Start workflow instance (v2)
+      responses:
+        "200": { description: Workflow started }
   /decisions:
     post:
       summary: Record decision with rationale
+      deprecated: true
+      description: Use POST /finance-os/memory/write.
       responses:
         "200": { description: Decision created }
     get:
       summary: List decisions
+      deprecated: true
+      description: Use GET /finance-os/memory/summary.
       responses:
         "200": { description: Decision list }
   /memory:
     post:
       summary: Write curated memory
+      deprecated: true
+      description: Use POST /finance-os/memory/write.
       responses:
         "200": { description: Memory record created }
     get:
       summary: Retrieve memory by scope
+      deprecated: true
+      description: Use GET /finance-os/memory/search.
       responses:
         "200": { description: Memory list }
   /agents/run:
     post:
       summary: Trigger domain agent run
+      deprecated: true
+      description: Use POST /finance-os/agents/run.
       responses:
         "200": { description: Agent run started }
   /agents/runs/{runId}:
     get:
       summary: Get agent run state
+      deprecated: true
+      description: Use GET /finance-os/agents/executions/{execution_id}.
       parameters:
         - in: path
           name: runId
@@ -149,6 +179,8 @@ paths:
   /agents/runs/{runId}/approve:
     post:
       summary: Human approval gate
+      deprecated: true
+      description: Use finance-os agent workflow endpoints.
       parameters:
         - in: path
           name: runId
@@ -156,6 +188,33 @@ paths:
           required: true
       responses:
         "200": { description: Approval accepted }
+  /graph/bootstrap:
+    post:
+      summary: Bootstrap finance graph (legacy)
+      deprecated: true
+      description: Use POST /finance-os/graph/rebuild.
+      responses:
+        "200": { description: Graph bootstrap started }
+  /finance-os/agents/health:
+    get:
+      summary: Finance OS agents module health
+      responses:
+        "200": { description: Agents module health }
+  /finance-os/agents/run:
+    post:
+      summary: Run finance OS agent (modular)
+      responses:
+        "200": { description: Agent run started }
+  /finance-os/graph/health:
+    get:
+      summary: Finance OS graph module health
+      responses:
+        "200": { description: Graph module health }
+  /finance-os/memory/health:
+    get:
+      summary: Finance OS memory module health
+      responses:
+        "200": { description: Memory module health }
   /audit/logs:
     get:
       summary: Immutable audit trail
@@ -252,8 +311,105 @@ paths:
   /memory/decay/run:
     post:
       summary: Apply memory lifecycle decay rules
+      deprecated: true
+      description: Use POST /finance-os/memory/admin/decay/run.
       responses:
         "200": { description: Memory decay summary }
+  /erp/vouchers:
+    get:
+      summary: List vouchers
+      responses:
+        "200": { description: Voucher list }
+    post:
+      summary: Create voucher
+      responses:
+        "200": { description: Voucher created }
+  /erp/vouchers/{voucher_id}:
+    get:
+      summary: Get voucher with lines
+      parameters:
+        - in: path
+          name: voucher_id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Voucher detail }
+  /erp/vouchers/{voucher_id}/approve:
+    post:
+      summary: Approve voucher and generate journal
+      parameters:
+        - in: path
+          name: voucher_id
+          schema: { type: string }
+          required: true
+      responses:
+        "200": { description: Voucher approved }
+  /erp/vouchers/sales:
+    post:
+      summary: Create sales voucher
+      responses:
+        "200": { description: Sales voucher created }
+  /erp/vouchers/purchase:
+    post:
+      summary: Create purchase voucher
+      responses:
+        "200": { description: Purchase voucher created }
+  /billing/subscription:
+    get:
+      summary: Current org subscription and plan
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Subscription details }
+  /billing/entitlements:
+    get:
+      summary: Enabled features for org
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Feature entitlements }
+  /billing/usage:
+    get:
+      summary: Usage quotas and counters for current period
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Usage summary }
+  /billing/credits:
+    get:
+      summary: AI credit wallet balance
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Credit balance }
+  /billing/plans:
+    get:
+      summary: List available subscription plans
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Plan catalog }
+  /admin/billing/plans:
+    get:
+      summary: Admin list plans
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Plan catalog }
+  /admin/billing/subscriptions/assign:
+    post:
+      summary: Assign subscription plan to org
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Plan assigned }
+  /admin/billing/credits/grant:
+    post:
+      summary: Grant AI credits to org
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Credits granted }
 components:
   securitySchemes:
     bearerAuth:

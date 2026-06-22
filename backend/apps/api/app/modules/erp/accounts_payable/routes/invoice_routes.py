@@ -170,6 +170,58 @@ def cancel_invoice(invoice_id: str, context=Depends(require_ap_admin)) -> dict:
     return {"request_id": context.request_id, "item": item}
 
 
+@router.post("/invoices/{invoice_id}/credit-note")
+def create_ap_credit_note(
+    invoice_id: str,
+    request: InvoiceCreateRequest,
+    context=Depends(require_ap_admin),
+) -> dict:
+    from app.modules.erp.accounts_payable.services.note_service import ap_note_service
+
+    try:
+        item = ap_note_service.create_credit_note(
+            context.org_id,
+            reference_invoice_id=invoice_id,
+            invoice_number=request.invoice_number,
+            invoice_date=request.invoice_date,
+            due_date=request.due_date,
+            amount=request.invoice_amount,
+            gst_amount=request.gst_amount,
+            total_amount=request.total_amount,
+            created_by=context.user_id,
+            narration=request.invoice_number,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"request_id": context.request_id, "item": item}
+
+
+@router.post("/invoices/{invoice_id}/debit-note")
+def create_ap_debit_note(
+    invoice_id: str,
+    request: InvoiceCreateRequest,
+    context=Depends(require_ap_admin),
+) -> dict:
+    from app.modules.erp.accounts_payable.services.note_service import ap_note_service
+
+    try:
+        item = ap_note_service.create_debit_note(
+            context.org_id,
+            reference_invoice_id=invoice_id,
+            invoice_number=request.invoice_number,
+            invoice_date=request.invoice_date,
+            due_date=request.due_date,
+            amount=request.invoice_amount,
+            gst_amount=request.gst_amount,
+            total_amount=request.total_amount,
+            created_by=context.user_id,
+            narration=request.invoice_number,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"request_id": context.request_id, "item": item}
+
+
 @router.post("/invoices/ai/from-document")
 def create_ai_invoice(request: AiInvoiceFromDocumentRequest, context=Depends(require_ap_admin)) -> dict:
     try:

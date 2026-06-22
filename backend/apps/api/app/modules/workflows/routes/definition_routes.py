@@ -18,7 +18,7 @@ class DefinitionCreateRequest(BaseModel):
     definition_json: dict = Field(default_factory=dict)
 
 
-@router.post("")
+@router.post("/")
 def create_definition(
     request: DefinitionCreateRequest,
     context=Depends(require_workflow_permission("workflow.manage", mode="write")),

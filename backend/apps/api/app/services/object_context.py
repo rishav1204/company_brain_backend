@@ -77,6 +77,22 @@ def resolve_object_context(org_id: str, object_type: str, object_id: str) -> Obj
                 )
         except Exception:
             pass
+    if normalized_type == "voucher":
+        try:
+            from app.modules.erp.vouchers.repositories.voucher_repository import voucher_repository
+
+            row = voucher_repository.get(org_id, voucher_id=normalized_id)
+            if row:
+                return ObjectContext(
+                    object_type=object_type,
+                    object_id=normalized_id,
+                    amount=float(row.get("total_amount") or 0),
+                    status=row.get("status"),
+                    company_id=row.get("company_id"),
+                    branch_id=row.get("branch_id"),
+                )
+        except Exception:
+            pass
     if normalized_type == "workflow":
         row = workflows_repo.get_workflow(org_id=org_id, workflow_id=normalized_id)
         if row:

@@ -12,5 +12,5 @@ erp_gst_router.include_router(eway_bill_routes.router)
 erp_tds_router = APIRouter(prefix="/tds", tags=["erp-tds"])
 erp_tds_router.include_router(tds_routes.router)
 
-erp_compliance_router = APIRouter(prefix="/compliance", tags=["erp-compliance"])
-erp_compliance_router.include_router(compliance_routes.router)
+erp_tax_compliance_router = APIRouter(prefix="/tax/compliance", tags=["erp-tax-compliance"])
+erp_tax_compliance_router.include_router(compliance_routes.router)

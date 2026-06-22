@@ -6,19 +6,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.modules.core.iam import iam_router
 from app.modules.platform.documents.routes.router import documents_router
 from app.modules.platform.governance.routes.router import governance_router
+from app.modules.platform.billing.routes.router import billing_router
 from app.modules.platform.notifications.routes.router import notifications_router
 from app.modules.platform.integrations.routes.router import integrations_router
 from app.modules.platform.integrations import connectors as _integrations_connectors  # noqa: F401
 from app.modules.erp.coa.routes.router import erp_coa_router
 from app.modules.erp.gl.routes.router import erp_gl_router
 from app.modules.erp.journals.routes.router import erp_journals_router
+from app.modules.erp.vouchers.routes.router import erp_vouchers_router
 from app.modules.erp.accounts_payable.routes.router import erp_ap_router
 from app.modules.erp.accounts_receivable.routes.router import erp_ar_router
 from app.modules.erp.banking.routes.router import erp_m22_banking_router, legacy_banking_router
 from app.modules.erp.reconciliation.routes.router import erp_m23_reconciliation_router, legacy_reconciliation_alias
 from app.modules.erp.treasury.routes.treasury_router import erp_m24_treasury_router, erp_treasury_router, legacy_treasury_router
-from app.modules.erp.tax.routes.tax_router import erp_compliance_router, erp_gst_router, erp_tds_router
-from app.modules.erp.compliance.routes.router import erp_m21_compliance_router
+from app.modules.erp.tax.routes.tax_router import erp_gst_router, erp_tds_router, erp_tax_compliance_router
+from app.modules.erp.compliance.routes.router import erp_compliance_alias_router, erp_m21_compliance_router
 from app.modules.erp.fiscal.routes.router import erp_fiscal_router
 from app.modules.erp.procurement.routes.router import erp_procurement_router
 from app.modules.erp.expenses.routes.router import erp_expenses_router
@@ -62,6 +64,7 @@ from app.api.routes import (
     workflows,
 )
 from app.core.config import settings
+from app.legacy_deprecation_middleware import LegacyDeprecationMiddleware
 from app.middleware import RequestMiddleware
 
 
@@ -70,6 +73,9 @@ async def lifespan(_app: FastAPI):
     from app.services.observability_service import startup_observability
 
     startup_observability()
+    from app.core.security_validation import assert_prod_security
+
+    assert_prod_security()
     if settings.postgres_dsn and settings.iam_use_db_auth:
         from app.modules.core.iam.services.iam_schema_service import core_schema_ready
         import logging
@@ -90,6 +96,12 @@ async def lifespan(_app: FastAPI):
             logging.getLogger(__name__).warning(
                 "Notifications schema not ready — run migration 018 before production"
             )
+        from app.modules.platform.billing.repositories.billing_repository import billing_repository
+
+        if settings.postgres_dsn and not billing_repository.schema_ready():
+            logging.getLogger(__name__).warning(
+                "Billing schema not ready — run migration 065 before production"
+            )
     yield
 
 
@@ -99,6 +111,7 @@ app.add_middleware(GatewayMiddleware)
 app.add_middleware(AuditCaptureMiddleware)
 app.add_middleware(GovernanceEnforcementMiddleware)
 app.add_middleware(GovernanceTraceMiddleware)
+app.add_middleware(LegacyDeprecationMiddleware)
 app.add_middleware(RequestMiddleware)
 cors_origins = [o.strip() for o in (settings.cors_allow_origins or "").split(",") if o.strip()]
 app.add_middleware(
@@ -118,6 +131,7 @@ app.include_router(workflows_router, prefix=settings.api_prefix)
 app.include_router(decisions_memory.router, prefix=settings.api_prefix)
 app.include_router(agents.router, prefix=settings.api_prefix)
 app.include_router(governance_router, prefix=settings.api_prefix)
+app.include_router(billing_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(documents_router, prefix=settings.api_prefix)
 app.include_router(integrations_router, prefix=settings.api_prefix)
@@ -125,6 +139,7 @@ app.include_router(api_gateway_router, prefix=settings.api_prefix)
 app.include_router(erp_coa_router, prefix=settings.api_prefix)
 app.include_router(erp_gl_router, prefix=settings.api_prefix)
 app.include_router(erp_journals_router, prefix=settings.api_prefix)
+app.include_router(erp_vouchers_router, prefix=settings.api_prefix)
 app.include_router(erp_ap_router, prefix=settings.api_prefix)
 app.include_router(erp_ar_router, prefix=settings.api_prefix)
 app.include_router(erp_m22_banking_router, prefix=settings.api_prefix)
@@ -135,7 +150,8 @@ app.include_router(erp_m24_treasury_router, prefix=settings.api_prefix)
 app.include_router(legacy_treasury_router, prefix=settings.api_prefix)
 app.include_router(erp_gst_router, prefix=settings.api_prefix)
 app.include_router(erp_tds_router, prefix=settings.api_prefix)
-app.include_router(erp_compliance_router, prefix=settings.api_prefix)
+app.include_router(erp_tax_compliance_router, prefix=settings.api_prefix)
+app.include_router(erp_compliance_alias_router, prefix=settings.api_prefix)
 app.include_router(erp_m21_compliance_router, prefix=settings.api_prefix)
 app.include_router(erp_fiscal_router, prefix=settings.api_prefix)
 app.include_router(erp_procurement_router, prefix=settings.api_prefix)

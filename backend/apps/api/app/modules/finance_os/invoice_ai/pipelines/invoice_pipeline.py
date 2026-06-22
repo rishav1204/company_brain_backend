@@ -12,10 +12,22 @@ from app.modules.finance_os.invoice_ai.services.confidence_service import confid
 from app.modules.finance_os.invoice_ai.services.duplicate_service import duplicate_service
 from app.modules.finance_os.invoice_ai.services.extraction_service import extraction_service
 from app.modules.finance_os.invoice_ai.services.ledger_suggestion_service import ledger_suggestion_service
+from app.modules.platform.billing.billing_hooks import billing_ai_operation
 
 
 class InvoicePipeline:
     def run(
+        self,
+        org_id: str,
+        *,
+        document_id: str,
+        invoice_type: str = "purchase",
+        ocr_text: str | None = None,
+    ) -> dict:
+        with billing_ai_operation(org_id, feature="invoice_ai", operation_code="invoice_ai_review"):
+            return self._run_inner(org_id, document_id=document_id, invoice_type=invoice_type, ocr_text=ocr_text)
+
+    def _run_inner(
         self,
         org_id: str,
         *,
@@ -85,6 +97,14 @@ class InvoicePipeline:
             "auto_draft_eligible": conf["auto_draft_eligible"],
             "overall_confidence": conf["overall_confidence"],
         }
+        if conf.get("auto_draft_eligible"):
+            try:
+                from app.modules.erp.vouchers.services.voucher_service import voucher_service
+
+                draft = voucher_service.create_from_extraction(org_id, extraction_id=extraction["id"])
+                result["draft_voucher_id"] = str((draft.get("voucher") or {}).get("id") or "")
+            except Exception:
+                pass
         emit_pipeline_completed(org_id, result)
         return result
 

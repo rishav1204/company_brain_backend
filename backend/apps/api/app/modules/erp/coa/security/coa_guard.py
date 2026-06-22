@@ -4,9 +4,11 @@ from fastapi import Depends, HTTPException
 
 from app.api.deps import build_request_context
 from app.core.request_context import RequestContext
+from app.modules.platform.billing.security.billing_enforce import enforce_billing
 
 
 def require_finance_admin(context: RequestContext = Depends(build_request_context)) -> RequestContext:
+    enforce_billing(context.org_id, "coa")
     """
     Minimal guard: require role containing 'finance' and 'admin', or wildcard permission.
     Extend to exact IAM permission mapping later.

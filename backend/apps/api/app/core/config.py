@@ -3,25 +3,60 @@ import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+from app.core.yaml_config import yaml_get
+
 load_dotenv()
+
+# Seeded benchmark tenant used for local dev login and sample data.
+DEV_ORG_ID = "11111111-1111-4111-8111-111111111111"
+
+
+def _env_or_yaml(env_key: str, *yaml_keys: str, default: str = "") -> str:
+    value = os.getenv(env_key)
+    if value is not None and value != "":
+        return value
+    if not yaml_keys:
+        return default
+    yaml_value = yaml_get(*yaml_keys, default=default)
+    return str(yaml_value) if yaml_value is not None else default
+
+
+def _env_or_yaml_int(env_key: str, *yaml_keys: str, default: int) -> int:
+    value = os.getenv(env_key)
+    if value is not None and value != "":
+        return int(value)
+    if not yaml_keys:
+        return default
+    yaml_value = yaml_get(*yaml_keys, default=default)
+    return int(yaml_value)
+
+
+def _env_or_yaml_float(env_key: str, *yaml_keys: str, default: float) -> float:
+    value = os.getenv(env_key)
+    if value is not None and value != "":
+        return float(value)
+    if not yaml_keys:
+        return default
+    yaml_value = yaml_get(*yaml_keys, default=default)
+    return float(yaml_value)
 
 
 class Settings(BaseModel):
-    app_name: str = "Company Brain Finance API"
-    api_prefix: str = "/api/v1"
-    app_env: str = os.getenv("APP_ENV", "dev")
-    default_confidence: float = 0.92
+    app_name: str = _env_or_yaml("APP_NAME", "app", "name", default="Company Brain Finance API")
+    api_prefix: str = _env_or_yaml("API_PREFIX", "app", "api_prefix", default="/api/v1")
+    app_env: str = _env_or_yaml("APP_ENV", "app", "env", default="dev")
+    default_confidence: float = _env_or_yaml_float("DEFAULT_CONFIDENCE", default=0.92)
     jwt_secret: str = os.getenv("JWT_SECRET", "dev-secret-change-me")
-    jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
-    jwt_issuer: str = os.getenv("JWT_ISSUER", "https://example-issuer")
-    jwt_audience: str = os.getenv("JWT_AUDIENCE", "company-brain-api")
-    jwt_jwks_url: str = os.getenv("JWT_JWKS_URL", "")
+    jwt_algorithm: str = _env_or_yaml("JWT_ALGORITHM", "auth", "jwt_algorithm", default="HS256")
+    jwt_issuer: str = _env_or_yaml("JWT_ISSUER", "auth", "jwt_issuer", default="https://example-issuer")
+    jwt_audience: str = _env_or_yaml("JWT_AUDIENCE", "auth", "jwt_audience", default="company-brain-api")
+    jwt_jwks_url: str = _env_or_yaml("JWT_JWKS_URL", "auth", "jwt_jwks_url", default="")
     jwt_require_jwks_in_prod: bool = os.getenv("JWT_REQUIRE_JWKS_IN_PROD", "true").lower() == "true"
     jwt_require_exp: bool = os.getenv("JWT_REQUIRE_EXP", "true").lower() == "true"
-    auth_mode: str = os.getenv("AUTH_MODE", "bearer_only")
-    jwt_tenant_claim: str = os.getenv("JWT_TENANT_CLAIM", "org_id")
-    jwt_roles_claim: str = os.getenv("JWT_ROLES_CLAIM", "roles")
-    jwt_user_claim: str = os.getenv("JWT_USER_CLAIM", "sub")
+    auth_mode: str = _env_or_yaml("AUTH_MODE", "auth", "mode", default="bearer_only")
+    jwt_tenant_claim: str = _env_or_yaml("JWT_TENANT_CLAIM", "auth", "tenant_claim", default="org_id")
+    jwt_roles_claim: str = _env_or_yaml("JWT_ROLES_CLAIM", "auth", "roles_claim", default="roles")
+    jwt_user_claim: str = _env_or_yaml("JWT_USER_CLAIM", "auth", "user_claim", default="sub")
     oidc_enabled: bool = os.getenv("OIDC_ENABLED", "false").lower() == "true"
     oidc_provider: str = os.getenv("OIDC_PROVIDER", "auth0")
     oidc_authorization_endpoint: str = os.getenv("OIDC_AUTHORIZATION_ENDPOINT", "")
@@ -40,13 +75,13 @@ class Settings(BaseModel):
     api_session_ttl_seconds: int = int(os.getenv("API_SESSION_TTL_SECONDS", "3600"))
     oidc_refresh_ttl_seconds: int = int(os.getenv("OIDC_REFRESH_TTL_SECONDS", "86400"))
     oidc_store_prefix: str = os.getenv("OIDC_STORE_PREFIX", "oidc")
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
-    postgres_dsn: str = os.getenv("POSTGRES_DSN", "")
+    redis_url: str = _env_or_yaml("REDIS_URL", "queue", "redis_url", default="redis://localhost:6379")
+    postgres_dsn: str = _env_or_yaml("POSTGRES_DSN", "databases", "postgres", "dsn", default="")
     postgres_require_tls: bool = os.getenv("POSTGRES_REQUIRE_TLS", "true").lower() == "true"
     redis_require_tls: bool = os.getenv("REDIS_REQUIRE_TLS", "false").lower() == "true"
     neo4j_require_tls: bool = os.getenv("NEO4J_REQUIRE_TLS", "false").lower() == "true"
-    queue_main_name: str = os.getenv("QUEUE_MAIN_NAME", "finance.agent.action")
-    queue_dlq_name: str = os.getenv("QUEUE_DLQ_NAME", "finance.agent.action.dlq")
+    queue_main_name: str = _env_or_yaml("QUEUE_MAIN_NAME", "queue", "queue_main_name", default="finance.agent.action")
+    queue_dlq_name: str = _env_or_yaml("QUEUE_DLQ_NAME", "queue", "queue_dlq_name", default="finance.agent.action.dlq")
     queue_ingestion_sync: str = os.getenv("QUEUE_INGESTION_SYNC", "ingestion.sync")
     queue_ingestion_retry: str = os.getenv("QUEUE_INGESTION_RETRY", "ingestion.retry")
     queue_processing_chunk: str = os.getenv("QUEUE_PROCESSING_CHUNK", "processing.chunk")
@@ -83,13 +118,13 @@ class Settings(BaseModel):
     event_retry_max_attempts: int = int(os.getenv("EVENT_RETRY_MAX_ATTEMPTS", "5"))
     webhook_max_attempts: int = int(os.getenv("WEBHOOK_MAX_ATTEMPTS", "5"))
     event_publish_rate_limit_per_minute: int = int(os.getenv("EVENT_PUBLISH_RATE_LIMIT_PER_MINUTE", "1200"))
-    neo4j_uri: str = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-    neo4j_user: str = os.getenv("NEO4J_USER", "neo4j")
-    neo4j_password: str = os.getenv("NEO4J_PASSWORD", "password")
-    llm_provider: str = os.getenv("LLM_PROVIDER", "openai")
+    neo4j_uri: str = _env_or_yaml("NEO4J_URI", "databases", "neo4j", "uri", default="bolt://localhost:7687")
+    neo4j_user: str = _env_or_yaml("NEO4J_USER", "databases", "neo4j", "user", default="neo4j")
+    neo4j_password: str = _env_or_yaml("NEO4J_PASSWORD", "databases", "neo4j", "password", default="password")
+    llm_provider: str = _env_or_yaml("LLM_PROVIDER", "llm", "provider", default="openai")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "")
-    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4.1")
+    openai_model: str = _env_or_yaml("OPENAI_MODEL", "llm", "model", default="gpt-4.1")
     llm_timeout_seconds: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     llm_max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
     llm_retry_base_ms: int = int(os.getenv("LLM_RETRY_BASE_MS", "300"))
@@ -97,6 +132,16 @@ class Settings(BaseModel):
     llm_circuit_open_seconds: int = int(os.getenv("LLM_CIRCUIT_OPEN_SECONDS", "60"))
     llm_tokens_per_minute_per_org: int = int(os.getenv("LLM_TOKENS_PER_MINUTE_PER_ORG", "30000"))
     retrieval_embedding_model: str = os.getenv("RETRIEVAL_EMBEDDING_MODEL", "text-embedding-3-small")
+    retrieval_chunk_size_tokens: int = _env_or_yaml_int(
+        "RETRIEVAL_CHUNK_SIZE_TOKENS", "retrieval", "chunk_size_tokens", default=800
+    )
+    retrieval_chunk_overlap_ratio: float = _env_or_yaml_float(
+        "RETRIEVAL_CHUNK_OVERLAP_RATIO", "retrieval", "chunk_overlap_ratio", default=0.25
+    )
+    retrieval_top_k: int = _env_or_yaml_int("RETRIEVAL_TOP_K", "retrieval", "top_k", default=5)
+    retrieval_min_confidence: float = _env_or_yaml_float(
+        "RETRIEVAL_MIN_CONFIDENCE", "retrieval", "min_confidence", default=0.7
+    )
     integration_timeout_seconds: float = float(os.getenv("INTEGRATION_TIMEOUT_SECONDS", "10"))
     integration_max_retries: int = int(os.getenv("INTEGRATION_MAX_RETRIES", "3"))
     slack_webhook_url: str = os.getenv("SLACK_WEBHOOK_URL", "")
@@ -137,7 +182,7 @@ class Settings(BaseModel):
     enable_worker_routes: bool = os.getenv("ENABLE_WORKER_ROUTES", "true").lower() == "true"
     dev_use_postgres: bool = os.getenv("DEV_USE_POSTGRES", "false").lower() == "true"
     allow_direct_ap_execute: bool = os.getenv("ALLOW_DIRECT_AP_EXECUTE", "false").lower() == "true"
-    scheduler_org_ids: str = os.getenv("SCHEDULER_ORG_IDS", "org-demo")
+    scheduler_org_ids: str = os.getenv("SCHEDULER_ORG_IDS", DEV_ORG_ID)
     event_queue_inflight_seconds: int = int(os.getenv("EVENT_QUEUE_INFLIGHT_SECONDS", "120"))
     iam_use_db_auth: bool = os.getenv("IAM_USE_DB_AUTH", "true").lower() == "true"
     iam_access_token_ttl_seconds: int = int(os.getenv("IAM_ACCESS_TOKEN_TTL_SECONDS", "900"))
@@ -196,6 +241,3 @@ class Settings(BaseModel):
 
 
 settings = Settings()
-
-# Seeded benchmark tenant used for local dev login and sample data.
-DEV_ORG_ID = "11111111-1111-4111-8111-111111111111"

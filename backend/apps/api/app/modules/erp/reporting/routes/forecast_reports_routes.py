@@ -10,7 +10,7 @@ from app.modules.erp.reporting.events.report_events import emit_report_generated
 router = APIRouter(prefix="/forecast", tags=["erp-reports-forecast"])
 
 
-@router.get("")
+@router.get("/")
 def forecast_report(
     type: str = Query("cash", alias="type"),
     horizon_days: int = 30,

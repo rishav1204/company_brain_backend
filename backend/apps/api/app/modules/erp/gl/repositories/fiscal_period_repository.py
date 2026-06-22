@@ -1,3 +1,5 @@
+"""Deprecated: use app.modules.erp.fiscal.repositories.fiscal_period_repository instead."""
+
 from __future__ import annotations
 
 from uuid import uuid4

@@ -15,7 +15,7 @@ from app.modules.erp.assets.services.capitalization_service import capitalizatio
 router = APIRouter()
 
 
-@router.post("")
+@router.post("/")
 def create_asset(request: AssetCreateRequest, context=Depends(require_asset_create)) -> dict:
     try:
         item = asset_service.create(
@@ -38,7 +38,7 @@ def create_asset(request: AssetCreateRequest, context=Depends(require_asset_crea
     return {"request_id": context.request_id, "item": item}
 
 
-@router.get("")
+@router.get("/")
 def list_assets(
     context=Depends(require_asset_read),
     status: str | None = Query(default=None),

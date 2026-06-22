@@ -167,5 +167,17 @@ class PaymentRepository:
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
+    def link_voucher(self, org_id: str, *, payment_id: str, voucher_id: str) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE erp.ap_payments SET voucher_id = %s::uuid, updated_at = NOW()
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    """,
+                    (voucher_id, org_id, payment_id),
+                )
+
 
 payment_repository = PaymentRepository()

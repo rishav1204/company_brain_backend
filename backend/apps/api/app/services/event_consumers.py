@@ -150,6 +150,13 @@ def _consume_graph_ingestion(envelope: dict) -> None:
     if not org_id:
         return
     try:
+        from app.modules.platform.billing.billing_hooks import gate_ai_event
+
+        if not gate_ai_event(org_id, feature="graph_engine", operation_code="graph_ingest"):
+            return
+    except Exception:
+        pass
+    try:
         from app.modules.finance_os.graph.pipelines.graph_ingestion_pipeline import graph_ingestion_pipeline
 
         graph_ingestion_pipeline.run_from_event(envelope)
@@ -818,6 +825,14 @@ def _consume_m25_invoice_pipeline(envelope: dict) -> None:
         return
 
     try:
+        from app.modules.platform.billing.billing_hooks import gate_ai_event
+
+        if not gate_ai_event(org_id, feature="invoice_ai", operation_code="invoice_ai_review"):
+            return
+    except Exception:
+        pass
+
+    try:
         from app.modules.platform.documents.repositories.document_repository import document_repository
 
         doc = document_repository.get_document(org_id, document_id) or {}
@@ -889,6 +904,13 @@ def _consume_agents_trigger(envelope: dict) -> None:
     if not org_id:
         return
     try:
+        from app.modules.platform.billing.billing_hooks import gate_ai_event
+
+        if not gate_ai_event(org_id, feature="agents", operation_code="agent_execution"):
+            return
+    except Exception:
+        pass
+    try:
         from app.modules.finance_os.agents.pipelines.agent_orchestration_pipeline import agent_orchestration_pipeline
         from app.modules.finance_os.agents.repositories.execution_repository import execution_repository
 
@@ -929,6 +951,13 @@ def _consume_forecasting_refresh(envelope: dict) -> None:
     org_id = str(envelope.get("org_id", ""))
     if not org_id:
         return
+    try:
+        from app.modules.platform.billing.billing_hooks import gate_ai_event
+
+        if not gate_ai_event(org_id, feature="forecasting", operation_code="forecast_generation"):
+            return
+    except Exception:
+        pass
     try:
         from time import time
 
@@ -1112,6 +1141,13 @@ def _consume_memory_ingestion(envelope: dict) -> None:
     if not org_id:
         return
     try:
+        from app.modules.platform.billing.billing_hooks import gate_ai_event
+
+        if not gate_ai_event(org_id, feature="memory", operation_code="memory_write"):
+            return
+    except Exception:
+        pass
+    try:
         from app.modules.finance_os.memory.pipelines.memory_ingestion_pipeline import memory_ingestion_pipeline
 
         memory_ingestion_pipeline.run_from_event(envelope)
@@ -1148,6 +1184,13 @@ def _consume_workflow_intelligence(envelope: dict) -> None:
                 instance_id = ""
     if not instance_id:
         return
+    try:
+        from app.modules.platform.billing.billing_hooks import gate_ai_event
+
+        if not gate_ai_event(org_id, feature="workflow_intelligence", operation_code="workflow_intelligence"):
+            return
+    except Exception:
+        pass
     try:
         from app.modules.finance_os.workflow_intelligence.pipelines.workflow_intelligence_pipeline import (
             workflow_intelligence_pipeline,
@@ -1722,6 +1765,67 @@ def _handle_procurement_workflow_approval(org_id: str, payload: dict, *, event_t
             import logging
 
             logging.getLogger(__name__).warning("Procurement exception workflow failed org=%s match=%s: %s", org_id, match_id, exc)
+            return False
+    return False
+
+
+def _handle_voucher_workflow_approval(org_id: str, payload: dict, *, event_type: str = "") -> bool:
+    entity_type = str(payload.get("entity_type") or "").lower()
+    workflow_type = str(payload.get("workflow_key") or payload.get("workflow_type") or "")
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    entity_id = str(payload.get("entity_id") or metadata.get("voucher_id") or "").strip()
+    approver = str(payload.get("approver_user_id") or payload.get("approved_by") or "workflow")
+    auto_post = bool(metadata.get("auto_post"))
+
+    if entity_type == "voucher" or workflow_type == "VOUCHER_APPROVAL":
+        voucher_id = entity_id
+        if not voucher_id:
+            return False
+        try:
+            from app.modules.erp.vouchers.services.voucher_service import voucher_service
+
+            voucher_service.approve(
+                org_id,
+                voucher_id=voucher_id,
+                approver_id=approver,
+                auto_post=auto_post,
+                generator_payload=metadata.get("generator_payload") if isinstance(metadata.get("generator_payload"), dict) else None,
+            )
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("Voucher workflow failed org=%s voucher=%s: %s", org_id, voucher_id, exc)
+            return False
+
+    if entity_type in {"ap_credit_note", "ap_debit_note"} or workflow_type in {"AP_CREDIT_NOTE_APPROVAL", "AP_DEBIT_NOTE_APPROVAL"}:
+        note_id = str(metadata.get("note_id") or metadata.get("ap_invoice_id") or entity_id)
+        if not note_id:
+            return False
+        try:
+            from app.modules.erp.accounts_payable.services.note_service import ap_note_service
+
+            ap_note_service.approve_note(org_id, note_id=note_id, approver_id=approver, auto_post=auto_post)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("AP note workflow failed org=%s note=%s: %s", org_id, note_id, exc)
+            return False
+
+    if entity_type == "ar_credit_note" or workflow_type == "AR_CREDIT_NOTE_APPROVAL":
+        note_id = str(metadata.get("note_id") or metadata.get("ar_invoice_id") or entity_id)
+        if not note_id:
+            return False
+        try:
+            from app.modules.erp.accounts_receivable.services.note_service import ar_note_service
+
+            ar_note_service.approve_note(org_id, note_id=note_id, approver_id=approver, auto_post=auto_post)
+            return True
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning("AR note workflow failed org=%s note=%s: %s", org_id, note_id, exc)
             return False
     return False
 
@@ -2362,6 +2466,9 @@ def _consume_journal_events(envelope: dict) -> None:
             return
 
         if _handle_inventory_workflow_approval(org_id, payload, event_type=event_type):
+            return
+
+        if _handle_voucher_workflow_approval(org_id, payload, event_type=event_type):
             return
 
         ctx = _resolve_workflow_domain_context(org_id, payload)

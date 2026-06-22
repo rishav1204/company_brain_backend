@@ -16,6 +16,9 @@ def _scope_allows(context, required_scopes: list[str]) -> bool:
     return any(s in key_scopes for s in required_scopes)
 
 
+from app.modules.platform.billing.security.billing_enforce import enforce_billing
+
+
 def enforce_gateway_action(
     context,
     *,
@@ -24,6 +27,7 @@ def enforce_gateway_action(
     object_type: str = "api_gateway",
     object_id: str = "gateway",
 ) -> None:
+    enforce_billing(context.org_id, "api_platform")
     if context.auth_method == "api_key" and required_scopes and not _scope_allows(context, required_scopes):
         raise HTTPException(status_code=403, detail="API key scope violation")
 

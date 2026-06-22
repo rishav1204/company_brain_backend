@@ -11,7 +11,11 @@ ASSET_ADMIN_ROLES = {
 ASSET_READ_ROLES = ASSET_ADMIN_ROLES | {"auditor", "analyst"}
 
 
+from app.modules.platform.billing.security.billing_enforce import enforce_billing
+
+
 def _check(context: RequestContext, *, read_only: bool = False, action: str | None = None) -> RequestContext:
+    enforce_billing(context.org_id, "assets")
     roles = {r.lower() for r in (context.roles or [])}
     perms = {p.lower() for p in (context.permissions or [])}
     if "*" in perms or "asset.admin" in perms:

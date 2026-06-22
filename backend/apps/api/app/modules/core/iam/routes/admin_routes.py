@@ -172,6 +172,13 @@ def create_organization(body: CreateOrganizationRequest, context=Depends(build_r
         currency=body.currency,
         plan=body.plan,
     )
+    try:
+        from app.modules.platform.billing.services.subscription_service import subscription_service
+
+        plan_key = body.plan or "finance_starter"
+        subscription_service.bootstrap_org(str(row["id"]), plan_key=plan_key)
+    except Exception:
+        pass
     mark_idempotency("iam:org_create", context, body.idempotency_key)
     return {"request_id": context.request_id, "organization": row, "verification_status": "iam_org_created"}
 
@@ -191,6 +198,16 @@ def update_current_org(body: UpdateOrgRequest, context=Depends(build_request_con
 @router.post("/organizations/companies")
 def create_company(body: CreateCompanyRequest, context=Depends(build_request_context)) -> dict:
     _require_admin(context)
+    try:
+        from app.modules.platform.billing.services.usage_service import usage_service
+
+        usage_service.check_quota(context.org_id, "max_entities", increment=1)
+    except Exception as exc:
+        from app.modules.platform.billing.exceptions import BillingDenied
+        from fastapi import HTTPException
+
+        if isinstance(exc, BillingDenied):
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     check_idempotency("iam:company_create", context, body.idempotency_key)
     row = organization_repo.create_company(
         context.org_id,

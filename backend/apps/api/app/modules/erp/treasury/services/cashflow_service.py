@@ -85,9 +85,9 @@ class CashflowService:
 
     def _org_forecast_hooks(self, org_id: str) -> dict:
         try:
-            from app.modules.core.orgs.repositories.org_repository import org_repository
+            from app.modules.core.iam.repositories.organization_repository import organization_repository
 
-            org = org_repository.get(org_id) or {}
+            org = organization_repository.get_organization(org_id) or {}
             meta = org.get("metadata") if isinstance(org.get("metadata"), dict) else {}
             forecast = meta.get("treasury_forecast")
             return forecast if isinstance(forecast, dict) else {}

@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 
+from app.modules.platform.billing.security.billing_enforce import enforce_billing
+
+
 def require_reporting_read(user) -> None:
+    enforce_billing(getattr(user, "org_id", None), "reporting")
     roles = set(getattr(user, "roles", []) or [])
     allowed = {
         "tenant_admin",
@@ -21,6 +25,7 @@ def require_reporting_read(user) -> None:
 
 
 def require_reporting_export(user) -> None:
+    enforce_billing(getattr(user, "org_id", None), "reporting")
     roles = set(getattr(user, "roles", []) or [])
     allowed = {"tenant_admin", "finance_manager", "controller", "cfo", "finance_admin"}
     if roles & allowed:

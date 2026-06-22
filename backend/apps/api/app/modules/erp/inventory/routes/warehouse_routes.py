@@ -9,7 +9,7 @@ from app.modules.erp.inventory.services.item_service import warehouse_service
 router = APIRouter()
 
 
-@router.post("")
+@router.post("/")
 def create_warehouse(request: WarehouseCreateRequest, context=Depends(require_inventory_create)) -> dict:
     try:
         wh = warehouse_service.create(
@@ -23,7 +23,7 @@ def create_warehouse(request: WarehouseCreateRequest, context=Depends(require_in
     return {"request_id": context.request_id, "warehouse": wh}
 
 
-@router.get("")
+@router.get("/")
 def list_warehouses(context=Depends(require_inventory_read)) -> dict:
     items = warehouse_service.list(context.org_id)
     return {"request_id": context.request_id, "items": items}

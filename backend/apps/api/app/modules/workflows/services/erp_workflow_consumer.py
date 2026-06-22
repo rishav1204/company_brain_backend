@@ -30,6 +30,10 @@ _ENTITY_WORKFLOW_MAP = {
     "asset_disposal": "ASSET_DISPOSAL_APPROVAL",
     "asset_impairment": "ASSET_IMPAIRMENT_APPROVAL",
     "inventory_adjustment": "INVENTORY_ADJUSTMENT_APPROVAL",
+    "voucher": "VOUCHER_APPROVAL",
+    "ap_credit_note": "AP_CREDIT_NOTE_APPROVAL",
+    "ap_debit_note": "AP_DEBIT_NOTE_APPROVAL",
+    "ar_credit_note": "AR_CREDIT_NOTE_APPROVAL",
 }
 
 

@@ -266,3 +266,6 @@ class OrganizationRepository:
                     (org_id, company_id, unit_code, unit_name),
                 )
                 return cur.fetchone()
+
+
+organization_repository = OrganizationRepository()

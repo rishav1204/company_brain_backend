@@ -476,8 +476,8 @@ Reference YAML configs (not wired directly into `Settings`; runtime uses `.env` 
 
 | File | Description |
 |------|-------------|
-| [`config/dev.yaml`](config/dev.yaml) | Development defaults: auth mode, database URLs, queue names, retrieval/LLM settings. |
-| [`config/prod.yaml`](config/prod.yaml) | Production template with `${ENV_VAR}` placeholders for secrets injection in K8s/Helm. |
+| [`config/dev.yaml`](config/dev.yaml) | Development defaults loaded by `app/core/config.py` (env vars override). |
+| [`config/prod.yaml`](config/prod.yaml) | Production template with `${ENV_VAR}` placeholders; loaded when `APP_ENV=prod`. |
 
 ---
 

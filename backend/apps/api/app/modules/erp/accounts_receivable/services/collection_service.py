@@ -153,6 +153,27 @@ class CollectionService:
             )
             ar_realtime_service.push_payment_received(org_id, receipt_id=receipt_id, amount=amount)
             self._audit(org_id, receipt_id=receipt_id, action="ar.receipt.completed", actor_id=completed_by)
+
+            try:
+                from app.modules.erp.vouchers.services.voucher_projection_service import voucher_projection_service
+
+                voucher_projection_service.project_operational(
+                    org_id,
+                    voucher_type="receipt",
+                    reference_type="ar_receipt",
+                    reference_id=receipt_id,
+                    source_module="accounts_receivable",
+                    journal_id=jid,
+                    voucher_date=str(receipt.get("receipt_date")),
+                    narration=f"Receipt {receipt.get('receipt_number')}",
+                    company_id=receipt.get("company_id"),
+                    created_by=completed_by,
+                    status="posted" if auto_post else "journal_generated",
+                    total_amount=amount,
+                )
+            except Exception:
+                pass
+
             return {"receipt_id": receipt_id, "status": "completed", "journal_id": jid, "post_result": post_result}
         except Exception as exc:
             receipt_repository.set_status(org_id, receipt_id=receipt_id, status="failed")

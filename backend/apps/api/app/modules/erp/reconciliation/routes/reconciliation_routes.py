@@ -57,7 +57,7 @@ def manual_match(request: ReconciliationMatchRequest, context=Depends(require_re
     return {"request_id": context.request_id, "item": item}
 
 
-@router.get("")
+@router.get("/")
 def list_reconciliation(context=Depends(require_reconciliation_read), status: str | None = Query(default="suggested")) -> dict:
     items = reconciliation_service.list_suggestions(context.org_id, status=status)
     return {"request_id": context.request_id, "items": items}

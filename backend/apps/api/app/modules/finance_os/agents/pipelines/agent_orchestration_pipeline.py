@@ -13,6 +13,7 @@ from app.modules.finance_os.agents.services.execution_service import execution_s
 from app.modules.finance_os.agents.services.recommendation_service import recommendation_service
 from app.services.langgraph_runner import run_langgraph_flow
 from app.services.repositories import audit_repo
+from app.modules.platform.billing.billing_hooks import billing_ai_operation
 
 
 FINANCE_OS_AGENTS = {
@@ -34,6 +35,33 @@ def is_finance_os_agent(agent_type: str) -> bool:
 
 class AgentOrchestrationPipeline:
     def run(
+        self,
+        org_id: str,
+        agent_type: str,
+        trigger_type: str,
+        payload: dict | None = None,
+        *,
+        trace_id: str | None = None,
+        principal_roles: list[str] | None = None,
+        principal_attrs: dict | None = None,
+        user_id: str | None = None,
+        source_event_type: str | None = None,
+    ) -> dict:
+        op = "custom_workflow_agent" if trigger_type == "workflow" else "agent_execution"
+        with billing_ai_operation(org_id, feature="agents", operation_code=op):
+            return self._run_inner(
+                org_id,
+                agent_type,
+                trigger_type,
+                payload,
+                trace_id=trace_id,
+                principal_roles=principal_roles,
+                principal_attrs=principal_attrs,
+                user_id=user_id,
+                source_event_type=source_event_type,
+            )
+
+    def _run_inner(
         self,
         org_id: str,
         agent_type: str,

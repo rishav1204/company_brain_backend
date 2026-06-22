@@ -359,6 +359,26 @@ class InvoiceService:
         if auto_post:
             post_result = posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=approver_id)
 
+        try:
+            from app.modules.erp.vouchers.services.voucher_projection_service import voucher_projection_service
+
+            voucher_projection_service.project_operational(
+                org_id,
+                voucher_type="purchase",
+                reference_type="ap_invoice",
+                reference_id=invoice_id,
+                source_module="accounts_payable",
+                journal_id=jid,
+                voucher_date=posting_date or str(invoice.get("invoice_date")),
+                narration=f"AP Invoice {invoice.get('invoice_number')}",
+                company_id=invoice.get("company_id"),
+                created_by=approver_id,
+                status="posted" if auto_post else "journal_generated",
+                total_amount=float(invoice.get("total_amount") or 0),
+            )
+        except Exception:
+            pass
+
         return {
             "invoice_id": invoice_id,
             "status": "approved",

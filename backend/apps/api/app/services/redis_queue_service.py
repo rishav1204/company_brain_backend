@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import redis
 from redis.exceptions import RedisError
 
-from app.core.config import settings
+from app.core.config import DEV_ORG_ID, settings
 from app.services.event_queue import event_queue
 from app.services.metrics import metrics_store
 from app.services.principal_context import build_principal
@@ -40,7 +40,7 @@ class RedisQueueService:
             envelope = {
                 "event_id": idempotency_key or f"legacy-{abs(hash(json.dumps(payload, sort_keys=True)))}",
                 "event_type": event_type,
-                "org_id": str(payload.get("org_id", "org-demo")),
+                "org_id": str(payload.get("org_id", DEV_ORG_ID)),
                 "source": "api.queue",
                 "occurred_at": str(payload.get("occurred_at", "")),
                 "trace_id": str(payload.get("trace_id", idempotency_key)),

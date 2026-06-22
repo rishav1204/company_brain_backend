@@ -43,13 +43,16 @@ ERP is a **new bounded domain** inside the existing modular monolith at `backend
 
 ```
 backend/apps/api/app/
-  api/routes/erp/           ← NEW: /api/v1/erp/*
-  schemas/erp/              ← NEW: Pydantic models per subdomain
-  services/erp/             ← NEW: deterministic financial truth logic
-  services/repositories/    ← EXTEND: Erp*Repository classes (or services/erp/repositories/)
-backend/migrations/         ← NEW: 009+ erp_*.sql with RLS
-pkg/contracts/              ← EXTEND: ERP event types in contracts
-internal/erp/               ← NEW (optional): domain boundary READMEs
+  modules/core/iam/          ← IAM (M01)
+  modules/erp/<domain>/      ← ERP financial truth (routes, services, repositories per domain)
+  modules/finance_os/<domain>/ ← Intelligence layer
+  modules/platform/<domain>/ ← Shared platform services
+  modules/workflows/         ← Workflow engine (M02)
+  api/routes/                ← Legacy v1 routes (see LEGACY_ROUTE_MIGRATION.md)
+  services/                  ← Shared cross-cutting services (db, event_bus, jwt_auth, …)
+backend/migrations/          ← SQL migrations with RLS (core.*, erp.*, finance_os.*)
+pkg/contracts/               ← API + event contracts
+config/dev.yaml, config/prod.yaml ← Reference defaults loaded by app/core/config.py
 ```
 
 ### What we REUSE (do not duplicate)
@@ -188,10 +191,10 @@ User authentication and authorization for all ERP routes.
 
 ### Features (platform-wide; ERP consumes)
 
-**Authentication:** email/password (dev), SSO/OIDC, session JWT, MFA (future)  
+**Authentication:** email/password (dev), SSO/OIDC, session JWT, MFA/TOTP (implemented)  
 **Authorization:** RBAC, ABAC, field-level permissions, approval permissions, maker-checker  
 **Org structure:** companies (`org_id`), branches, departments, cost centers (ERP tables extend)  
-**User management:** invites, deactivation, role assignment (future admin module)
+**User management:** invites, deactivation, role assignment
 
 ### Laws / concepts
 - Separation of duties (SoD)
@@ -205,11 +208,11 @@ User authentication and authorization for all ERP routes.
 - [x] Argon2id + JWT + refresh rotation
 - [x] RBAC + ABAC (`policy_context`) + maker-checker
 - [x] IAM routes + backward-compatible `/auth/password/login`
+- [x] MFA/TOTP APIs (`modules/core/iam/routes/mfa_routes.py`)
+- [x] API key routes (`modules/core/iam/routes/api_key_routes.py`)
+- [x] User invites (`modules/core/iam/routes/invite_routes.py`)
 
 ### Per-module extension (v2)
-- [ ] MFA/TOTP APIs
-- [ ] User invites
-- [ ] API key routes
 - [ ] Field-level ACL middleware
 - [ ] UI permission map document
 
@@ -267,6 +270,13 @@ erp.payment.completed
 erp.reconciliation.pending
 erp.gst.return.generated
 erp.voucher.created
+erp.voucher.validated
+erp.voucher.submitted
+erp.voucher.approved
+erp.voucher.journal_generated
+erp.voucher.posted
+erp.voucher.reversed
+erp.voucher.cancelled
 erp.period.closed
 ```
 
@@ -285,12 +295,23 @@ erp.account.suggested
 
 ---
 
-## Module 5 — Notification & Communication Engine
+## Module 5 — Notification Engine
 
 | Attribute | Value |
 |-----------|--------|
 | **Status** | **Implemented** — `modules/platform/notifications/`, migration `018` |
 | **Email** | Resend free tier + SMTP/console fallback |
+| **ERP ownership** | ERP templates and triggers |
+
+### Channels
+Email, Slack (existing webhooks); WhatsApp/SMS/push (partial)
+
+### ERP triggers
+Workflow reminders, approval pending, GST due dates, reconciliation exceptions
+
+### Per-module extension (later)
+- [ ] Template catalog
+- [ ] Event → notification mapping
 
 ---
 
@@ -317,25 +338,6 @@ Immutable enterprise auditability for every ERP mutation.
 ### Per-module extension (later)
 - [ ] `object_ref` naming convention (`erp:journal:{id}`, etc.)
 - [ ] Retention policies
-
----
-
-## Module 5 — Notification Engine
-
-| Attribute | Value |
-|-----------|--------|
-| **Status** | **Partial reuse** — `integration_service` (Slack, email) |
-| **ERP ownership** | ERP templates and triggers |
-
-### Channels
-Email, Slack (existing webhooks); WhatsApp/SMS/push (future)
-
-### ERP triggers
-Workflow reminders, approval pending, GST due dates, reconciliation exceptions
-
-### Per-module extension (later)
-- [ ] Template catalog
-- [ ] Event → notification mapping
 
 ---
 
@@ -495,10 +497,11 @@ posted → reversed (via reversal journal)
 
 | Attribute | Value |
 |-----------|--------|
-| **Status** | **New ERP domain** |
+| **Status** | **Built — required before prod** |
 | **API prefix** | `/api/v1/erp/vouchers/*` |
 | **DB tables** | `erp.vouchers`, `erp.voucher_lines`, `erp.voucher_sequences` |
-| **Phase** | 1 |
+| **Phase** | 1 (with M10/M8/M12) |
+| **Spec** | [M11_voucher.md](ERP_MODULES/M11_voucher.md) |
 
 ### Purpose
 User-friendly accounting entry layer that **always generates journals** (never separate truth).
@@ -512,12 +515,18 @@ Voucher → validate → approve (workflow) → generate Journal → post Journa
 ```
 Never maintain parallel ledger balances on vouchers alone.
 
-### Dependencies
-- Module 10 (Journal Engine), Module 8 (COA)
+### Unified register
+AP/AR/Banking projection writes linked `erp.vouchers` rows (idempotent `projection:{reference_type}:{reference_id}`).
 
-### Per-module extension (later)
-- [ ] Per-type validators
-- [ ] Number sequences per voucher type
+### Dependencies
+- Module 10 (Journal Engine), Module 8 (COA), Module 12 (Fiscal)
+
+### Per-module extension
+- [x] Per-type generators reusing GST/AP/AR engines
+- [x] Number sequences per voucher type (`SAL/2026/000001`)
+- [x] Typed API shortcuts
+- [x] Full lifecycle events (`erp.voucher.*`)
+- [x] AP/AR CN/DN note entities
 - [ ] UI forms per voucher type
 
 ---
@@ -775,7 +784,8 @@ Section mapping (194C, 194J, 206C, etc.), challans, Form 16A/26Q readiness
 | Attribute | Value |
 |-----------|--------|
 | **Status** | **Done** (~95%) |
-| **API prefix** | `/api/v1/erp/compliance/*` (aliases: `/api/v1/compliance/*`) |
+| **API prefix** | `/api/v1/erp/compliance/*` (alias: `/api/v1/compliance/*`) |
+| **Tax compliance** | `/api/v1/tax/compliance/*` (`erp/tax` GST/TDS calendar — separate from M21) |
 | **Package** | `modules/erp/compliance/` |
 | **Migration** | `046_erp_compliance_engine.sql` |
 | **Phase** | 2+ |
@@ -1048,7 +1058,8 @@ erp.<domain>.<action>     # facts from ERP
 
 ```text
 Phase 1 (Foundation) — MUST be sequential internally:
-  M8 COA → M12 Fiscal → M10 Journal → M11 Voucher → M9 GL
+  M8 COA → M12 Fiscal → M10 Journal → M9 GL
+  M11 Voucher deferred to Phase 2+ (journals are direct entry point today)
   Parallel: M1/M2/M3/M4 reuse only (no new build)
 
 Phase 2 (Operational value):
@@ -1070,9 +1081,7 @@ Phase 5:
 flowchart LR
     COA[M8 COA] --> JE[M10 Journal]
     FP[M12 Fiscal] --> JE
-    JE --> VCH[M11 Voucher]
     JE --> GL[M9 GL]
-    VCH --> JE
     GL --> AP[M13 AP]
     GL --> AR[M14 AR]
     JE --> GST[M19 GST]
@@ -1087,7 +1096,7 @@ flowchart LR
 
 | Phase | Modules | Outcome |
 |-------|---------|---------|
-| **1 — Foundation** | Reuse M1–M7 (auth, workflow, events, audit); **Build** M8, M9, M10, M11, M12 | Deterministic accounting core; can post balanced journals |
+| **1 — Foundation** | Reuse M1–M7 (auth, workflow, events, audit); **Build** M8, M9, M10, M12 | Deterministic accounting core; can post balanced journals |
 | **2 — Operational finance** | M13 AP, M22 Banking, M23 Reconciliation, M19 GST, M20 TDS, M21 calendar, M31 basic reports | First customer value (India AP + compliance) |
 | **3 — Receivables** | M14 AR, M24 Treasury, M15 Procurement, M36 API platform | Full order-to-cash + treasury |
 | **4 — AI power** | M25–M29 (extend Finance OS) | OCR, agents, memory, graph on ERP data |
@@ -1153,7 +1162,7 @@ When you request implementation of a module, we will add a section (or file `ERP
 | M8 | Chart of Accounts | 2 | 1 | **Build** |
 | M9 | General Ledger | 2 | 1 | **Build** |
 | M10 | Journal Engine | 2 | 1 | **Build** |
-| M11 | Voucher Engine | 2 | 1 | **Build** |
+| M11 | Voucher Engine | 2 | 1 | **Built** (see M11_voucher.md) |
 | M12 | Fiscal Periods | 2 | 1 | **Built** |
 | M13 | Accounts Payable | 3 | 2 | **Build** |
 | M14 | Accounts Receivable | 3 | 3 | **Build** |
@@ -1179,6 +1188,7 @@ When you request implementation of a module, we will add a section (or file `ERP
 | M34 | Policy Engine | 7 | 1 | **Done** (see M34_policy_engine.md) |
 | M35 | Multi-Entity / Consolidation | 7 | 5 | **Done** (see M35_consolidation.md) |
 | M36 | API / Webhooks | 7 | 3+ | **Done** (see M36_api_platform.md) |
+| M37 | Billing & Usage Governance | 1 | — | **Built** (see M37_billing.md) |
 
 ---
 
@@ -1186,6 +1196,8 @@ When you request implementation of a module, we will add a section (or file `ERP
 
 | Date | Change |
 |------|--------|
+| 2026-06-22 | M37 Billing Engine — subscriptions, entitlements, usage quotas, AI credits, guard integration |
+| 2026-06-22 | Architecture sync: `modules/` layout documented; M11 voucher deferred; M21 `/compliance` alias fixed; tax compliance at `/tax/compliance`; IAM MFA/API keys marked done; YAML config wired to Settings; legacy route migration plan |
 | 2026-06-20 | M36 API + Webhook Platform — partner gateway, unified webhooks, idempotency, accounting connector stubs |
 | 2026-06-20 | M35 Multi-Entity Consolidation — entity hierarchy, intercompany, elimination, consolidated reporting |
 | 2026-06-18 | M29 AI Agent Orchestration — finance_os agents, domain planners, confidence, workflow launcher |

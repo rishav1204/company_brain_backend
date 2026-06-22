@@ -13,10 +13,27 @@ from app.modules.finance_os.workflow_intelligence.services.sla_prediction_servic
 from app.modules.finance_os.workflow_intelligence.services.workflow_analysis_service import workflow_analysis_service
 from app.modules.finance_os.workflow_intelligence.services.workflow_insight_service import workflow_insight_service
 from app.modules.finance_os.workflow_intelligence.retrieval.workflow_memory import write_pattern_memory
+from app.modules.platform.billing.billing_hooks import billing_ai_operation
 
 
 class WorkflowIntelligencePipeline:
     def run(
+        self,
+        org_id: str,
+        *,
+        workflow_instance_id: str | None = None,
+        workflow_type: str | None = None,
+        trace_id: str | None = None,
+    ) -> dict:
+        with billing_ai_operation(org_id, feature="workflow_intelligence", operation_code="workflow_intelligence"):
+            return self._run_inner(
+                org_id,
+                workflow_instance_id=workflow_instance_id,
+                workflow_type=workflow_type,
+                trace_id=trace_id,
+            )
+
+    def _run_inner(
         self,
         org_id: str,
         *,
