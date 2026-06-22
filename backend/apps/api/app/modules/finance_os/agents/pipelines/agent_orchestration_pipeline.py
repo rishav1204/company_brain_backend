@@ -95,6 +95,24 @@ class AgentOrchestrationPipeline:
                 {"execution_id": execution["id"], "recommendation_id": recommendation.get("id")},
                 trace_id=trace_id,
             )
+            try:
+                from app.modules.platform.governance.services.ai_trace_service import ai_trace_service
+
+                ai_trace_service.record_agent_decision(
+                    org_id,
+                    agent_run_id=execution["id"],
+                    workflow_id=None,
+                    prompt=f"{agent_name}:{plan.recommendation[:200]}",
+                    summary=str(plan.recommendation)[:500],
+                    confidence=float(confidence.score),
+                    decision={
+                        "recommendation_type": plan.recommendation_type,
+                        "recommendation_id": recommendation.get("id"),
+                    },
+                    evidence_refs=[str(recommendation.get("id") or "")],
+                )
+            except Exception:
+                pass
 
         enriched = enrich_payload(context, plan)
         if plan and plan.workflow_key and confidence.band in {"very_strong", "strong", "review"}:

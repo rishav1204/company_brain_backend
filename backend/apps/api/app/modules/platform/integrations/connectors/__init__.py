@@ -11,4 +11,5 @@ from app.modules.platform.integrations.connectors.banks import provider_connecto
 from app.modules.platform.integrations.connectors.gst import stub_gst_connector  # noqa: F401
 from app.modules.platform.integrations.connectors.tds import production_tds_connector  # noqa: F401
 from app.modules.platform.integrations.connectors.tds import stub_tds_connector  # noqa: F401
+from app.modules.platform.integrations.connectors.accounting import accounting_connectors  # noqa: F401
 

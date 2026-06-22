@@ -263,6 +263,43 @@ def _consume_agent_action_event(envelope: dict) -> None:
     )
 
 
+def _consume_consolidation_events(envelope: dict) -> None:
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from app.modules.finance_os.audit_explorer.pipelines.audit_materialization_pipeline import materialize_from_envelope
+
+        materialize_from_envelope(envelope)
+    except Exception:
+        pass
+    if event_type == "intercompany.mismatch.detected":
+        log_event("consolidation.ic_mismatch", org_id=org_id, payload=envelope.get("payload"))
+
+
+def _consume_policy_events(envelope: dict) -> None:
+    """Supplementary risk context for M34 policy events (debounced audit enrichment)."""
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id or not event_type.startswith("policy."):
+        return
+    payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
+    try:
+        from app.modules.finance_os.audit_explorer.pipelines.audit_materialization_pipeline import materialize_from_envelope
+
+        materialize_from_envelope(envelope)
+    except Exception:
+        pass
+    if event_type in {"policy.risk.detected", "policy.denied", "policy.override.required"}:
+        log_event(
+            "policy.event.consumed",
+            org_id=org_id,
+            event_type=event_type,
+            action=str(payload.get("action") or ""),
+        )
+
+
 def _consume_audit_event(envelope: dict) -> None:
     from app.modules.platform.governance.services.audit_service import audit_service
 
@@ -275,6 +312,10 @@ def _consume_governance_event(envelope: dict) -> None:
     org_id = str(envelope.get("org_id", ""))
     if not org_id:
         return
+    if event_type.startswith("policy."):
+        _consume_policy_events(envelope)
+    if event_type.startswith(("consolidation.", "intercompany.", "elimination.")) or event_type == "entity.closed":
+        _consume_consolidation_events(envelope)
     if event_type == "policy.violation.detected":
         from app.modules.platform.governance.services.realtime_bridge import governance_realtime_bridge
 
@@ -537,6 +578,26 @@ def _consume_scheduler_event(envelope: dict) -> None:
                 import logging
 
                 logging.getLogger(__name__).warning("scheduler.treasury.daily failed org=%s: %s", org_id, exc)
+    elif event_type in {"scheduler.reports.daily"}:
+        if org_id:
+            try:
+                from app.modules.erp.reporting.pipelines.report_refresh_pipeline import run_refresh as run_report_refresh
+
+                run_report_refresh(org_id, trace_id=str(envelope.get("trace_id") or ""))
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("scheduler.reports.daily failed org=%s: %s", org_id, exc)
+    elif event_type in {"scheduler.analytics.daily"}:
+        if org_id:
+            try:
+                from app.modules.finance_os.analytics.pipelines.analytics_refresh_pipeline import run_refresh as run_analytics_refresh
+
+                run_analytics_refresh(org_id, trace_id=str(envelope.get("trace_id") or ""))
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("scheduler.analytics.daily failed org=%s: %s", org_id, exc)
 
 
 def _consume_ai_queue_event(envelope: dict) -> None:
@@ -558,7 +619,31 @@ def _consume_integration_event(envelope: dict) -> None:
 
 
 def _consume_reports_event(envelope: dict) -> None:
-    log_event("reports.job.received", event_type=envelope.get("event_type"), org_id=envelope.get("org_id"))
+    event_type = str(envelope.get("event_type", ""))
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+    try:
+        from app.modules.erp.reporting.repositories.schema_repository import reporting_schema_repository
+
+        if not reporting_schema_repository.schema_ready():
+            return
+        if event_type == "reports.generate.requested":
+            run_id = str(payload.get("run_id") or "")
+            if run_id:
+                from app.modules.erp.reporting.pipelines.export_pipeline import run_export
+
+                run_export(org_id, run_id=run_id)
+            return
+        if event_type == "reports.refresh.requested":
+            from app.modules.erp.reporting.pipelines.report_refresh_pipeline import run_refresh
+
+            run_refresh(org_id, fiscal_period_id=payload.get("fiscal_period_id"), trace_id=str(envelope.get("trace_id") or ""))
+    except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).warning("reports consumer failed org=%s: %s", org_id, exc)
 
 
 def _consume_document_intelligence_event(envelope: dict) -> None:
@@ -790,7 +875,7 @@ def _consume_invoice_predicted(envelope: dict) -> None:
             org_id,
             extraction_id,
             exc,
-        pass
+        )
 
 
 def _consume_agents_trigger(envelope: dict) -> None:
@@ -822,6 +907,175 @@ def _consume_agents_trigger(envelope: dict) -> None:
             trace_id=str(envelope.get("trace_id") or ""),
             source_event_type=event_type,
         )
+    except Exception:
+        pass
+
+
+def _consume_forecasting_refresh(envelope: dict) -> None:
+    """M30: refresh forecasts on posted/reconciled events (debounced per org)."""
+    event_type = str(envelope.get("event_type", ""))
+    trigger_events = {
+        "journal.posted",
+        "erp.journal.posted",
+        "payment.received",
+        "customer.payment.received",
+        "reconciliation.completed",
+        "cash.position.updated",
+        "expense.claim.approved",
+        "scheduler.treasury.daily",
+    }
+    if event_type not in trigger_events:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from time import time
+
+        from app.modules.finance_os.forecasting.repositories.forecast_repository import forecast_repository
+        from app.modules.finance_os.forecasting.pipelines.forecast_refresh_pipeline import run_refresh
+
+        if not forecast_repository.schema_ready():
+            return
+        now = time()
+        # module-local debounce map
+        key = f"m30:{org_id}"
+        last = getattr(_consume_forecasting_refresh, "_last", {})
+        last_ts = float(last.get(key) or 0.0)
+        if now - last_ts < 20.0:
+            setattr(_consume_forecasting_refresh, "_last", last)
+            return
+        last[key] = now
+        setattr(_consume_forecasting_refresh, "_last", last)
+        run_refresh(org_id, trace_id=str(envelope.get("trace_id") or ""))
+    except Exception:
+        pass
+
+
+def _consume_reporting_refresh(envelope: dict) -> None:
+    """M31: refresh reporting MVs on domain events (debounced per org)."""
+    event_type = str(envelope.get("event_type", ""))
+    trigger_events = {
+        "journal.posted",
+        "erp.journal.posted",
+        "invoice.approved",
+        "erp.invoice.approved",
+        "payment.executed",
+        "payment.received",
+        "customer.payment.received",
+        "reconciliation.completed",
+        "erp.fiscal_period.closed",
+        "erp.period.closed",
+        "forecast.generated",
+        "scheduler.reports.daily",
+    }
+    if event_type not in trigger_events:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from time import time
+
+        from app.modules.erp.reporting.repositories.schema_repository import reporting_schema_repository
+        from app.modules.erp.reporting.pipelines.report_refresh_pipeline import run_refresh
+
+        if not reporting_schema_repository.schema_ready():
+            return
+        now = time()
+        key = f"m31:{org_id}"
+        last = getattr(_consume_reporting_refresh, "_last", {})
+        last_ts = float(last.get(key) or 0.0)
+        if now - last_ts < 30.0:
+            setattr(_consume_reporting_refresh, "_last", last)
+            return
+        last[key] = now
+        setattr(_consume_reporting_refresh, "_last", last)
+        payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+        run_refresh(org_id, fiscal_period_id=payload.get("fiscal_period_id"), trace_id=str(envelope.get("trace_id") or ""))
+    except Exception:
+        pass
+
+
+def _consume_audit_explorer_materialize(envelope: dict) -> None:
+    """M33: materialize finance_audit timelines from domain and audit events (debounced)."""
+    event_type = str(envelope.get("event_type", ""))
+    from app.modules.finance_os.audit_explorer.pipelines.audit_materialization_pipeline import (
+        MATERIALIZE_EVENT_TYPES,
+        materialize_from_envelope,
+    )
+
+    if event_type not in MATERIALIZE_EVENT_TYPES:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from time import time
+
+        from app.modules.finance_os.audit_explorer.repositories.schema_repository import audit_schema_repository
+
+        if not audit_schema_repository.schema_ready():
+            return
+        payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+        object_id = str(
+            payload.get("object_id")
+            or payload.get("entity_id")
+            or payload.get("execution_id")
+            or payload.get("workflow_instance_id")
+            or ""
+        )
+        now = time()
+        key = f"m33:{org_id}:{object_id or event_type}"
+        last = getattr(_consume_audit_explorer_materialize, "_last", {})
+        last_ts = float(last.get(key) or 0.0)
+        if now - last_ts < 5.0 and event_type != "audit.log.created":
+            return
+        last[key] = now
+        setattr(_consume_audit_explorer_materialize, "_last", last)
+        materialize_from_envelope(envelope)
+    except Exception:
+        pass
+
+
+def _consume_analytics_refresh(envelope: dict) -> None:
+    """M32: refresh KPI snapshots on report/forecast/close events (debounced per org)."""
+    event_type = str(envelope.get("event_type", ""))
+    trigger_events = {
+        "report.generated",
+        "report.snapshot.created",
+        "forecast.generated",
+        "forecast.accuracy.calculated",
+        "erp.fiscal_period.closed",
+        "erp.period.closed",
+        "payment.executed",
+        "reconciliation.completed",
+        "scheduler.analytics.daily",
+    }
+    if event_type not in trigger_events:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from time import time
+
+        from app.modules.finance_os.analytics.pipelines.analytics_refresh_pipeline import run_refresh
+        from app.modules.finance_os.analytics.repositories.schema_repository import analytics_schema_repository
+
+        if not analytics_schema_repository.schema_ready():
+            return
+        now = time()
+        key = f"m32:{org_id}"
+        last = getattr(_consume_analytics_refresh, "_last", {})
+        last_ts = float(last.get(key) or 0.0)
+        if now - last_ts < 30.0:
+            setattr(_consume_analytics_refresh, "_last", last)
+            return
+        last[key] = now
+        setattr(_consume_analytics_refresh, "_last", last)
+        payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+        run_refresh(org_id, fiscal_period_id=payload.get("fiscal_period_id"), trace_id=str(envelope.get("trace_id") or ""))
     except Exception:
         pass
 
@@ -2208,6 +2462,17 @@ def consume_event(queue: str, envelope: dict) -> None:
     elif str(envelope.get("event_type", "")) in {
         "audit.log.created",
         "policy.violation.detected",
+        "policy.evaluated",
+        "policy.approved",
+        "policy.denied",
+        "policy.override.required",
+        "policy.risk.detected",
+        "consolidation.completed",
+        "consolidation.failed",
+        "elimination.generated",
+        "intercompany.created",
+        "intercompany.mismatch.detected",
+        "entity.closed",
         "compliance.alert.generated",
     }:
         _consume_governance_event(envelope)
@@ -2243,6 +2508,10 @@ def consume_event(queue: str, envelope: dict) -> None:
     _consume_memory_ingestion(envelope)
     _consume_graph_ingestion(envelope)
     _consume_agents_trigger(envelope)
+    _consume_forecasting_refresh(envelope)
+    _consume_reporting_refresh(envelope)
+    _consume_analytics_refresh(envelope)
+    _consume_audit_explorer_materialize(envelope)
     _consume_invoice_predicted(envelope)
     _consume_invoice_ai_reviewed(envelope)
     _consume_workflow_system_task_gl_post(envelope)

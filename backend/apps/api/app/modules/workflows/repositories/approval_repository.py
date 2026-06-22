@@ -92,3 +92,23 @@ class ApprovalRepository:
                     (org_id, approval_id),
                 )
                 return cur.fetchone()
+
+    def list_for_instance(self, org_id: str, workflow_instance_id: str) -> list[dict[str, Any]]:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text AS id, workflow_instance_id::text AS workflow_instance_id,
+                           workflow_step_id::text AS workflow_step_id,
+                           approver_user_id::text AS approver_user_id,
+                           requested_from_user_id::text AS requested_from_user_id,
+                           decision, decision_reason, level, amount_threshold,
+                           created_at, decided_at
+                    FROM workflow.approvals
+                    WHERE org_id = %s::uuid AND workflow_instance_id = %s::uuid
+                    ORDER BY level ASC, created_at ASC
+                    """,
+                    (org_id, workflow_instance_id),
+                )
+                return list(cur.fetchall())

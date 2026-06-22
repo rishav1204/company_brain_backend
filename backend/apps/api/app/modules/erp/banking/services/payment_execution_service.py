@@ -32,7 +32,7 @@ class PaymentExecutionService:
     def create_request(self, org_id: str, *, payment_type: str, beneficiary_type: str, beneficiary_ref: str | None, bank_account_id: str, amount: float, currency_code: str, scheduled_date: str | None, source_type: str | None, source_id: str | None, company_id: str | None, created_by: str | None, metadata: dict | None = None, beneficiary_id: str | None = None, start_workflow: bool = True) -> dict:
         if amount <= 0:
             raise ValueError("Amount must be positive")
-        policy = evaluate_payment_policy(amount=amount, payment_type=payment_type)
+        policy = evaluate_payment_policy(amount=amount, payment_type=payment_type, org_id=org_id, roles=None, actor_id=created_by)
         meta = dict(metadata or {})
         meta["policy"] = policy
         if beneficiary_id:

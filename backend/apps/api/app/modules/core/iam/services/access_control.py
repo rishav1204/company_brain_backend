@@ -67,6 +67,33 @@ def _evaluate_access_inner(
 ) -> PolicyDecision:
     attrs = attrs or merge_policy_context(org_id, user_id) if iam_db_enabled() else (attrs or {})
 
+    fiscal_open = is_fiscal_period_open(org_id, object_context.company_id)
+    gov_attrs = dict(attrs)
+    gov_attrs.setdefault("fiscal_period_open", fiscal_open)
+
+    from app.modules.platform.governance.engine.policy_engine import evaluate as policy_engine_evaluate
+
+    gov_result = policy_engine_evaluate(
+        org_id,
+        action=action,
+        attrs={
+            **gov_attrs,
+            "amount": object_context.amount,
+            "vendor_risk": object_context.vendor_risk,
+            "fiscal_period_open": fiscal_open,
+        },
+        roles=roles,
+        actor_user_id=user_id,
+        created_by=created_by or object_context.owner_user_id,
+        object_type=object_context.object_type,
+        object_id=object_context.object_id or None,
+        human_approved=human_approved,
+        actor_type=attrs.get("actor_type"),
+        dry_run=False,
+    )
+    if not gov_result.allowed:
+        return _deny(org_id, user_id, action, gov_result.reason or "policy_denied", ["policy_engine_denied"], emit_denial_event)
+
     if attrs.get("read_only") and action not in {"read", "list", "get"} and not action.endswith(".read"):
         return _deny(org_id, user_id, action, "read_only_role", ["read_only_denied"], emit_denial_event)
 
@@ -79,7 +106,6 @@ def _evaluate_access_inner(
         return _deny(org_id, user_id, action, branch_decision.reason, branch_decision.checks or [], emit_denial_event)
 
     resource = object_context.object_type or "action"
-    fiscal_open = is_fiscal_period_open(org_id, object_context.company_id)
     rule_decision = evaluate_policy_context_rules(
         policy_context=attrs,
         resource=resource,

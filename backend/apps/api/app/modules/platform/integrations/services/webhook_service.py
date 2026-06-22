@@ -8,7 +8,7 @@ import httpx
 from psycopg.types.json import Json
 
 from app.core.config import settings
-from app.modules.platform.events.services.retry_service import should_retry
+from app.modules.platform.api_gateway.engine import retry_engine
 from app.modules.platform.integrations.repositories.webhook_repository import webhook_repository
 from app.modules.platform.integrations.security.credential_manager import credential_manager
 from app.services.db import get_db_conn, set_rls_org
@@ -119,13 +119,18 @@ class IntegrationsWebhookService:
         headers = {
             "Content-Type": "application/json",
             "X-Webhook-Signature": signature,
+            "X-Signature": signature,
             "X-Event-Type": event_type,
         }
         status = "delivered"
         last_error: str | None = None
+        response_code: int | None = None
+        response_body: str | None = None
         try:
             with httpx.Client(timeout=settings.integration_timeout_seconds) as client:
                 resp = client.post(target_url, content=body, headers=headers)
+                response_code = resp.status_code
+                response_body = resp.text[:2000] if resp.text else None
                 if resp.status_code >= 400:
                     status = "retrying"
                     last_error = f"HTTP {resp.status_code}"
@@ -133,9 +138,19 @@ class IntegrationsWebhookService:
             status = "retrying"
             last_error = str(exc)
 
-        # Status transitions:
-        # - delivered -> terminal
-        # - retrying -> will be picked up by `process_pending_deliveries`
+        attempt = 0
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT attempt_count FROM integrations.webhook_deliveries WHERE id = %s::uuid",
+                    (delivery_id,),
+                )
+                row = cur.fetchone()
+                attempt = int(row[0]) if row else 0
+
+        delay = retry_engine.retry_delay_seconds(attempt) if status == "retrying" else 0
+
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -145,13 +160,24 @@ class IntegrationsWebhookService:
                     SET status=%s,
                         attempt_count = attempt_count + 1,
                         last_error=%s,
+                        response_code=%s,
+                        response_body=%s,
                         last_attempt_at=NOW(),
                         delivered_at = CASE WHEN %s='delivered' THEN NOW() ELSE NULL END,
-                        next_retry_at = CASE WHEN %s='retrying' THEN NOW() + (INTERVAL '1 seconds' * LEAST(3600, (5 * (2 ^ GREATEST(0, attempt_count))))) ELSE NULL END
+                        next_retry_at = CASE WHEN %s='retrying' THEN NOW() + (INTERVAL '1 seconds' * %s) ELSE NULL END
                     WHERE id = %s::uuid
                     """,
-                    (status, last_error, status, status, delivery_id),
+                    (status, last_error, response_code, response_body, status, status, delay, delivery_id),
                 )
+        try:
+            from app.modules.platform.api_gateway.events.gateway_events import gateway_events
+
+            if status == "delivered":
+                gateway_events.emit_webhook_delivered(org_id, delivery_id=delivery_id, event_type=event_type)
+            elif status == "retrying" and not retry_engine.should_retry(attempt + 1):
+                gateway_events.emit_webhook_failed(org_id, delivery_id=delivery_id, error=last_error or "max_retries")
+        except Exception:
+            pass
         # Governance audit trail (best-effort)
         try:
             from app.modules.platform.governance.services.audit_service import audit_service
@@ -198,7 +224,7 @@ class IntegrationsWebhookService:
         processed = 0
         for row in rows:
             attempts = int(row.get("attempt_count") or 0)
-            if not should_retry(attempts, settings.webhook_max_attempts):
+            if not retry_engine.should_retry(attempts, settings.webhook_max_attempts):
                 # Mark as failed terminally
                 try:
                     with get_db_conn() as conn:

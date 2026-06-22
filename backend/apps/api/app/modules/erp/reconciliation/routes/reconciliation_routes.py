@@ -144,6 +144,23 @@ def create_adjustment(request: ReconciliationAdjustmentCreate, context=Depends(r
 
 @router.post("/adjustment/{adjustment_id}/approve")
 def approve_adjustment(adjustment_id: str, context=Depends(require_reconciliation_admin)) -> dict:
+    from app.modules.erp.reconciliation.repositories.adjustment_repository import adjustment_repository
+    from app.modules.platform.governance.engine.policy_engine import evaluate
+
+    adj = adjustment_repository.get(context.org_id, adjustment_id=adjustment_id)
+    amount = float((adj or {}).get("amount") or 0)
+    policy = evaluate(
+        context.org_id,
+        action="reconciliation.override",
+        attrs={"amount": amount, "adjustment_id": adjustment_id},
+        roles=context.roles,
+        actor_user_id=context.user_id,
+        object_type="reconciliation_adjustment",
+        object_id=adjustment_id,
+        dry_run=True,
+    )
+    if not policy.allowed:
+        raise HTTPException(status_code=403, detail=policy.reason or "policy_denied")
     try:
         item = adjustment_service.approve_and_post(
             context.org_id, adjustment_id=adjustment_id, approved_by=context.user_id, roles=context.roles

@@ -44,7 +44,39 @@ def resolve_object_context(org_id: str, object_type: str, object_id: str) -> Obj
                 vendor_risk=row.get("vendor_risk"),
                 status=row.get("status"),
                 invoice_type=row.get("invoice_type"),
+                company_id=row.get("company_id"),
+                branch_id=row.get("branch_id"),
             )
+        try:
+            from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
+
+            ap_row = invoice_repository.get(org_id, invoice_id=normalized_id)
+            if ap_row:
+                return ObjectContext(
+                    object_type=object_type,
+                    object_id=normalized_id,
+                    amount=float(ap_row.get("total_amount") or 0),
+                    status=ap_row.get("status"),
+                    company_id=ap_row.get("company_id"),
+                )
+        except Exception:
+            pass
+    if normalized_type in {"journal", "erp_journal"}:
+        try:
+            from app.modules.erp.journals.repositories.journal_repository import journal_repository
+
+            j = journal_repository.get(org_id, journal_id=normalized_id)
+            if j:
+                return ObjectContext(
+                    object_type=object_type,
+                    object_id=normalized_id,
+                    owner_user_id=_normalize_owner(org_id, j.get("created_by")),
+                    status=j.get("journal_status"),
+                    company_id=j.get("company_id"),
+                    branch_id=j.get("branch_id"),
+                )
+        except Exception:
+            pass
     if normalized_type == "workflow":
         row = workflows_repo.get_workflow(org_id=org_id, workflow_id=normalized_id)
         if row:

@@ -29,6 +29,14 @@ from app.modules.finance_os.workflow_intelligence.routes.router import router as
 from app.modules.finance_os.memory.routes.router import router as finance_os_memory_router
 from app.modules.finance_os.graph.routes.router import router as finance_os_graph_router
 from app.modules.finance_os.agents.routes.router import router as finance_os_agents_router
+from app.modules.finance_os.forecasting.routes.router import router as finance_os_forecasting_router
+from app.modules.finance_os.analytics.routes.router import router as finance_os_analytics_router
+from app.modules.finance_os.audit_explorer.routes.router import router as finance_os_audit_explorer_router
+from app.modules.erp.reporting.routes.router import router as erp_reporting_router
+from app.modules.erp.consolidation.routes.router import router as erp_consolidation_router
+from app.modules.platform.api_gateway.routes.router import api_gateway_router
+from app.modules.platform.api_gateway.middleware.gateway_middleware import GatewayMiddleware
+from app.modules.platform.api_gateway.middleware.idempotency_middleware import IdempotencyMiddleware
 from app.modules.platform.governance.middleware.audit_middleware import AuditCaptureMiddleware
 from app.modules.platform.governance.middleware.governance_middleware import GovernanceEnforcementMiddleware
 from app.modules.platform.governance.middleware.trace_middleware import GovernanceTraceMiddleware
@@ -86,6 +94,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.add_middleware(IdempotencyMiddleware)
+app.add_middleware(GatewayMiddleware)
 app.add_middleware(AuditCaptureMiddleware)
 app.add_middleware(GovernanceEnforcementMiddleware)
 app.add_middleware(GovernanceTraceMiddleware)
@@ -111,6 +121,7 @@ app.include_router(governance_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(documents_router, prefix=settings.api_prefix)
 app.include_router(integrations_router, prefix=settings.api_prefix)
+app.include_router(api_gateway_router, prefix=settings.api_prefix)
 app.include_router(erp_coa_router, prefix=settings.api_prefix)
 app.include_router(erp_gl_router, prefix=settings.api_prefix)
 app.include_router(erp_journals_router, prefix=settings.api_prefix)
@@ -136,6 +147,11 @@ app.include_router(finance_os_workflow_intelligence_router, prefix=settings.api_
 app.include_router(finance_os_memory_router, prefix=settings.api_prefix)
 app.include_router(finance_os_graph_router, prefix=settings.api_prefix)
 app.include_router(finance_os_agents_router, prefix=settings.api_prefix)
+app.include_router(finance_os_forecasting_router, prefix=settings.api_prefix)
+app.include_router(finance_os_analytics_router, prefix=settings.api_prefix)
+app.include_router(finance_os_audit_explorer_router, prefix=settings.api_prefix)
+app.include_router(erp_reporting_router, prefix=settings.api_prefix)
+app.include_router(erp_consolidation_router, prefix=settings.api_prefix)
 app.include_router(companies.router, prefix=settings.api_prefix)
 app.include_router(observability.router, prefix=settings.api_prefix)
 app.include_router(ingestion.router, prefix=settings.api_prefix)

@@ -76,6 +76,36 @@ class WebhookRepository:
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
+    def update_name(self, org_id: str, *, subscription_id: str, name: str) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE integrations.webhook_subscriptions
+                    SET name = %s
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    """,
+                    (name, org_id, subscription_id),
+                )
+                conn.commit()
+
+    def deactivate(self, org_id: str, *, subscription_id: str) -> dict:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE integrations.webhook_subscriptions
+                    SET is_active = FALSE
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    RETURNING id::text, is_active
+                    """,
+                    (org_id, subscription_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else {"id": subscription_id, "status": "not_found"}
+
 
 webhook_repository = WebhookRepository()
 

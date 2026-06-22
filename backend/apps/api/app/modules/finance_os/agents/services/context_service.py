@@ -21,7 +21,7 @@ def build(org_id: str, agent_type: str, payload: dict | None = None) -> AgentCon
         "gst": m21_bridge.compliance_context(org_id, entity_id),
         "fiscal": m12_bridge.period_context(org_id, payload.get("period_id")),
     }
-    policy_flags = check_policy(payload)
+    policy_flags = check_policy(payload, org_id=org_id)
     completeness = sum(1 for v in [entity_type, entity_id] if v) / 2.0
     erp_score = sum(1 for v in erp_facts.values() if v) / max(1, len(erp_facts))
     data_quality_score = round(0.6 * completeness + 0.4 * erp_score, 2)

@@ -90,6 +90,7 @@ class JournalService:
         *,
         journal_status: str | None = None,
         journal_type: str | None = None,
+        company_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -97,6 +98,7 @@ class JournalService:
             org_id,
             journal_status=journal_status,
             journal_type=journal_type,
+            company_id=company_id,
             limit=limit,
             offset=offset,
         )

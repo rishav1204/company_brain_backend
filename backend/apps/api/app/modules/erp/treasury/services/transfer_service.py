@@ -66,7 +66,7 @@ class TransferService:
             scheduled_date=str(row["transfer_date"])[:10],
             source_type="inter_account_transfer",
             source_id=transfer_id,
-            company_id=None,
+            company_id=src.get("company_id") if src else None,
             created_by=approved_by,
             metadata={"dest_bank_account_id": str(row["destination_account_id"])},
             start_workflow=False,
@@ -75,6 +75,7 @@ class TransferService:
         payment_execution_service.mark_workflow_approved(org_id, payment_request_id=pr_id, approver_id=approved_by)
         result = payment_execution_service.execute_payment(org_id, payment_request_id=pr_id, auto_post=True)
         transfer_repository.set_status(org_id, transfer_id=transfer_id, status="completed", payment_request_id=pr_id, approved_by=approved_by)
+        self._register_intercompany_if_cross_entity(org_id, src=src, dest=dest, amount=amount, transfer_id=transfer_id)
         from app.modules.erp.treasury.services.cash_position_service import cash_position_service
 
         cash_position_service.refresh_and_emit(org_id)
@@ -87,6 +88,28 @@ class TransferService:
         if str(row.get("status")) in {"completed", "processing"}:
             raise ValueError("Cannot cancel completed transfer")
         return transfer_repository.set_status(org_id, transfer_id=transfer_id, status="cancelled")
+
+    def _register_intercompany_if_cross_entity(
+        self, org_id: str, *, src: dict, dest: dict, amount: float, transfer_id: str
+    ) -> None:
+        src_co = str(src.get("company_id") or "")
+        dest_co = str(dest.get("company_id") or "")
+        if not src_co or not dest_co or src_co == dest_co:
+            return
+        try:
+            from app.modules.erp.consolidation.services.intercompany_service import intercompany_service
+
+            intercompany_service.register(
+                org_id,
+                source_company_id=src_co,
+                target_company_id=dest_co,
+                transaction_type="intercompany_transfer",
+                amount=amount,
+                source_document_type="treasury_transfer",
+                source_document_id=transfer_id,
+            )
+        except Exception:
+            pass
 
     def _start_workflow(self, org_id: str, *, transfer_id: str) -> None:
         try:

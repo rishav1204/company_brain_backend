@@ -51,6 +51,7 @@ class CloseService:
         emit_period_hard_locked(org_id, period_id=period_id)
         closed = period_lock_service.close(org_id, period_id=period_id, closed_by=actor_id)
         emit_period_closed(org_id, period_id=period_id)
+        self._emit_entity_closed(org_id, period_id=period_id)
         self._audit(org_id, period_id=period_id, action="fiscal.period.closed", actor_id=actor_id)
         return {"soft_lock": soft, "hard_lock": hard, "closed": closed}
 
@@ -63,6 +64,18 @@ class CloseService:
         closed = period_lock_service.close(org_id, period_id=period_id, closed_by=actor_id)
         emit_period_closed(org_id, period_id=period_id)
         return closed
+
+    def _emit_entity_closed(self, org_id: str, *, period_id: str) -> None:
+        try:
+            from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository
+            from app.modules.erp.consolidation.events import consolidation_events
+
+            period = fiscal_period_repository.get(org_id, period_id=period_id)
+            company_id = str((period or {}).get("company_id") or "")
+            if company_id:
+                consolidation_events.emit_entity_closed(org_id, company_id=company_id, period_id=period_id)
+        except Exception:
+            pass
 
     def _audit(self, org_id: str, *, period_id: str, action: str, actor_id: str) -> None:
         try:

@@ -8,7 +8,14 @@ def validate_transfer(*, source_account_id: str, destination_account_id: str, am
         raise ValueError("Transfer amount must be positive")
 
 
-def approval_roles_for_amount(amount: float) -> list[str]:
+def approval_roles_for_amount(amount: float, *, org_id: str | None = None) -> list[str]:
+    if org_id:
+        from app.modules.platform.governance.engine import approval_engine
+
+        chain = approval_engine.resolve_chain(org_id, action="treasury.transfer", amount=float(amount))
+        roles = [str(c.get("role") or "") for c in chain if c.get("role")]
+        if roles:
+            return roles
     roles = ["finance_manager"]
     if amount >= 50_000:
         roles.append("controller")

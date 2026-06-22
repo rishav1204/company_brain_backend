@@ -13,6 +13,20 @@ def build_approval_chain(definition: dict | None, metadata: dict | None) -> list
     except (TypeError, ValueError):
         amount_f = None
 
+    org_id = metadata.get("org_id")
+    action_code = str(metadata.get("action_code") or definition.get("action_code") or "vendor_payment")
+    if org_id and amount_f is not None:
+        from app.modules.platform.governance.engine import approval_engine
+
+        matrix_chain = approval_engine.resolve_chain(
+            str(org_id),
+            action=action_code,
+            amount=amount_f,
+            department=metadata.get("department"),
+        )
+        if matrix_chain:
+            return [{"level": int(c.get("level") or idx + 1), "role": str(c.get("role") or "")} for idx, c in enumerate(matrix_chain) if c.get("role")]
+
     explicit = definition.get("approval_chain")
     if isinstance(explicit, list) and explicit:
         chain: list[dict[str, Any]] = []

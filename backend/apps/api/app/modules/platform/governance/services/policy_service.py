@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation, enforce_maker_checker, requires_maker_checker
 from app.modules.platform.governance.repositories.policy_repository import policy_repository
 from app.modules.platform.governance.repositories.violation_repository import violation_repository
 from app.modules.platform.governance.validators.policy_validator import validate_policy_rule
@@ -35,7 +34,7 @@ class GovernancePolicyService:
         priority: int = 100,
     ) -> dict:
         validate_policy_rule(policy_key, policy_type, conditions, actions)
-        return policy_repository.upsert(
+        row = policy_repository.upsert(
             org_id,
             policy_key=policy_key,
             policy_type=policy_type,
@@ -44,6 +43,10 @@ class GovernancePolicyService:
             is_active=is_active,
             priority=priority,
         )
+        from app.modules.platform.governance.engine import policy_cache_engine
+
+        policy_cache_engine.invalidate_org(org_id)
+        return row
 
     def simulate(
         self,
@@ -75,92 +78,34 @@ class GovernancePolicyService:
         created_by: str | None = None,
         actor_user_id: str | None = None,
         dry_run: bool = False,
+        object_type: str | None = None,
+        object_id: str | None = None,
+        human_approved: bool = False,
+        actor_type: str | None = None,
     ) -> PolicyEvaluationResult:
-        violations: list[dict] = []
+        from app.modules.platform.governance.engine.policy_engine import evaluate as engine_evaluate
 
-        if requires_maker_checker(action):
-            try:
-                enforce_maker_checker(created_by=created_by, actor_user_id=actor_user_id, org_id=org_id)
-            except MakerCheckerViolation as exc:
-                violation = {
-                    "type": "maker_checker",
-                    "message": str(exc),
-                    "severity": "critical",
-                }
-                violations.append(violation)
-                if not dry_run:
-                    self._record_violation(org_id, violation, action, created_by, actor_user_id)
-                return PolicyEvaluationResult(allowed=False, reason=str(exc), violations=violations)
-
-        for rule in policy_repository.list_active(org_id):
-            if not self._rule_applies(rule, action, attrs):
-                continue
-            blocked = self._evaluate_rule(rule, attrs, roles)
-            if blocked:
-                violation = {
-                    "type": rule.get("policy_key", "policy"),
-                    "policy_type": rule.get("policy_type"),
-                    "message": blocked,
-                    "severity": "high",
-                }
-                violations.append(violation)
-                if not dry_run:
-                    self._record_violation(org_id, violation, action, created_by, actor_user_id)
-
-        if violations:
-            return PolicyEvaluationResult(allowed=False, reason=violations[0].get("message"), violations=violations)
-
-        if not dry_run and actor_user_id:
-            from app.modules.core.iam.services.access_control import evaluate_access
-            from app.services.object_context import ObjectContext
-
-            iam_decision = evaluate_access(
-                org_id=org_id,
-                user_id=actor_user_id,
-                roles=roles,
-                action=action,
-                object_context=ObjectContext(
-                    object_type="governance",
-                    object_id=org_id,
-                    amount=float(attrs.get("amount", 0) or 0),
-                ),
-                attrs=attrs,
-                created_by=created_by,
-            )
-            if not iam_decision.allowed:
-                return PolicyEvaluationResult(allowed=False, reason=iam_decision.reason, violations=violations)
-
-        return PolicyEvaluationResult(allowed=True)
-
-    def _rule_applies(self, rule: dict, action: str, attrs: dict) -> bool:
-        conditions = rule.get("conditions") or {}
-        if conditions.get("action") and conditions["action"] != action:
-            return False
-        amount = float(attrs.get("amount", 0) or 0)
-        if "amount_gt" in conditions and amount <= float(conditions["amount_gt"]):
-            return False
-        if conditions.get("closed_period") and attrs.get("fiscal_period_open") is False:
-            return True
-        if conditions.get("enforce") and requires_maker_checker(action):
-            return True
-        if conditions.get("day_of_month_gt"):
-            from datetime import datetime, timezone
-
-            if datetime.now(timezone.utc).day <= int(conditions["day_of_month_gt"]):
-                return False
-            return True
-        return bool(conditions)
-
-    def _evaluate_rule(self, rule: dict, attrs: dict, roles: list[str]) -> str | None:
-        actions = rule.get("actions") or {}
-        if actions.get("block"):
-            if rule.get("policy_type") == "fiscal" and attrs.get("fiscal_period_open") is False:
-                return "Fiscal period is closed"
-            if rule.get("policy_type") == "approval":
-                required = actions.get("require_role")
-                if required and required not in roles:
-                    return f"Requires role: {required}"
-        return None
+        result = engine_evaluate(
+            org_id,
+            action=action,
+            attrs=attrs,
+            roles=roles,
+            created_by=created_by,
+            actor_user_id=actor_user_id,
+            object_type=object_type,
+            object_id=object_id,
+            human_approved=human_approved,
+            actor_type=actor_type,
+            dry_run=dry_run,
+        )
+        if not result.allowed and not dry_run:
+            for v in result.violations:
+                self._record_violation(org_id, v, action, created_by, actor_user_id)
+        return PolicyEvaluationResult(
+            allowed=result.allowed,
+            reason=result.reason,
+            violations=result.violations,
+        )
 
     def _record_violation(
         self,

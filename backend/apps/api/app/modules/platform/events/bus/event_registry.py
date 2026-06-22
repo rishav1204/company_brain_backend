@@ -157,6 +157,21 @@ AI_EVENTS: tuple[EventDefinition, ...] = (
     EventDefinition("agent.completed", "finance_os.agents", "ai"),
     EventDefinition("agent.recommendation.created", "finance_os.agents", "ai"),
     EventDefinition("agent.workflow.created", "finance_os.agents", "ai"),
+    EventDefinition("forecast.generated", "finance_os.forecasting", "ai"),
+    EventDefinition("forecast.updated", "finance_os.forecasting", "ai"),
+    EventDefinition("forecast.risk.detected", "finance_os.forecasting", "ai"),
+    EventDefinition("forecast.accuracy.calculated", "finance_os.forecasting", "ai"),
+    EventDefinition("report.generated", "erp.reporting", "domain"),
+    EventDefinition("report.exported", "erp.reporting", "domain"),
+    EventDefinition("report.snapshot.created", "erp.reporting", "domain"),
+    EventDefinition("reports.generate.requested", "erp.reporting", "domain"),
+    EventDefinition("reports.generate.completed", "erp.reporting", "domain"),
+    EventDefinition("reports.refresh.requested", "erp.reporting", "domain"),
+    EventDefinition("kpi.updated", "finance_os.analytics", "ai"),
+    EventDefinition("insight.generated", "finance_os.analytics", "ai"),
+    EventDefinition("risk.detected", "finance_os.analytics", "ai"),
+    EventDefinition("dashboard.refreshed", "finance_os.analytics", "ai"),
+    EventDefinition("analytics.refresh.requested", "finance_os.analytics", "ai"),
     EventDefinition("ai.ocr.requested", "ai.runtime", "ai"),
 )
 
@@ -168,6 +183,13 @@ INTEGRATION_EVENTS: tuple[EventDefinition, ...] = (
     EventDefinition("reconciliation.exception.created", "erp.reconciliation", "domain"),
     EventDefinition("reconciliation.adjustment.required", "erp.reconciliation", "domain"),
     EventDefinition("reconciliation.adjustment.posted", "erp.reconciliation", "domain"),
+    EventDefinition("consolidation.completed", "erp.consolidation", "domain"),
+    EventDefinition("consolidation.failed", "erp.consolidation", "domain"),
+    EventDefinition("consolidation.requested", "erp.consolidation", "domain"),
+    EventDefinition("elimination.generated", "erp.consolidation", "domain"),
+    EventDefinition("intercompany.created", "erp.consolidation", "domain"),
+    EventDefinition("intercompany.mismatch.detected", "erp.consolidation", "domain"),
+    EventDefinition("entity.closed", "erp.consolidation", "domain"),
     EventDefinition("cash.position.updated", "erp.treasury", "domain"),
     EventDefinition("liquidity_alert.created", "erp.treasury", "domain"),
     EventDefinition("cash.forecast.updated", "erp.treasury", "domain"),
@@ -176,6 +198,11 @@ INTEGRATION_EVENTS: tuple[EventDefinition, ...] = (
     EventDefinition("bank.statement.imported", "integration.bank", "integration"),
     EventDefinition("gst.response.received", "integration.gst", "integration"),
     EventDefinition("webhook.received", "integration.webhooks", "integration"),
+    EventDefinition("webhook.delivered", "api_gateway", "integration"),
+    EventDefinition("webhook.failed", "api_gateway", "integration"),
+    EventDefinition("api.key.created", "api_gateway", "integration"),
+    EventDefinition("api.key.revoked", "api_gateway", "integration"),
+    EventDefinition("integration.connected", "api_gateway", "integration"),
 )
 
 SCHEDULER_EVENTS: tuple[EventDefinition, ...] = (
@@ -185,6 +212,8 @@ SCHEDULER_EVENTS: tuple[EventDefinition, ...] = (
     EventDefinition("scheduler.reconciliation.daily", "platform.scheduler", "system"),
     EventDefinition("scheduler.compliance.daily", "platform.scheduler", "system"),
     EventDefinition("scheduler.treasury.daily", "platform.scheduler", "system"),
+    EventDefinition("scheduler.reports.daily", "platform.scheduler", "system"),
+    EventDefinition("scheduler.analytics.daily", "platform.scheduler", "system"),
 )
 
 SYSTEM_EVENTS: tuple[EventDefinition, ...] = (
@@ -209,6 +238,14 @@ NOTIFICATION_EVENTS: tuple[EventDefinition, ...] = (
 
 GOVERNANCE_EVENTS: tuple[EventDefinition, ...] = (
     EventDefinition("audit.log.created", "governance.audit", "governance"),
+    EventDefinition("audit.timeline.updated", "finance_os.audit_explorer", "governance"),
+    EventDefinition("audit.evidence.linked", "finance_os.audit_explorer", "governance"),
+    EventDefinition("audit.ai_decision.recorded", "finance_os.audit_explorer", "governance"),
+    EventDefinition("policy.approved", "governance.policy_engine", "governance"),
+    EventDefinition("policy.denied", "governance.policy_engine", "governance"),
+    EventDefinition("policy.override.required", "governance.policy_engine", "governance"),
+    EventDefinition("policy.risk.detected", "governance.policy_engine", "governance"),
+    EventDefinition("policy.evaluated", "governance.policy_engine", "governance"),
     EventDefinition("policy.violation.detected", "governance.engine", "governance"),
     EventDefinition("compliance.alert.generated", "governance.compliance", "governance"),
 )

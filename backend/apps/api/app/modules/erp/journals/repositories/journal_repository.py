@@ -110,6 +110,7 @@ class JournalRepository:
         *,
         journal_status: str | None = None,
         journal_type: str | None = None,
+        company_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -123,9 +124,13 @@ class JournalRepository:
         if journal_type:
             where.append("journal_type = %s")
             params.append(journal_type)
+        if company_id:
+            where.append("company_id = %s::uuid")
+            params.append(company_id)
         sql = f"""
             SELECT id::text, journal_number, journal_type, journal_status,
                    posting_date::text, description, source_type, source_id::text,
+                   company_id::text, branch_id::text,
                    created_by::text, approved_by::text, posted_at::text, created_at::text
             FROM erp.journals
             WHERE {' AND '.join(where)}

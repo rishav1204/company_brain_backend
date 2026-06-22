@@ -551,7 +551,7 @@ Control when posting is allowed.
 - [x] Close checklist workflow
 - [x] Events: `erp.period.closed`, `erp.period.reopened`, `erp.year_end.completed`
 - [ ] UI period calendar
-- [ ] Multi-entity consolidation hooks (M35)
+- [x] Multi-entity consolidation hooks (M35)
 
 ---
 
@@ -933,18 +933,33 @@ Materialized views, reporting indexes, pagination, async heavy reports via queue
 
 ## Module 32 — Analytics & BI
 
-Dashboards, KPIs, close analytics — extend `observability` / new read models.
+Executive financial intelligence — KPIs, trends, insights, executive dashboard, AI copilot.
 
-**Phase:** 4–5
+| Attribute | Value |
+|-----------|--------|
+| **API prefix** | `/api/v1/finance-os/analytics/*` |
+| **Schema** | `finance_analytics` (migration 057) |
+| **Golden rule** | Dashboard reads `finance_analytics.*` only; KPI batch via upstream M31/M30/M26/M24/M21 services |
+
+**Phase:** 4–5 — **Done**
+
+See [`ERP_MODULES/M32_analytics.md`](ERP_MODULES/M32_analytics.md).
 
 ---
 
 ## Module 33 — Audit Explorer
 
-| **Reuse** | `audit.py` + ERP object_ref conventions |
-| **Phase** | 2 |
+Enterprise trust and explainability — unified timelines, evidence, AI decision trails, approval chains, audit copilot.
 
-Transaction history, approval chain, AI decision trail, evidence links.
+| Attribute | Value |
+|-----------|--------|
+| **API prefix** | `/api/v1/finance-os/audit/*` |
+| **Schema** | `finance_audit` (migration 058) |
+| **Golden rule** | Explorer reads `finance_audit.*`; canonical audit via M4 `audit_service` (never duplicate) |
+
+**Phase:** 2 — **Done**
+
+See [`ERP_MODULES/M33_audit_explorer.md`](ERP_MODULES/M33_audit_explorer.md).
 
 ---
 
@@ -1157,13 +1172,13 @@ When you request implementation of a module, we will add a section (or file `ERP
 | M27 | Memory System | 6 | 4 | **Done** (see M27_memory.md) |
 | M28 | Graph Engine | 6 | 4 | **Done** (see M28_graph.md) |
 | M29 | AI Agents | 6 | 4 | **Done** (see M29_agents.md) |
-| M30 | Forecasting | 6 | 5 | Build/extend |
-| M31 | Reporting | 7 | 2+ | **Build** |
-| M32 | Analytics & BI | 7 | 4–5 | Build |
-| M33 | Audit Explorer | 7 | 2 | Reuse/extend |
-| M34 | Policy Engine | 7 | 1 | Reuse |
-| M35 | Multi-Entity / Consolidation | 7 | 5 | **Build** |
-| M36 | API / Webhooks | 7 | 3+ | Extend |
+| M30 | Forecasting | 6 | 5 | **Done** (see M30_forecasting.md) |
+| M31 | Reporting | 7 | 2+ | **Done** |
+| M32 | Analytics & BI | 7 | 4–5 | **Done** |
+| M33 | Audit Explorer | 7 | 2 | Done |
+| M34 | Policy Engine | 7 | 1 | **Done** (see M34_policy_engine.md) |
+| M35 | Multi-Entity / Consolidation | 7 | 5 | **Done** (see M35_consolidation.md) |
+| M36 | API / Webhooks | 7 | 3+ | **Done** (see M36_api_platform.md) |
 
 ---
 
@@ -1171,6 +1186,8 @@ When you request implementation of a module, we will add a section (or file `ERP
 
 | Date | Change |
 |------|--------|
+| 2026-06-20 | M36 API + Webhook Platform — partner gateway, unified webhooks, idempotency, accounting connector stubs |
+| 2026-06-20 | M35 Multi-Entity Consolidation — entity hierarchy, intercompany, elimination, consolidated reporting |
 | 2026-06-18 | M29 AI Agent Orchestration — finance_os agents, domain planners, confidence, workflow launcher |
 | 2026-06-18 | M26 Workflow Intelligence — finance_os snapshots, bottleneck/SLA/optimization, M2 stage events |
 | 2026-06-18 | M25 AI Invoice Intelligence — finance_os schema, pipeline, APIs, AP bridge |

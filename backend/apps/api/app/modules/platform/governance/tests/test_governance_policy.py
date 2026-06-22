@@ -1,10 +1,17 @@
+from unittest.mock import patch
+
 from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation
 from app.modules.platform.governance.services.policy_service import governance_policy_service
 
 
-def test_maker_checker_blocks_same_actor() -> None:
+ORG = "00000000-0000-0000-0000-000000000001"
+
+
+@patch("app.modules.platform.governance.engine.policy_engine.approval_engine.resolve_chain", return_value=[])
+@patch("app.modules.platform.governance.engine.rule_engine.load_rules", return_value=[])
+def test_maker_checker_blocks_same_actor(_mock_rules, _mock_chain) -> None:
     result = governance_policy_service.evaluate(
-        "org-test",
+        ORG,
         action="invoice.approve",
         attrs={},
         roles=["approver"],
@@ -16,9 +23,11 @@ def test_maker_checker_blocks_same_actor() -> None:
     assert any(v.get("type") == "maker_checker" for v in result.violations)
 
 
-def test_maker_checker_allows_different_actor() -> None:
+@patch("app.modules.platform.governance.engine.policy_engine.approval_engine.resolve_chain", return_value=[])
+@patch("app.modules.platform.governance.engine.rule_engine.load_rules", return_value=[])
+def test_maker_checker_allows_different_actor(_mock_rules, _mock_chain) -> None:
     result = governance_policy_service.evaluate(
-        "org-test",
+        ORG,
         action="invoice.approve",
         attrs={},
         roles=["approver"],

@@ -99,7 +99,10 @@ def test_treasury_policy_blocks_without_cfo() -> None:
     from app.modules.erp.treasury.services.treasury_policy_service import treasury_policy_service
 
     policy = treasury_policy_service.check_payment(
-        amount=600_000, payment_type="vendor_payment", roles=["treasury_manager"]
+        org_id="00000000-0000-0000-0000-000000000001",
+        amount=600_000,
+        payment_type="vendor_payment",
+        roles=["treasury_manager"],
     )
     assert policy["allowed"] is False
     assert "cfo" in policy["missing_roles"]

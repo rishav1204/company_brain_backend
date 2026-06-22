@@ -61,7 +61,7 @@ def route_platform_event(event_type: str) -> str:
         return groups["ai.ocr"]
     if event_type.startswith("ai.memory") or event_type.startswith("memory."):
         return groups["ai.memory"]
-    if event_type.startswith("ai.forecast"):
+    if event_type.startswith("forecast.") or event_type.startswith("ai.forecast"):
         return groups["ai.forecasting"]
     if event_type.startswith("agent.run"):
         return groups["agent.run"]

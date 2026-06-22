@@ -69,5 +69,22 @@ async def inbound_webhook(
             "payload": payload,
         },
     )
+    try:
+        from app.modules.platform.governance.services.audit_service import audit_service
+        from app.modules.platform.governance.utils.object_ref import format_object_ref
+
+        audit_service.record(
+            org_id=org_id,
+            actor_type="system",
+            actor_id="integrations.inbound",
+            action="webhook.received",
+            object_ref=format_object_ref("integrations", "ingestion_record", str(ingestion.get("id") or "")),
+            payload={"subscription_id": subscription_id},
+            entity_type="ingestion_record",
+            entity_id=str(ingestion.get("id") or ""),
+            source_service="api_gateway",
+        )
+    except Exception:
+        pass
     return {"status": "ok", "ingestion_record_id": ingestion.get("id")}
 

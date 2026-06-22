@@ -61,6 +61,24 @@ class SchedulingService:
             trace_id=trace_id,
         )
 
+    def emit_reports_daily(self, org_id: str, *, trace_id: str | None = None) -> dict:
+        return platform_event_service.publish(
+            event_type="scheduler.reports.daily",
+            org_id=org_id,
+            source="platform.scheduler",
+            payload={"job": "reports_daily"},
+            trace_id=trace_id,
+        )
+
+    def emit_analytics_daily(self, org_id: str, *, trace_id: str | None = None) -> dict:
+        return platform_event_service.publish(
+            event_type="scheduler.analytics.daily",
+            org_id=org_id,
+            source="platform.scheduler",
+            payload={"job": "analytics_daily"},
+            trace_id=trace_id,
+        )
+
     def run_org_scheduled_emissions(self, org_id: str) -> dict:
         emitted = {
             "sla": self.emit_sla_scan(org_id),

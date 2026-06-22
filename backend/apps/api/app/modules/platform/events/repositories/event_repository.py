@@ -118,5 +118,32 @@ class EventRepository:
                 )
                 return cur.fetchall() or []
 
+    def list_for_org(
+        self,
+        org_id: str,
+        *,
+        event_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        rows = self.list_events(org_id, event_type=event_type, limit=limit)
+        return [dict(r) if not isinstance(r, dict) else r for r in rows]
+
+    def get_by_event_id(self, org_id: str, event_id: str) -> dict[str, Any] | None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT event_id::text AS event_id, event_type, source, payload, metadata,
+                           status, created_at, processed_at, trace_id::text AS trace_id
+                    FROM platform.event_store
+                    WHERE org_id = %s::uuid AND event_id = %s::uuid
+                    LIMIT 1
+                    """,
+                    (org_id, event_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
 
 event_repository = EventRepository()

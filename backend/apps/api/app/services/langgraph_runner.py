@@ -72,6 +72,10 @@ def _normalize_agent_key(agent_type: str) -> str:
         "memory_agent": "memory_copilot",
         "graph_copilot": "graph_copilot",
         "graph_agent": "graph_copilot",
+        "executive_copilot": "executive_copilot",
+        "executive_agent": "executive_copilot",
+        "audit_copilot": "audit_copilot",
+        "audit_agent": "audit_copilot",
         "ap_agent": "ap_agent",
         "ap_exception": "ap_agent",
         "ap_exception_agent": "ap_agent",
@@ -190,6 +194,33 @@ def _plan_actions_node(state: GraphRuntimeState) -> None:
             ),
         ]
         state.checkpoint("plan_actions", "ok", {"planner": "graph_rulebook", "count": 1})
+        return
+    if agent_key in {"executive_copilot", "executive_agent"}:
+        query = str(state.payload.get("query") or state.payload.get("question") or "executive financial summary")
+        state.proposed_actions = [
+            ToolAction(
+                tool="memory",
+                method="search",
+                params={"query": query, "top_k": int(state.payload.get("top_k", 8))},
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "executive_rulebook", "count": 1})
+        return
+    if agent_key in {"audit_copilot", "audit_agent"}:
+        query = str(state.payload.get("query") or state.payload.get("question") or "audit timeline")
+        state.proposed_actions = [
+            ToolAction(
+                tool="memory",
+                method="search",
+                params={"query": query, "top_k": int(state.payload.get("top_k", 8))},
+            ),
+            ToolAction(
+                tool="graph",
+                method="traverse",
+                params={"entity_id": str(state.payload.get("object_id") or ""), "max_depth": 4},
+            ),
+        ]
+        state.checkpoint("plan_actions", "ok", {"planner": "audit_explorer_rulebook", "count": 2})
         return
     if agent_key == "ap_agent":
         entity_id = str(state.payload.get("entity_id") or state.payload.get("invoice_id") or "")

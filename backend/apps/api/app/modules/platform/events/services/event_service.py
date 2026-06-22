@@ -122,16 +122,9 @@ class PlatformEventService:
 
             result = queue_manager.publish(bus_envelope)
             try:
-                from app.modules.platform.events.services.webhook_service import webhook_service
+                from app.modules.platform.api_gateway.engine.webhook_dispatcher import dispatch_event
 
-                webhook_service.dispatch_event(org_id, event_type, bus_envelope)
-            except Exception:
-                pass
-            try:
-                # Module 7 integrations webhooks (new)
-                from app.modules.platform.integrations.services.webhook_service import integrations_webhook_service
-
-                integrations_webhook_service.dispatch_event(org_id, event_type, bus_envelope)
+                dispatch_event(org_id, event_type, bus_envelope)
             except Exception:
                 pass
             try:

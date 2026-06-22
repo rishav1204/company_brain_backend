@@ -40,12 +40,8 @@ def _object_context_checks(
     skip_legacy_amount = isinstance(attrs, dict) and (
         attrs.get("max_approve_amount") is not None or bool(attrs.get("rules"))
     )
-    if not skip_legacy_amount and object_context.amount is not None and object_context.amount > 50000:
-        checks.append("amount_threshold_checked")
-        elevated = {"tenant_admin", "cfo", "controller"}
-        if action in {"approve_payment", "post_journal"} and not any(role in elevated for role in role_set):
-            checks.append("amount_threshold_denied")
-            return PolicyDecision(allowed=False, reason="amount_exceeds_role_threshold", checks=checks)
+    if not skip_legacy_amount and object_context.amount is not None:
+        checks.append("amount_threshold_delegated_to_policy_engine")
 
     vendor_risk = str(object_context.vendor_risk or "").lower()
     if vendor_risk == "high":

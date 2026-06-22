@@ -42,6 +42,7 @@ def list_journals(
     context=Depends(build_request_context),
     journal_status: str | None = Query(default=None),
     journal_type: str | None = Query(default=None),
+    company_id: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
@@ -49,6 +50,7 @@ def list_journals(
         context.org_id,
         journal_status=journal_status,
         journal_type=journal_type,
+        company_id=company_id,
         limit=limit,
         offset=offset,
     )

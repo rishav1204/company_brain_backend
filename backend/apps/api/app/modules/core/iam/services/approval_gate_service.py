@@ -65,8 +65,6 @@ def requires_human_approval(
                                     return True
                             except (TypeError, ValueError):
                                 pass
-    if float(amount) > 50000:
-        return True
     return False
 
 

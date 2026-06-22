@@ -23,6 +23,10 @@ _PUBLIC_PATHS = {
     f"{settings.api_prefix}/auth/invite/accept",
 }
 
+_PUBLIC_PATH_PREFIXES = (
+    "/integrations/webhooks/inbound/",
+)
+
 # Some dev proxies mount at /api/v1 and forward the remainder only (e.g. /auth/password/login).
 _PUBLIC_PATH_SUFFIXES = {
     "/auth/password/login",
@@ -47,7 +51,12 @@ def _is_public_path(path: str) -> bool:
     if normalized in _PUBLIC_PATHS or normalized in _PUBLIC_PATH_SUFFIXES:
         return True
     prefixed = f"{settings.api_prefix.rstrip('/')}{normalized}"
-    return prefixed in _PUBLIC_PATHS
+    if prefixed in _PUBLIC_PATHS:
+        return True
+    for prefix in _PUBLIC_PATH_PREFIXES:
+        if prefix in normalized or prefix in path:
+            return True
+    return False
 
 
 class RequestMiddleware(BaseHTTPMiddleware):

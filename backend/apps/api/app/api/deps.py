@@ -44,6 +44,7 @@ def build_request_context(
                 trace_id=trace_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
+                attrs={"actor_type": "api_key", "api_key_id": api_auth["api_key_id"]},
             )
             if header_request_id:
                 ctx.request_id = header_request_id
@@ -67,6 +68,7 @@ def build_request_context(
                 trace_id=trace_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
+                attrs={"actor_type": "api_key", "api_key_id": api_auth["api_key_id"]},
             )
             if header_request_id:
                 ctx.request_id = header_request_id

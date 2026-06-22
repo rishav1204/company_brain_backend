@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.modules.workflows.middleware.workflow_permission_guard import require_workflow_permission
-from app.services.repositories import audit_repo
+from app.modules.finance_os.audit_explorer.services.workflow_trace_service import get_approval_chain
 
 router = APIRouter(prefix="/workflows", tags=["workflow-audit"])
 
@@ -14,15 +14,12 @@ def workflow_audit_trail(
     context=Depends(require_workflow_permission("workflow.read")),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> dict:
-    logs = audit_repo.list_logs(org_id=context.org_id)[:limit]
-    filtered = [
-        row
-        for row in logs
-        if workflow_id in str(row.get("object_ref", "")) or workflow_id in str(row.get("payload_jsonb", ""))
-    ]
+    result = get_approval_chain(context.org_id, workflow_id)
+    items = (result.get("approvals") or []) + (result.get("steps") or [])
     return {
         "request_id": context.request_id,
         "workflow_id": workflow_id,
-        "items": filtered,
+        "items": items[:limit],
         "verification_status": "verified",
+        "source": "finance_os.audit_explorer",
     }
