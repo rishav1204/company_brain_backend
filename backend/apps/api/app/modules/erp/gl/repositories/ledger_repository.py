@@ -81,7 +81,7 @@ class LedgerRepository:
                 ON CONFLICT (org_id, account_id, fiscal_period_id) DO UPDATE
                 SET debit_total = erp.account_balances.debit_total + EXCLUDED.debit_total,
                     credit_total = erp.account_balances.credit_total + EXCLUDED.credit_total,
-                    closing_balance = EXCLUDED.closing_balance,
+                    closing_balance = erp.account_balances.closing_balance + EXCLUDED.closing_balance,
                     updated_at = NOW()
                 """,
                 (rid, org_id, account_id, fiscal_period_id, debit_delta, credit_delta, closing_balance),

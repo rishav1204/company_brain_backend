@@ -1,3 +1,6 @@
+"""Legacy single-queue Redis worker — deprecated; use platform.events.queues.queue_manager."""
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 
@@ -25,7 +28,7 @@ class RedisQueueService:
             self.client = redis.Redis.from_url(redis_url, decode_responses=True)
         self.main_queue = settings.queue_main_name
         self.dlq_queue = settings.queue_dlq_name
-        self.processed_set = f"{self.main_queue}:processed"
+        self.processed_ttl_seconds = 24 * 3600
 
     def enqueue(self, idempotency_key: str, payload: dict) -> RedisQueueResult:
         if self.client is None:
@@ -66,7 +69,7 @@ class RedisQueueService:
 
         message = json.loads(raw)
         idempotency_key = str(message.get("idempotency_key", ""))
-        if idempotency_key and self.client.sismember(self.processed_set, idempotency_key):
+        if idempotency_key and self.client.get(f"{self.main_queue}:processed:{idempotency_key}"):
             return RedisQueueResult(status="deduped", payload=message)
 
         message["attempts"] = int(message.get("attempts", 0)) + 1
@@ -82,7 +85,11 @@ class RedisQueueService:
             return RedisQueueResult(status="dlq", payload=message)
 
         if idempotency_key:
-            self.client.sadd(self.processed_set, idempotency_key)
+            self.client.setex(
+                f"{self.main_queue}:processed:{idempotency_key}",
+                self.processed_ttl_seconds,
+                "1",
+            )
         return RedisQueueResult(status="processed", payload=message)
 
 

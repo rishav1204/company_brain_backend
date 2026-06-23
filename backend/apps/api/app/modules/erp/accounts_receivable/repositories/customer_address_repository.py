@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from app.services.db import get_db_conn, set_rls_org
@@ -41,7 +43,7 @@ class CustomerAddressRepository:
                 )
                 return dict(cur.fetchone() or {"id": aid})
 
-    def list_by_customer(self, org_id: str, *, customer_id: str) -> list[dict]:
+    def list_by_customer(self, org_id: str, *, customer_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -52,6 +54,7 @@ class CustomerAddressRepository:
                     FROM erp.customer_addresses
                     WHERE org_id = %s::uuid AND customer_id = %s::uuid
                     ORDER BY is_primary DESC, address_type ASC
+                    LIMIT %s
                     """,
                     (org_id, customer_id),
                 )

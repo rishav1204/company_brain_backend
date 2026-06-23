@@ -56,6 +56,15 @@ def observability_status(probe_sink: bool = False) -> dict:
     config = observability_config()
     valid, issues = validate_prod_observability()
     snapshot = metrics_store.snapshot()
+    queue_lags: dict[str, int] = {}
+    try:
+        from app.modules.platform.events.queues.queue_manager import queue_manager
+        from app.services.event_topology import queue_groups
+
+        for queue in queue_groups().values():
+            queue_lags[queue] = queue_manager.lag(queue)
+    except Exception:
+        pass
     status = {
         **config,
         "prod_requirements_met": valid,
@@ -67,6 +76,7 @@ def observability_status(probe_sink: bool = False) -> dict:
             "log_sink_failure_count": snapshot.log_sink_failure_count,
             "trace_span_count": snapshot.trace_span_count,
         },
+        "queue_lags": queue_lags,
     }
     if probe_sink:
         status["log_sink_probe"] = probe_log_sink()

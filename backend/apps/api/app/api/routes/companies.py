@@ -8,6 +8,7 @@ from app.modules.core.iam.services.approval_gate_service import pending_approval
 from app.modules.core.iam.services.finance_route_guard import enforce_finance_route_access
 from app.services.dev_workflows import dev_workflow_state_counts, postgres_configured
 from app.services.object_context import resolve_object_context
+from app.modules.core.iam.services.branch_scope_service import evaluate_branch_scope
 from app.services.repositories import invoices_repo, workflows_repo
 
 router = APIRouter(tags=["companies"])
@@ -29,8 +30,13 @@ class CompanyWorkflowActionRequest(BaseModel):
 @router.get("/companies/{company_id}/invoices/{invoice_id}")
 def get_company_invoice(company_id: str, invoice_id: str, context=Depends(build_request_context)) -> dict:
     enforce_finance_route_access(context, object_type="invoice", mode="read", required_scope="invoice.read")
-    if company_id != context.org_id:
-        raise HTTPException(status_code=403, detail="Cross-tenant access denied")
+    scope = evaluate_branch_scope(
+        attrs=context.attrs,
+        object_branch_id=None,
+        object_company_id=company_id,
+    )
+    if scope and not scope.allowed:
+        raise HTTPException(status_code=403, detail=scope.reason or "Company access denied")
     invoice = invoices_repo.get_invoice(org_id=context.org_id, invoice_id=invoice_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")

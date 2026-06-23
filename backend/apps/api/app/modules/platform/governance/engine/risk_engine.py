@@ -21,5 +21,5 @@ def risk_blocks_execution(risk_level: str, *, human_approved: bool) -> bool:
     if risk_level == "CRITICAL":
         return True
     if risk_level == "HIGH" and not human_approved:
-        return False
+        return True
     return False

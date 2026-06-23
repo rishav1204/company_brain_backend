@@ -1,3 +1,4 @@
+from app.services.repository_pagination import clamp_limit
 import hashlib
 import secrets
 from datetime import datetime
@@ -9,7 +10,10 @@ from app.services.db import get_db_conn, set_rls_org
 
 
 def _hash_key(raw_key: str) -> str:
-    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+    from app.core.config import settings
+
+    material = f"{settings.api_key_pepper}:{raw_key}" if settings.api_key_pepper else raw_key
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 class ApiKeyRepository:
@@ -35,7 +39,7 @@ class ApiKeyRepository:
                 )
                 return cur.fetchone(), raw_key
 
-    def list_keys(self, org_id: str) -> list[dict[str, Any]]:
+    def list_keys(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -45,6 +49,7 @@ class ApiKeyRepository:
                     FROM core.api_keys
                     WHERE org_id = %s::uuid
                     ORDER BY created_at DESC
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

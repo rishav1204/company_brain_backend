@@ -121,7 +121,7 @@ class AssetRepository:
                 )
                 return [dict(r) for r in cur.fetchall()]
 
-    def list_depreciable(self, org_id: str, *, limit: int = 500) -> list[dict]:
+    def list_depreciable(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:

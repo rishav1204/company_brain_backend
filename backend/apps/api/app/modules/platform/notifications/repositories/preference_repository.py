@@ -5,6 +5,8 @@ from uuid import uuid4
 
 from psycopg.types.json import Json
 
+from app.services.repository_pagination import clamp_limit
+
 from app.services.db import get_db_conn, set_rls_org
 
 
@@ -74,7 +76,8 @@ class PreferenceRepository:
                 )
                 return dict(cur.fetchone() or {})
 
-    def list_for_user(self, org_id: str, user_id: str) -> list[dict[str, Any]]:
+    def list_for_user(self, org_id: str, user_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -83,8 +86,9 @@ class PreferenceRepository:
                     SELECT channel, notification_type, enabled, quiet_hours
                     FROM notifications.preferences
                     WHERE org_id = %s::uuid AND user_id = %s::uuid
+                    LIMIT %s
                     """,
-                    (org_id, user_id),
+                    (org_id, user_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

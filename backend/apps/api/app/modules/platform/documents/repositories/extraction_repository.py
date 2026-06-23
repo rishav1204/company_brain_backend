@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -189,6 +191,7 @@ class ExtractionRepository:
         top_k: int = 20,
         document_type: str | None = None,
         keyword: str | None = None,
+        limit: int = 500,
     ) -> list[dict]:
         top_k = max(1, min(int(top_k or 20), 50))
         vector_literal = "[" + ",".join(f"{v:.8f}" for v in query_embedding) + "]"
@@ -232,6 +235,7 @@ class ExtractionRepository:
         query_embedding: list[float],
         top_k: int = 20,
         document_type: str | None = None,
+        limit: int = 500,
     ) -> list[dict]:
         top_k = max(1, min(int(top_k or 20), 50))
         vector_literal = "[" + ",".join(f"{v:.8f}" for v in query_embedding) + "]"

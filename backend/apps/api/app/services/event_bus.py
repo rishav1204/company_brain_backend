@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.modules.platform.events.services.event_service import platform_event_service
+from app.services.event_org_validation import require_org_id
 from app.services.event_queue import event_queue
 from app.services.event_topology import topic_for_event_type
 from app.services.principal_context import build_principal
@@ -29,6 +30,7 @@ class EventBus:
         idempotency_key: str | None = None,
         metadata: dict | None = None,
     ) -> dict:
+        org_id = require_org_id(org_id, context="event_bus_publish")
         if platform_event_service.schema_ready():
             result = platform_event_service.publish(
                 event_type=event_type,

@@ -362,10 +362,8 @@ class SalesInvoiceService:
                     },
                 },
             )
-        except Exception:
-            meta["writeoff_workflow_approved"] = True
-            ar_invoice_repository.update_metadata(org_id, invoice_id=invoice_id, metadata=meta)
-            return self.execute_write_off(org_id, invoice_id=invoice_id, approver_id=requested_by, auto_post=auto_post)
+        except Exception as exc:
+            raise ValueError(f"Write-off workflow initiation failed: {exc}") from exc
 
         self._audit(org_id, invoice_id=invoice_id, action="ar.invoice.writeoff.requested", actor_id=requested_by)
         return {

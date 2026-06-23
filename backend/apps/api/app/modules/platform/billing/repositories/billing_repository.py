@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from datetime import date
 from typing import Any
 from uuid import uuid4
@@ -25,8 +27,9 @@ class BillingRepository:
         except Exception:
             return False
 
-    def list_plans(self) -> list[dict[str, Any]]:
+    def list_plans(self, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             with conn.cursor() as cur:
@@ -38,8 +41,9 @@ class BillingRepository:
                 )
                 return [dict(row) for row in cur.fetchall()]
 
-    def get_plan_features(self, plan_key: str) -> list[str]:
+    def get_plan_features(self, plan_key: str, limit: int = 500) -> list[str]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             with conn.cursor() as cur:
@@ -47,19 +51,24 @@ class BillingRepository:
                     """
                     SELECT feature_code FROM billing.plan_features
                     WHERE plan_key = %s AND enabled = TRUE
+                    LIMIT %s
+
                     """,
                     (plan_key,),
                 )
                 return [row["feature_code"] for row in cur.fetchall()]
 
-    def get_plan_limits(self, plan_key: str) -> dict[str, int | None]:
+    def get_plan_limits(self, plan_key: str, limit: int = 500) -> dict[str, int | None]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return {}
         with get_db_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT limit_code, limit_value FROM billing.plan_limits WHERE plan_key = %s
+                    LIMIT %s
+
                     """,
                     (plan_key,),
                 )
@@ -112,8 +121,9 @@ class BillingRepository:
                 conn.commit()
                 return row
 
-    def list_org_entitlement_overrides(self, org_id: str) -> list[dict[str, Any]]:
+    def list_org_entitlement_overrides(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -124,6 +134,8 @@ class BillingRepository:
                     FROM billing.org_entitlements
                     WHERE org_id = %s::uuid
                       AND (expires_at IS NULL OR expires_at > NOW())
+                    LIMIT %s
+
                     """,
                     (org_id,),
                 )

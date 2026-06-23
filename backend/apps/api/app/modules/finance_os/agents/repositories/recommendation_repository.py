@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -69,7 +71,8 @@ class RecommendationRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def list_for_execution(self, org_id: str, execution_id: str) -> list[dict]:
+    def list_for_execution(self, org_id: str, execution_id: str, *, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -80,8 +83,9 @@ class RecommendationRepository:
                     FROM finance_os.agent_recommendations
                     WHERE org_id = %s::uuid AND execution_id = %s::uuid
                     ORDER BY created_at
+                    LIMIT %s
                     """,
-                    (org_id, execution_id),
+                    (org_id, execution_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 
@@ -93,6 +97,7 @@ class RecommendationRepository:
         agent_name: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
+        limit = clamp_limit(limit)
         clauses = ["r.org_id = %s::uuid"]
         params: list = [org_id]
         if status:

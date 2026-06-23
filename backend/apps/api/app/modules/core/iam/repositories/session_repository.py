@@ -72,18 +72,55 @@ class SessionRepository:
                 )
                 return cur.fetchone() is not None
 
-    def revoke_all_for_user(self, org_id: str, user_id: str) -> int:
+    def consume_refresh_session(self, refresh_token_hash: str) -> tuple[dict[str, Any] | None, bool]:
+        """Atomically revoke session by refresh hash. Returns (session, reuse_detected)."""
         with get_db_conn() as conn:
-            set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE core.sessions SET revoked = TRUE
-                    WHERE org_id = %s::uuid AND user_id = %s::uuid AND revoked = FALSE
+                    UPDATE core.sessions
+                    SET revoked = TRUE
+                    WHERE refresh_token_hash = %s
+                      AND revoked = FALSE
+                      AND expires_at > NOW()
+                    RETURNING id::text AS id, user_id::text AS user_id, org_id::text AS org_id,
+                              expires_at, revoked, refresh_token_hash
                     """,
-                    (org_id, user_id),
+                    (refresh_token_hash,),
                 )
-                return cur.rowcount
+                row = cur.fetchone()
+                if row:
+                    return row, False
+                cur.execute(
+                    """
+                    SELECT id::text AS id, user_id::text AS user_id, org_id::text AS org_id,
+                           expires_at, revoked, refresh_token_hash
+                    FROM core.sessions
+                    WHERE refresh_token_hash = %s
+                    LIMIT 1
+                    """,
+                    (refresh_token_hash,),
+                )
+                existing = cur.fetchone()
+                if existing and existing.get("revoked"):
+                    return None, True
+                return None, False
+
+    def revoke_all_for_user(self, org_id: str, user_id: str) -> int:
+        with get_db_conn() as conn:
+            return self.revoke_all_for_user_conn(conn, org_id, user_id)
+
+    def revoke_all_for_user_conn(self, conn, org_id: str, user_id: str) -> int:
+        set_rls_org(conn, org_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE core.sessions SET revoked = TRUE
+                WHERE org_id = %s::uuid AND user_id = %s::uuid AND revoked = FALSE
+                """,
+                (org_id, user_id),
+            )
+            return cur.rowcount
 
     def list_active_sessions(self, org_id: str, user_id: str) -> list[dict[str, Any]]:
         with get_db_conn() as conn:

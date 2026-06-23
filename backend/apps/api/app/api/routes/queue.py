@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.deps import build_request_context
+from app.modules.core.iam.middleware.permission_guard import require_permission
 from app.services.event_topology import finance_topics, queue_groups, service_boundaries
 from app.services.principal_context import principal_from_request_context
 from app.services.redis_queue_service import redis_queue_service
@@ -16,7 +17,7 @@ class QueueEnqueueRequest(BaseModel):
 
 
 @router.post("/queue/enqueue")
-def enqueue_message(request: QueueEnqueueRequest, context=Depends(build_request_context)) -> dict:
+def enqueue_message(request: QueueEnqueueRequest, context=Depends(require_permission("ops.queue.manage"))) -> dict:
     payload = dict(request.payload)
     payload.setdefault("org_id", context.org_id)
     payload.setdefault("trace_id", context.request_id)
@@ -43,7 +44,7 @@ def enqueue_message(request: QueueEnqueueRequest, context=Depends(build_request_
 
 
 @router.post("/queue/process-next")
-def process_next(context=Depends(build_request_context)) -> dict:
+def process_next(context=Depends(require_permission("ops.queue.manage"))) -> dict:
     result = redis_queue_service.process_next()
     if result.status == "error":
         raise HTTPException(status_code=503, detail=f"Queue processing failed: {result.detail}")

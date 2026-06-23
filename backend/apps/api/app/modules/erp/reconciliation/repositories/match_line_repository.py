@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -35,7 +37,7 @@ class MatchLineRepository:
                     created.append(dict(cur.fetchone() or {"id": lid}))
         return created
 
-    def list_for_reconciliation(self, org_id: str, *, reconciliation_id: str) -> list[dict]:
+    def list_for_reconciliation(self, org_id: str, *, reconciliation_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -46,6 +48,7 @@ class MatchLineRepository:
                     FROM erp.reconciliation_match_lines
                     WHERE org_id = %s::uuid AND reconciliation_id = %s::uuid
                     ORDER BY created_at
+                    LIMIT %s
                     """,
                     (org_id, reconciliation_id),
                 )

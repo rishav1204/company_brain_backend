@@ -12,9 +12,10 @@ from app.modules.erp.accounts_receivable.repositories.receipt_repository import 
 from app.modules.erp.accounts_receivable.services.ar_realtime_service import ar_realtime_service
 from app.modules.erp.accounts_receivable.services.customer_balance_service import customer_balance_service
 from app.modules.erp.accounts_receivable.validators.receipt_validator import receipt_validator
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
+from app.services.logger import log_event
 
 
 class CollectionService:
@@ -102,44 +103,79 @@ class CollectionService:
         receivable_id = resolve_receivable_account(org_id, customer)
         bank_id = str(receipt.get("bank_account_id") or "")
         if bank_id:
-            try:
-                from app.modules.erp.treasury.services.bank_account_service import bank_account_service
+            from app.modules.erp.treasury.services.bank_account_service import bank_account_service
 
-                bank_id = bank_account_service.resolve_ledger_account(org_id, bank_account_id=bank_id)
-            except Exception:
-                pass
+            bank_id = bank_account_service.resolve_ledger_account(org_id, bank_account_id=bank_id)
         if not receivable_id or not bank_id:
             raise ValueError("Receivable and bank accounts required")
 
         amount = float(receipt.get("amount") or 0)
-        receipt_repository.set_status(org_id, receipt_id=receipt_id, status="processing")
+        treasury_bank_id = str(receipt.get("bank_account_id") or "")
         try:
             journal_lines = build_receipt_journal_lines(
                 bank_account_id=bank_id, receivable_account_id=receivable_id, amount=amount
             )
-            journal = journal_service.create_draft(
-                org_id,
-                created_by=None,
-                journal_type="receipt",
-                posting_date=str(receipt.get("receipt_date")),
-                description=f"Receipt {receipt.get('receipt_number')}",
-                source_type="ar_receipt",
-                source_id=receipt_id,
-                company_id=receipt.get("company_id"),
-                lines=journal_lines,
-                idempotency_key=f"ar-receipt:{receipt_id}",
-            )
-            jid = str(journal["journal"]["id"])
-            journal_approval_service.approve(org_id, journal_id=jid, approver_id=completed_by, skip_maker_checker=True)
             post_result = None
-            if auto_post:
-                post_result = posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=completed_by)
+            jid = None
+            journal = None
 
-            receipt_repository.set_status(org_id, receipt_id=receipt_id, status="completed", journal_id=jid)
-            meta = receipt.get("metadata") if isinstance(receipt.get("metadata"), dict) else {}
-            for alloc in meta.get("allocations") or []:
-                ar_invoice_repository.record_receipt(
-                    org_id, invoice_id=str(alloc["invoice_id"]), amount=float(alloc["amount"])
+            with get_db_conn() as conn:
+                set_rls_org(conn, org_id)
+                receipt_repository.set_status_conn(
+                    conn, org_id, receipt_id=receipt_id, status="processing"
+                )
+                journal = create_draft_with_conn(
+                    conn,
+                    org_id,
+                    created_by=None,
+                    journal_type="receipt",
+                    posting_date=str(receipt.get("receipt_date")),
+                    description=f"Receipt {receipt.get('receipt_number')}",
+                    source_type="ar_receipt",
+                    source_id=receipt_id,
+                    company_id=receipt.get("company_id"),
+                    lines=journal_lines,
+                    idempotency_key=f"ar-receipt:{receipt_id}",
+                )
+                jid = str(journal["journal"]["id"])
+                approve_with_conn(conn, org_id, journal_id=jid, approver_id=completed_by)
+                if auto_post:
+                    post_result = posting_orchestrator.post_journal_with_conn(
+                        conn, org_id, journal_id=jid, posted_by=completed_by, defer_side_effects=True
+                    )
+                receipt_repository.set_status_conn(
+                    conn, org_id, receipt_id=receipt_id, status="completed", journal_id=jid
+                )
+                meta = receipt.get("metadata") if isinstance(receipt.get("metadata"), dict) else {}
+                for alloc in meta.get("allocations") or []:
+                    ar_invoice_repository.record_receipt_conn(
+                        conn,
+                        org_id,
+                        invoice_id=str(alloc["invoice_id"]),
+                        amount=float(alloc["amount"]),
+                    )
+                from app.modules.erp.treasury.services.bank_transaction_recorder import record_receipt_credit_conn
+
+                record_receipt_credit_conn(
+                    conn,
+                    org_id,
+                    bank_account_id=treasury_bank_id,
+                    amount=amount,
+                    reference=str(receipt.get("receipt_number") or receipt_id),
+                    receipt_date=str(receipt.get("receipt_date") or "")[:10],
+                    description=f"AR receipt {receipt.get('receipt_number')}",
+                    idempotency_key=f"ar-receipt-tx:{receipt_id}",
+                    counterparty_ref=str(receipt.get("customer_id") or ""),
+                    source_id=receipt_id,
+                )
+
+            if auto_post and journal:
+                posting_orchestrator._emit_post_side_effects(
+                    org_id,
+                    journal_id=jid,
+                    journal=journal["journal"],
+                    batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                    posted_by=completed_by,
                 )
             customer_balance_service.refresh_customer(org_id, customer_id=str(receipt["customer_id"]))
             emit_payment_received(

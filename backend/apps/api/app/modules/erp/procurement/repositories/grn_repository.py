@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -50,7 +52,7 @@ class GrnRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def list_for_po(self, org_id: str, *, po_id: str) -> list[dict]:
+    def list_for_po(self, org_id: str, *, po_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -60,6 +62,8 @@ class GrnRepository:
                     FROM erp.goods_receipts
                     WHERE org_id = %s::uuid AND po_id = %s::uuid
                     ORDER BY created_at DESC
+                    LIMIT %s
+
                     """,
                     (org_id, po_id),
                 )
@@ -117,7 +121,7 @@ class GrnRepository:
                 )
                 return dict(cur.fetchone() or {"id": iid})
 
-    def list_items(self, org_id: str, *, grn_id: str) -> list[dict]:
+    def list_items(self, org_id: str, *, grn_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -126,6 +130,8 @@ class GrnRepository:
                     SELECT id::text, po_item_id::text, received_quantity, accepted_quantity, rejected_quantity
                     FROM erp.goods_receipt_items
                     WHERE org_id = %s::uuid AND grn_id = %s::uuid
+                    LIMIT %s
+
                     """,
                     (org_id, grn_id),
                 )

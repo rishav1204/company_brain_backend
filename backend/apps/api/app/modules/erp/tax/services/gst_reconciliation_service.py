@@ -54,7 +54,24 @@ class GstReconciliationService:
         return gst_reconciliation_repository.list(org_id, return_period=return_period, match_status=match_status)
 
     def resolve(self, org_id: str, *, reconciliation_id: str, actor_id: str) -> dict:
-        return gst_reconciliation_repository.resolve(org_id, reconciliation_id=reconciliation_id, status="resolved")
+        result = gst_reconciliation_repository.resolve(org_id, reconciliation_id=reconciliation_id, status="resolved")
+        try:
+            from app.modules.platform.governance.services.audit_service import audit_service
+
+            audit_service.record(
+                org_id=org_id,
+                actor_type="user",
+                actor_id=actor_id,
+                action="gst.reconciliation.resolved",
+                object_ref=f"erp:gst_reconciliation:{reconciliation_id}",
+                payload={"reconciliation_id": reconciliation_id},
+                entity_type="gst_reconciliation",
+                entity_id=reconciliation_id,
+                source_service="erp.tax",
+            )
+        except Exception:
+            pass
+        return result
 
 
 gst_reconciliation_service = GstReconciliationService()

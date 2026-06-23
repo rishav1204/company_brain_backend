@@ -32,7 +32,8 @@ def _is_token_revoked(jti: str) -> bool:
         client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
         return bool(client.get(_revocation_key(jti)))
     except Exception:
-        # Fail-open if revocation storage is unreachable to preserve auth availability.
+        if settings.jwt_revocation_fail_closed:
+            return True
         return False
 
 

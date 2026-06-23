@@ -15,6 +15,7 @@ from app.modules.erp.journals.services.approval_service import approval_service 
 from app.modules.erp.journals.services.journal_service import journal_service
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
 from app.modules.platform.events.events.erp_events import emit_invoice_approved, emit_invoice_created
+from app.services.logger import log_event
 
 
 class InvoiceService:
@@ -108,9 +109,8 @@ class InvoiceService:
                     grn_id=goods_receipt_id,
                     ap_invoice_id=iid,
                 )
-            except Exception:
-                pass
-        return self.get_invoice(org_id, invoice_id=iid)
+            except Exception as exc:
+                log_event("ap.invoice.match_optional_failed", org_id=org_id, invoice_id=iid, detail=str(exc))
 
     def get_invoice(self, org_id: str, *, invoice_id: str) -> dict:
         invoice = invoice_repository.get(org_id, invoice_id=invoice_id)
@@ -203,8 +203,8 @@ class InvoiceService:
                     "metadata": {"ap_invoice_id": invoice_id, "vendor_id": invoice.get("vendor_id")},
                 },
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log_event("ap.invoice.workflow_start_optional_failed", org_id=org_id, invoice_id=invoice_id, detail=str(exc))
         return {"invoice_id": invoice_id, "status": "pending_approval"}
 
     def approve(
@@ -279,7 +279,8 @@ class InvoiceService:
 
                 grn_links = grn_link_repository.list_by_grn(org_id, goods_receipt_id=str(grn_id))
                 use_grni = bool(grn_links)
-            except Exception:
+            except Exception as exc:
+                log_event("ap.invoice.grni_lookup_failed", org_id=org_id, detail=str(exc))
                 use_grni = False
 
         if is_rcm:
@@ -348,8 +349,8 @@ class InvoiceService:
             )
             meta["tds_preview"] = tds_preview
             invoice_repository.patch_metadata(org_id, invoice_id=invoice_id, metadata=meta)
-        except Exception:
-            pass
+        except Exception as exc:
+            log_event("ap.invoice.tds_preview_failed", org_id=org_id, invoice_id=invoice_id, detail=str(exc))
         emit_invoice_approved(org_id, invoice_id=invoice_id)
         vendor_balance_service.refresh_vendor(org_id, vendor_id=str(invoice["vendor_id"]))
         ap_realtime_service.push_invoice_approved(org_id, invoice_id=invoice_id, approver_id=approver_id)
@@ -376,8 +377,8 @@ class InvoiceService:
                 status="posted" if auto_post else "journal_generated",
                 total_amount=float(invoice.get("total_amount") or 0),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log_event("ap.invoice.voucher_projection_failed", org_id=org_id, invoice_id=invoice_id, detail=str(exc))
 
         return {
             "invoice_id": invoice_id,
@@ -409,8 +410,8 @@ class InvoiceService:
                 entity_id=invoice_id,
                 source_service="erp.ap",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log_event("ap.invoice.audit_optional_failed", org_id=org_id, invoice_id=invoice_id, action=action, detail=str(exc))
 
 
 invoice_service = InvoiceService()

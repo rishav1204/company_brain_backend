@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.config import settings
+from app.core.config import settings, DEV_ORG_ID
 from app.api.deps import build_request_context
 from app.schemas.auth import (
     DevCreateUserRequest,
@@ -114,8 +114,8 @@ def password_login(request: PasswordLoginRequest) -> PasswordLoginResponse:
     if dev_user is None:
         if request.password != "dev-password":
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        resolved_org_id = request.org_id
-        resolved_roles = request.roles
+        resolved_org_id = DEV_ORG_ID
+        resolved_roles = ["viewer"]
     else:
         if request.password != dev_user["password"]:
             raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -151,6 +151,9 @@ def dev_create_user(request: DevCreateUserRequest) -> DevCreateUserResponse:
         raise HTTPException(status_code=404, detail="Not found")
     if not request.email.strip() or not request.password.strip():
         raise HTTPException(status_code=400, detail="Email and password are required")
+    allowed_dev_roles = {"viewer", "preparer", "ap_executive"}
+    requested_roles = [r for r in request.roles if r in allowed_dev_roles] or ["viewer"]
+    target_org_id = DEV_ORG_ID
     if iam_db_enabled():
         from app.modules.core.iam.repositories import role_repo, user_repo
         from app.modules.core.iam.services.password_service import hash_password
@@ -164,25 +167,25 @@ def dev_create_user(request: DevCreateUserRequest) -> DevCreateUserResponse:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         display = request.display_name or request.email.split("@")[0]
         created = user_repo.create_user(
-            org_id=request.org_id,
+            org_id=target_org_id,
             email=request.email,
             display_name=display,
             password_hash=hash_password(request.password),
         )
-        for role_name in request.roles:
+        for role_name in requested_roles:
             role = role_repo.get_role_by_name(request.org_id, role_name)
             if role:
                 user_repo.assign_role(request.org_id, created["id"], role["id"])
         trace = f"dev-create-{int(datetime.now(timezone.utc).timestamp())}"
-        emit_user_created(org_id=request.org_id, user_id=created["id"], email=created["email"], trace_id=trace)
-        for role_name in request.roles:
-            emit_role_assigned(org_id=request.org_id, user_id=created["id"], role_name=role_name, trace_id=trace)
+        emit_user_created(org_id=target_org_id, user_id=created["id"], email=created["email"], trace_id=trace)
+        for role_name in requested_roles:
+            emit_role_assigned(org_id=target_org_id, user_id=created["id"], role_name=role_name, trace_id=trace)
         return DevCreateUserResponse(
             request_id=trace,
             user_id=created["id"],
             email=created["email"],
             org_id=created["org_id"],
-            roles=request.roles,
+            roles=requested_roles,
             confidence=0.99,
             verification_status="iam_dev_user_created",
         )
@@ -190,8 +193,8 @@ def dev_create_user(request: DevCreateUserRequest) -> DevCreateUserResponse:
     user = dev_auth_store.create_user(
         email=request.email,
         password=request.password,
-        org_id=request.org_id,
-        roles=request.roles,
+        org_id=target_org_id,
+        roles=requested_roles,
         display_name=request.display_name,
     )
     return DevCreateUserResponse(
@@ -199,7 +202,7 @@ def dev_create_user(request: DevCreateUserRequest) -> DevCreateUserResponse:
         user_id=user["user_id"],
         email=user["email"],
         org_id=user["org_id"],
-        roles=user["roles"],
+        roles=requested_roles,
         confidence=0.88,
         verification_status="dev_user_created",
     )

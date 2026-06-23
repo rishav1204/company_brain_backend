@@ -4,7 +4,9 @@ from app.core.config import settings
 from app.modules.core.iam.events.auth_events import emit_user_login, emit_user_logout
 from app.modules.core.iam.repositories import permission_repo, user_repo
 from app.modules.core.iam.services.jwt_service import issue_access_token
-from app.modules.core.iam.services.login_rate_limiter import login_rate_limiter
+import hashlib
+
+from app.modules.core.iam.services.login_rate_limiter import login_rate_limiter, refresh_rate_limiter
 from app.modules.core.iam.services.password_service import verify_password
 from app.modules.core.iam.services.rbac_service import list_role_names, merge_policy_context
 from app.modules.core.iam.services.iam_schema_service import require_core_schema
@@ -13,6 +15,7 @@ from app.modules.core.iam.services.mfa_service import MfaRequired, assert_mfa_ga
 from app.modules.core.iam.services.token_revocation import revoke_access_token_jti
 from app.services.trace import trace_span
 from app.modules.core.iam.services.session_service import (
+    consume_refresh_session,
     create_refresh_session,
     resolve_refresh_session,
     revoke_refresh_session,
@@ -115,10 +118,23 @@ def _login_inner(
     }
 
 
-def refresh(*, refresh_token: str, mfa_code: str | None = None) -> dict:
+def refresh(*, refresh_token: str, mfa_code: str | None = None, rate_limit_key: str | None = None) -> dict:
     with trace_span("iam.refresh"):
         require_core_schema()
-        session = resolve_refresh_session(refresh_token)
+        if rate_limit_key:
+            decision = refresh_rate_limiter.check(rate_limit_key)
+            if not decision.allowed:
+                raise AuthError("Too many refresh attempts")
+
+        session, reuse_detected = consume_refresh_session(refresh_token)
+        if reuse_detected:
+            from app.modules.core.iam.repositories import session_repo
+
+            token_hash = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+            existing = session_repo.get_by_refresh_hash(token_hash)
+            if existing:
+                session_repo.revoke_all_for_user(existing["org_id"], existing["user_id"])
+            raise AuthError("Refresh token reuse detected; all sessions revoked")
         if not session:
             raise AuthError("Invalid refresh token")
 
@@ -126,7 +142,6 @@ def refresh(*, refresh_token: str, mfa_code: str | None = None) -> dict:
         user_id = session["user_id"]
         session_id = session["id"]
 
-        revoke_refresh_session(org_id, session_id)
         roles = list_role_names(org_id, user_id)
         permissions = permission_repo.list_permissions_for_user(org_id, user_id)
         attrs = merge_policy_context(org_id, user_id)

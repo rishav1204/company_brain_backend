@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -144,7 +146,7 @@ class EntryRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def list_for_decay(self, org_id: str) -> list[dict]:
+    def list_for_decay(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -153,6 +155,8 @@ class EntryRepository:
                     SELECT id::text, memory_type, ttl_policy, status, expires_at, memory_record_id::text AS memory_record_id
                     FROM finance_os.memory_entries
                     WHERE org_id = %s::uuid AND status = 'active' AND ttl_policy != 'forever'
+                    LIMIT %s
+
                     """,
                     (org_id,),
                 )
@@ -173,7 +177,7 @@ class EntryRepository:
                 row = cur.fetchone()
                 return int(row["cnt"]) if row else 0
 
-    def summary_by_type(self, org_id: str) -> list[dict]:
+    def summary_by_type(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -185,6 +189,8 @@ class EntryRepository:
                     WHERE org_id = %s::uuid AND status = 'active'
                     GROUP BY memory_type
                     ORDER BY cnt DESC
+                    LIMIT %s
+
                     """,
                     (org_id,),
                 )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -106,23 +108,25 @@ class ItcLedgerRepository:
 
 
 class ItcBlockedRulesRepository:
-    def list_active(self, org_id: str) -> list[dict]:
+    def list_active(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id::text, category, description, block_percentage FROM erp.itc_blocked_rules WHERE org_id=%s::uuid AND is_active=true",
-                    (org_id,),
+                    "SELECT id::text, category, description, block_percentage FROM erp.itc_blocked_rules WHERE org_id=%s::uuid AND is_active=true LIMIT %s",
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
-    def list_all(self, org_id: str) -> list[dict]:
+    def list_all(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id::text, category, description, block_percentage, is_active FROM erp.itc_blocked_rules WHERE org_id=%s::uuid ORDER BY category",
-                    (org_id,),
+                    "SELECT id::text, category, description, block_percentage, is_active FROM erp.itc_blocked_rules WHERE org_id=%s::uuid ORDER BY category LIMIT %s",
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.modules.platform.api_gateway.engine import retry_engine
 from app.modules.platform.integrations.repositories.webhook_repository import webhook_repository
 from app.modules.platform.integrations.security.credential_manager import credential_manager
+from app.modules.platform.integrations.security.url_safety import UnsafeUrlError, validate_outbound_url
 from app.services.db import get_db_conn, set_rls_org
 
 
@@ -32,6 +33,10 @@ class IntegrationsWebhookService:
         endpoint_url: str,
         event_types: list[str],
     ) -> tuple[dict, str]:
+        try:
+            endpoint_url = validate_outbound_url(endpoint_url)
+        except UnsafeUrlError as exc:
+            raise ValueError(str(exc)) from exc
         # Generate secret; store only hash (never store raw secret).
         secret_plain = "whsec_" + secrets.token_urlsafe(24)
         import hashlib
@@ -127,8 +132,9 @@ class IntegrationsWebhookService:
         response_code: int | None = None
         response_body: str | None = None
         try:
+            safe_url = validate_outbound_url(target_url)
             with httpx.Client(timeout=settings.integration_timeout_seconds) as client:
-                resp = client.post(target_url, content=body, headers=headers)
+                resp = client.post(safe_url, content=body, headers=headers)
                 response_code = resp.status_code
                 response_body = resp.text[:2000] if resp.text else None
                 if resp.status_code >= 400:

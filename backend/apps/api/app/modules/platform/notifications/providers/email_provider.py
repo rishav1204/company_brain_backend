@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 import httpx
 
 from app.core.config import settings
@@ -33,7 +35,7 @@ class EmailProvider:
                     "from": settings.resend_from_email,
                     "to": [to],
                     "subject": subject,
-                    "html": body.replace("\n", "<br>"),
+                    "html": html.escape(body).replace("\n", "<br>"),
                     "text": body,
                 },
                 timeout=settings.integration_timeout_seconds,

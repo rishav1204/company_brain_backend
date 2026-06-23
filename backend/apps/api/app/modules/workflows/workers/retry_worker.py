@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from app.modules.platform.events.queues.queue_manager import queue_manager
 from app.modules.workflows.services.workflow_orchestrator import workflow_orchestrator
-from app.services.event_queue import event_queue
 from app.core.config import settings
 
 
@@ -9,16 +9,19 @@ def run_retry_queue_drain(org_id: str) -> dict:
     queue = settings.queue_workflow_retries
     processed = 0
     for _ in range(20):
-        routed = event_queue.process_next(queue=queue)
-        if routed.status != "processed" or not isinstance(routed.envelope, dict):
+        claim = queue_manager.claim_next(queue=queue)
+        if claim.status != "claimed" or not claim.envelope:
             break
-        payload = routed.envelope.get("payload", {})
-        if str(routed.envelope.get("org_id")) != org_id:
+        envelope = claim.envelope
+        if str(envelope.get("org_id")) != org_id:
+            queue_manager.complete_claim(queue, envelope, claim.claim_token)
             continue
+        payload = envelope.get("payload", {})
         instance_id = payload.get("workflow_instance_id")
         if instance_id:
             workflow_orchestrator.run_from_step(org_id=org_id, instance_id=str(instance_id))
             processed += 1
+        queue_manager.complete_claim(queue, envelope, claim.claim_token)
     return {"org_id": org_id, "retries_processed": processed}
 
 

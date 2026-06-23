@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -33,7 +35,7 @@ class FiscalYearRepository:
                 )
                 return dict(cur.fetchone() or {"id": yid})
 
-    def list(self, org_id: str, *, company_id: str | None = None) -> list[dict]:
+    def list(self, org_id: str, *, company_id: str | None = None, limit: int = 500) -> list[dict]:
         where = ["org_id = %s::uuid"]
         params: list = [org_id]
         if company_id:
@@ -46,6 +48,7 @@ class FiscalYearRepository:
                     f"""
                     SELECT id::text, fiscal_year_code, start_date::text, end_date::text, status, is_current
                     FROM erp.fiscal_years WHERE {' AND '.join(where)} ORDER BY start_date DESC
+                    LIMIT %s
                     """,
                     tuple(params),
                 )

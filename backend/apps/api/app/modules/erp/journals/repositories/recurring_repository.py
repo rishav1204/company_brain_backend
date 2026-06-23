@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -67,7 +69,7 @@ class RecurringRepository:
                     )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
-    def list_due(self, org_id: str, *, as_of_date: str) -> list[dict]:
+    def list_due(self, org_id: str, *, as_of_date: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -77,6 +79,7 @@ class RecurringRepository:
                     FROM erp.recurring_journals
                     WHERE org_id = %s::uuid AND is_active = true AND next_run_date <= %s::date
                     ORDER BY next_run_date ASC
+                    LIMIT %s
                     """,
                     (org_id, as_of_date),
                 )

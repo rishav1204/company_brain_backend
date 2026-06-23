@@ -12,10 +12,11 @@ from app.modules.erp.accounts_payable.repositories.payment_repository import pay
 from app.modules.erp.accounts_payable.repositories.vendor_repository import vendor_repository
 from app.modules.erp.accounts_payable.services.vendor_balance_service import vendor_balance_service
 from app.modules.erp.accounts_payable.validators.payment_validator import payment_validator
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
 from app.modules.platform.events.events.erp_events import emit_payment_completed, emit_payment_failed
+from app.services.db import get_db_conn, set_rls_org
+from app.services.logger import log_event
 
 
 class PaymentService:
@@ -78,10 +79,8 @@ class PaymentService:
                     "metadata": {"ap_payment_id": pid, "vendor_id": vendor_id},
                 },
             )
-        except Exception:
-            payment_repository.update_metadata(
-                org_id, payment_id=pid, metadata={"allocations": invoice_allocations, "workflow_approved": True}
-            )
+        except Exception as exc:
+            raise ValueError(f"Payment workflow initiation failed: {exc}") from exc
         ap_realtime_service.push_payment_scheduled(org_id, payment_id=pid, amount=amount)
         self._audit(org_id, payment_id=pid, action="ap.payment.scheduled", actor_id=created_by)
         return payment
@@ -111,10 +110,16 @@ class PaymentService:
         if not meta.get("workflow_approved"):
             raise ValueError("Payment workflow approval required before execution")
 
-        for alloc in meta.get("allocations") or []:
+        allocations = meta.get("allocations") or []
+        payment_amount = float(payment.get("amount") or 0)
+        alloc_total = sum(float(alloc.get("amount") or 0) for alloc in allocations)
+        if allocations and abs(alloc_total - payment_amount) > 0.01:
+            raise ValueError("Payment allocation total must equal payment amount")
+
+        for alloc in allocations:
             inv = invoice_repository.get(org_id, invoice_id=str(alloc.get("invoice_id")))
             if not inv:
-                continue
+                raise ValueError(f"Invoice not found: {alloc.get('invoice_id')}")
             inv_meta = inv.get("metadata") if isinstance(inv.get("metadata"), dict) else {}
             po_id = inv.get("purchase_order_id")
             if po_id:
@@ -128,8 +133,8 @@ class PaymentService:
                         )
                 except ValueError:
                     raise
-                except Exception:
-                    pass
+                except Exception as exc:
+                    raise ValueError(f"Procurement match check failed: {exc}") from exc
             po_amount = inv_meta.get("po_amount")
             grn_amount = inv_meta.get("grn_amount")
             if po_amount is not None and grn_amount is not None:
@@ -157,17 +162,13 @@ class PaymentService:
         payable_id = payable_account_id or resolve_default_payable_account(org_id, vendor)
         bank_id = str(payment.get("bank_account_id") or "")
         if bank_id:
-            try:
-                from app.modules.erp.treasury.services.bank_account_service import bank_account_service
+            from app.modules.erp.treasury.services.bank_account_service import bank_account_service
 
-                bank_id = bank_account_service.resolve_ledger_account(org_id, bank_account_id=bank_id)
-            except Exception:
-                pass
+            bank_id = bank_account_service.resolve_ledger_account(org_id, bank_account_id=bank_id)
         if not payable_id or not bank_id:
             raise ValueError("Payable and bank accounts required")
 
         amount = float(payment.get("amount") or 0)
-        payment_repository.set_status(org_id, payment_id=payment_id, status="processing")
         try:
             from app.modules.erp.tax.services.tax_account_setup_service import tax_account_setup_service
             from app.modules.erp.tax.services.tds_service import tds_service
@@ -185,38 +186,49 @@ class PaymentService:
                 amount=amount,
             )
             bank_payment_amount = float(tds_result.get("net_amount") or amount)
-            journal = journal_service.create_draft(
-                org_id,
-                created_by=None,
-                journal_type="payment",
-                posting_date=str(payment.get("payment_date")),
-                description=f"Payment {payment.get('payment_reference')}",
-                source_type="ap_payment",
-                source_id=payment_id,
-                company_id=payment.get("company_id"),
-                lines=journal_lines,
-                idempotency_key=f"ap-payment:{payment_id}",
-            )
-            jid = str(journal["journal"]["id"])
-            journal_approval_service.approve(
-                org_id, journal_id=jid, approver_id=executed_by, skip_maker_checker=True
-            )
-            post_result = posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=executed_by)
-            payment_repository.set_status(org_id, payment_id=payment_id, status="completed", journal_id=jid)
-
-            for alloc in meta.get("allocations") or []:
-                invoice_repository.record_payment(
-                    org_id, invoice_id=str(alloc["invoice_id"]), amount=float(alloc["amount"])
-                )
-
-            vendor_balance_service.refresh_vendor(org_id, vendor_id=str(payment["vendor_id"]))
+            treasury_bank_id = str(payment.get("bank_account_id") or "")
             bank_tx_id = None
-            if not skip_bank_transaction:
-                try:
-                    from app.modules.erp.treasury.services.bank_transaction_recorder import record_payment_debit
+            post_result = None
+            jid = None
 
-                    treasury_bank_id = str(payment.get("bank_account_id") or "")
-                    bank_tx = record_payment_debit(
+            with get_db_conn() as conn:
+                set_rls_org(conn, org_id)
+                payment_repository.set_status_conn(
+                    conn, org_id, payment_id=payment_id, status="processing"
+                )
+                journal = create_draft_with_conn(
+                    conn,
+                    org_id,
+                    created_by=None,
+                    journal_type="payment",
+                    posting_date=str(payment.get("payment_date")),
+                    description=f"Payment {payment.get('payment_reference')}",
+                    source_type="ap_payment",
+                    source_id=payment_id,
+                    company_id=payment.get("company_id"),
+                    lines=journal_lines,
+                    idempotency_key=f"ap-payment:{payment_id}",
+                )
+                jid = str(journal["journal"]["id"])
+                approve_with_conn(conn, org_id, journal_id=jid, approver_id=executed_by)
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=executed_by, defer_side_effects=True
+                )
+                payment_repository.set_status_conn(
+                    conn, org_id, payment_id=payment_id, status="completed", journal_id=jid
+                )
+                for alloc in meta.get("allocations") or []:
+                    invoice_repository.record_payment_conn(
+                        conn,
+                        org_id,
+                        invoice_id=str(alloc["invoice_id"]),
+                        amount=float(alloc["amount"]),
+                    )
+                if not skip_bank_transaction:
+                    from app.modules.erp.treasury.services.bank_transaction_recorder import record_payment_debit_conn
+
+                    bank_tx = record_payment_debit_conn(
+                        conn,
                         org_id,
                         bank_account_id=treasury_bank_id,
                         amount=bank_payment_amount,
@@ -225,10 +237,18 @@ class PaymentService:
                         description=f"AP payment {payment.get('payment_reference')}",
                         idempotency_key=f"ap-payment-tx:{payment_id}",
                         counterparty_ref=str(payment.get("vendor_id") or ""),
+                        source_id=payment_id,
                     )
                     bank_tx_id = bank_tx.get("id")
-                except Exception:
-                    pass
+
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str(post_result.get("ledger_batch_id") or ""),
+                posted_by=executed_by,
+            )
+            vendor_balance_service.refresh_vendor(org_id, vendor_id=str(payment["vendor_id"]))
             emit_payment_completed(
                 org_id, payment_id=payment_id, amount=bank_payment_amount, trace_id=None,
                 journal_id=jid,
@@ -253,8 +273,8 @@ class PaymentService:
                     status="posted",
                     total_amount=amount,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log_event("ap.voucher_projection_failed", org_id=org_id, payment_id=payment_id, error=str(exc))
 
             return {
                 "payment_id": payment_id,

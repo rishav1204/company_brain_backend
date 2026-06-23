@@ -2,30 +2,34 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: finance-worker
+  name: {{ .Values.worker.name | default "finance-worker" }}
 spec:
   replicas: {{ .Values.worker.replicaCount }}
   selector:
     matchLabels:
-      app: finance-worker
+      app: {{ .Values.worker.name | default "finance-worker" }}
   template:
     metadata:
       labels:
-        app: finance-worker
+        app: {{ .Values.worker.name | default "finance-worker" }}
     spec:
       containers:
         - name: worker
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
           command:
 {{ toYaml .Values.worker.command | indent 12 }}
           env:
-            {{- toYaml .Values.env | nindent 12 }}
+            {{- toYaml .Values.worker.env | nindent 12 }}
           resources:
+{{- if .Values.worker.resources }}
+{{ toYaml .Values.worker.resources | indent 12 }}
+{{- else }}
             requests:
               cpu: 200m
               memory: 256Mi
             limits:
               cpu: 800m
               memory: 1Gi
+{{- end }}
 {{- end }}

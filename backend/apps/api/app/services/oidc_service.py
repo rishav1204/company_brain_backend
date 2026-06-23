@@ -65,6 +65,9 @@ class OidcService:
         effective_redirect = redirect_uri or settings.oidc_redirect_uri
         if not effective_redirect:
             raise ValueError("OIDC redirect URI is required")
+        allowed = [u.strip() for u in settings.oidc_allowed_redirect_uris.split(",") if u.strip()]
+        if allowed and effective_redirect not in allowed:
+            raise ValueError("redirect_uri is not in OIDC_ALLOWED_REDIRECT_URIS")
 
         state = _urlsafe(24)
         nonce = _urlsafe(24)

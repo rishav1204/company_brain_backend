@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from app.services.db import get_db_conn, set_rls_org
@@ -52,7 +54,7 @@ class VendorBankRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def list_by_vendor(self, org_id: str, *, vendor_id: str) -> list[dict]:
+    def list_by_vendor(self, org_id: str, *, vendor_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -62,6 +64,7 @@ class VendorBankRepository:
                     FROM erp.vendor_bank_accounts
                     WHERE org_id = %s::uuid AND vendor_id = %s::uuid
                     ORDER BY is_primary DESC, created_at ASC
+                    LIMIT %s
                     """,
                     (org_id, vendor_id),
                 )

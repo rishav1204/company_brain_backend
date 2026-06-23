@@ -6,7 +6,7 @@ RESOURCE_RETENTION: dict[str, int] = {
     "audit_logs": 8,
     "gst_records": 8,
     "financial_records": 8,
-    "ai_traces": 3,
+    "ai_traces": 8,
 }
 
 

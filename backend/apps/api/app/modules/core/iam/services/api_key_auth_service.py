@@ -7,7 +7,10 @@ _api_key_repo = ApiKeyRepository()
 
 
 def _hash_key(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    from app.core.config import settings
+
+    material = f"{settings.api_key_pepper}:{raw}" if settings.api_key_pepper else raw
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def authenticate_api_key(raw_key: str) -> dict | None:

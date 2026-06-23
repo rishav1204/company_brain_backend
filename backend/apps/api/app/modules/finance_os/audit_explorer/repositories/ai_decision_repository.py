@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -143,8 +145,9 @@ class AIDecisionRepository:
                 existing = cur.fetchone()
                 return dict(existing) if existing else {"id": row_id}
 
-    def get_by_execution(self, org_id: str, execution_id: str) -> list[dict[str, Any]]:
+    def get_by_execution(self, org_id: str, execution_id: str, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -158,6 +161,7 @@ class AIDecisionRepository:
                     FROM finance_audit.ai_decision_trails
                     WHERE org_id = %s::uuid AND agent_execution_id = %s::uuid
                     ORDER BY created_at ASC
+                    LIMIT %s
                     """,
                     (org_id, execution_id),
                 )

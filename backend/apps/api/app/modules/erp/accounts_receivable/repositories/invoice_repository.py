@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -115,26 +117,29 @@ class ArInvoiceRepository:
     def record_receipt(self, org_id: str, *, invoice_id: str, amount: float) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.ar_invoices
-                    SET paid_amount = paid_amount + %s::numeric,
-                        status = CASE
-                          WHEN paid_amount + %s::numeric >= total_amount THEN 'paid'
-                          WHEN paid_amount + %s::numeric > 0 THEN 'partially_paid'
-                          ELSE status
-                        END,
-                        updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, paid_amount, total_amount, status
-                    """,
-                    (amount, amount, amount, org_id, invoice_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Invoice not found")
-                return dict(row)
+            return self.record_receipt_conn(conn, org_id, invoice_id=invoice_id, amount=amount)
+
+    def record_receipt_conn(self, conn, org_id: str, *, invoice_id: str, amount: float) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.ar_invoices
+                SET paid_amount = paid_amount + %s::numeric,
+                    status = CASE
+                      WHEN paid_amount + %s::numeric >= total_amount THEN 'paid'
+                      WHEN paid_amount + %s::numeric > 0 THEN 'partially_paid'
+                      ELSE status
+                    END,
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, paid_amount, total_amount, status
+                """,
+                (amount, amount, amount, org_id, invoice_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invoice not found")
+            return dict(row)
 
     def list(
         self,
@@ -170,7 +175,7 @@ class ArInvoiceRepository:
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
-    def list_outstanding(self, org_id: str) -> list[dict]:
+    def list_outstanding(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -184,6 +189,7 @@ class ArInvoiceRepository:
                       AND status IN ('issued','partially_paid','overdue')
                       AND total_amount > paid_amount
                     ORDER BY due_date ASC
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

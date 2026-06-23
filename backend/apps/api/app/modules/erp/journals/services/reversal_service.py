@@ -170,23 +170,27 @@ class JournalReversalService:
 
         post_result = posting_orchestrator.post_journal(org_id, journal_id=reversal_id, posted_by=reversed_by)
 
+        from app.services.db import get_db_conn, set_rls_org
 
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal_repository.set_status_conn(
+                conn, org_id, journal_id=journal_id, journal_status="reversed"
+            )
+            with conn.cursor() as cur:
+                from uuid import uuid4
 
-        journal_repository.set_status(org_id, journal_id=journal_id, journal_status="reversed")
-
-        reversal_repository.create(
-
-            org_id,
-
-            original_journal_id=journal_id,
-
-            reversal_journal_id=reversal_id,
-
-            reversal_reason=reversal_reason,
-
-            reversed_by=reversed_by,
-
-        )
+                rid = str(uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO erp.journal_reversals (
+                      id, org_id, original_journal_id, reversal_journal_id,
+                      reversal_reason, reversed_by
+                    )
+                    VALUES (%s::uuid, %s::uuid, %s::uuid, %s::uuid, %s, %s::uuid)
+                    """,
+                    (rid, org_id, journal_id, reversal_id, reversal_reason, reversed_by),
+                )
 
         emit_journal_reversed(org_id, journal_id, reversal_journal_id=reversal_id)
 

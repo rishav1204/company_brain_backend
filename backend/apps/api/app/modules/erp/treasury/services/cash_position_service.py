@@ -12,11 +12,16 @@ from app.modules.erp.treasury.repositories.payment_request_repository import pay
 
 class CashPositionService:
     def compute_live_position(self, org_id: str) -> dict:
+        acct_list = bank_account_repository.list(org_id, active_only=True)
+        account_ids = [str(acct["id"]) for acct in acct_list]
+        sums_by_account = bank_transaction_repository.sum_by_accounts(
+            org_id, bank_account_ids=account_ids, reconciled_only=True
+        )
         accounts = []
         restricted = 0.0
-        for acct in bank_account_repository.list(org_id, active_only=True):
+        for acct in acct_list:
             aid = str(acct["id"])
-            sums = bank_transaction_repository.sum_by_account(org_id, bank_account_id=aid, reconciled_only=True)
+            sums = sums_by_account.get(aid, {"credits": 0, "debits": 0})
             meta = acct.get("metadata") if isinstance(acct.get("metadata"), dict) else {}
             restr = float(meta.get("restricted_amount") or 0)
             restricted += restr

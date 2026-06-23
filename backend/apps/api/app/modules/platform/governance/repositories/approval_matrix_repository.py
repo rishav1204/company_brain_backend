@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -29,7 +31,9 @@ class ApprovalMatrixRepository:
         action_code: str | None = None,
         department: str | None = None,
         company_id: str | None = None,
+        limit: int = 500,
     ) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not self.schema_ready():
             return []
         clauses = ["org_id = %s::uuid", "is_active = TRUE"]
@@ -53,8 +57,9 @@ class ApprovalMatrixRepository:
                     FROM governance.approval_matrix
                     WHERE {' AND '.join(clauses)}
                     ORDER BY level ASC, min_amount ASC
+                    LIMIT %s
                     """,
-                    params,
+                    (*params, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

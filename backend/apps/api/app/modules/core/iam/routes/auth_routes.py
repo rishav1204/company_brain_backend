@@ -62,11 +62,16 @@ def auth_login(request_body: LoginRequest, request: Request) -> LoginResponse:
 
 
 @router.post("/auth/refresh", response_model=RefreshResponse)
-def auth_refresh(request_body: RefreshRequest) -> RefreshResponse:
+def auth_refresh(request_body: RefreshRequest, request: Request) -> RefreshResponse:
     if not iam_db_enabled():
         raise HTTPException(status_code=503, detail="IAM database authentication is not enabled")
+    rate_key = f"refresh:{_client_ip(request) or 'unknown'}"
     try:
-        result = refresh(refresh_token=request_body.refresh_token, mfa_code=request_body.mfa_code)
+        result = refresh(
+            refresh_token=request_body.refresh_token,
+            mfa_code=request_body.mfa_code,
+            rate_limit_key=rate_key,
+        )
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     now = datetime.now(timezone.utc)

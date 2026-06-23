@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from app.services.db import get_db_conn, set_rls_org
@@ -164,7 +166,7 @@ class ChecklistRepository:
                     count += cur.rowcount
         return count
 
-    def list_for_period(self, org_id: str, *, period_id: str) -> list[dict]:
+    def list_for_period(self, org_id: str, *, period_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -173,6 +175,7 @@ class ChecklistRepository:
                     SELECT id::text, check_name, status, completed_by::text, completed_at::text
                     FROM erp.period_close_checklists
                     WHERE org_id = %s::uuid AND period_id = %s::uuid ORDER BY check_name
+                    LIMIT %s
                     """,
                     (org_id, period_id),
                 )

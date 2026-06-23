@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from app.services.db import get_db_conn, set_rls_org
@@ -48,7 +50,7 @@ class CustomerBalanceRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def list(self, org_id: str) -> list[dict]:
+    def list(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -59,6 +61,7 @@ class CustomerBalanceRepository:
                     JOIN erp.customers c ON c.id = cb.customer_id AND c.org_id = cb.org_id
                     WHERE cb.org_id = %s::uuid
                     ORDER BY cb.outstanding_amount DESC
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

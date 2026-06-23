@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.services.db import get_db_conn, set_rls_org
+from app.services.repository_pagination import clamp_limit
 
 
 class OrganizationRepository:
@@ -40,7 +41,8 @@ class OrganizationRepository:
                 )
                 return cur.fetchone()
 
-    def list_companies(self, org_id: str) -> list[dict[str, Any]]:
+    def list_companies(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -51,12 +53,14 @@ class OrganizationRepository:
                     FROM core.companies
                     WHERE org_id = %s::uuid
                     ORDER BY legal_name
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return list(cur.fetchall())
 
-    def list_branches(self, org_id: str, company_id: str | None = None) -> list[dict[str, Any]]:
+    def list_branches(self, org_id: str, company_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -68,8 +72,9 @@ class OrganizationRepository:
                         FROM core.branches
                         WHERE org_id = %s::uuid AND company_id = %s::uuid
                         ORDER BY branch_code
+                        LIMIT %s
                         """,
-                        (org_id, company_id),
+                        (org_id, company_id, limit),
                     )
                 else:
                     cur.execute(
@@ -79,8 +84,9 @@ class OrganizationRepository:
                         FROM core.branches
                         WHERE org_id = %s::uuid
                         ORDER BY branch_code
+                        LIMIT %s
                         """,
-                        (org_id,),
+                        (org_id, limit),
                     )
                 return list(cur.fetchall())
 
@@ -230,7 +236,8 @@ class OrganizationRepository:
                 )
                 return cur.fetchone()
 
-    def list_business_units(self, org_id: str) -> list[dict[str, Any]]:
+    def list_business_units(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -241,8 +248,9 @@ class OrganizationRepository:
                     FROM core.business_units
                     WHERE org_id = %s::uuid
                     ORDER BY unit_code
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return list(cur.fetchall())
 

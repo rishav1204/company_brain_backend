@@ -11,10 +11,14 @@ def _fail_key(email: str, ip: str | None) -> str:
     return f"iam:lockout:{email.lower()}:{ip_part}"
 
 
+def _locked_key(email: str, ip: str | None) -> str:
+    return f"{_fail_key(email, ip)}:locked"
+
+
 def is_locked(email: str, ip: str | None = None) -> bool:
     try:
         client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
-        return bool(client.get(_fail_key(email, ip)))
+        return bool(client.get(_locked_key(email, ip)))
     except Exception:
         return False
 

@@ -1,10 +1,12 @@
 from typing import Any
 
 from app.services.db import get_db_conn, set_rls_org
+from app.services.repository_pagination import clamp_limit
 
 
 class RoleRepository:
-    def list_roles(self, org_id: str) -> list[dict[str, Any]]:
+    def list_roles(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -15,8 +17,9 @@ class RoleRepository:
                     FROM core.roles
                     WHERE org_id = %s::uuid
                     ORDER BY name
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return list(cur.fetchall())
 
@@ -52,7 +55,8 @@ class RoleRepository:
                 )
                 return list(cur.fetchall())
 
-    def list_user_roles(self, org_id: str, user_id: str) -> list[dict[str, Any]]:
+    def list_user_roles(self, org_id: str, user_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -63,8 +67,9 @@ class RoleRepository:
                     FROM core.user_roles ur
                     JOIN core.roles r ON r.id = ur.role_id
                     WHERE ur.org_id = %s::uuid AND ur.user_id = %s::uuid
+                    LIMIT %s
                     """,
-                    (org_id, user_id),
+                    (org_id, user_id, limit),
                 )
                 return list(cur.fetchall())
 

@@ -13,6 +13,7 @@ def execute_action(
     attrs: dict | None = None,
     roles: list[str] | None = None,
     human_approved: bool = False,
+    source_acl: list[str] | None = None,
 ) -> dict:
     normalized_tool = str(tool)
     normalized_method = str(method)
@@ -92,6 +93,7 @@ def execute_action(
         result = integration_service.push_erp(params)
     elif normalized_tool == "memory" and normalized_method == "search":
         from app.modules.finance_os.memory.services.retrieval_service import search_memories
+        from app.services.policy_service import source_acl_allows
 
         hits = search_memories(
             org_id,
@@ -101,6 +103,13 @@ def execute_action(
             entity_id=params.get("entity_id"),
             top_k=int(params.get("top_k", 5)),
         )
+        acl = source_acl or (attrs or {}).get("source_acl") if isinstance(attrs, dict) else source_acl
+        if acl and "*" not in acl:
+            hits = [
+                hit
+                for hit in hits
+                if source_acl_allows(acl, str(hit.get("source_ref") or hit.get("entity_type") or ""))
+            ]
         return {"status": "completed", "target": "memory", "detail": "search", "items": hits}
     elif normalized_tool == "graph" and normalized_method == "traverse":
         from app.modules.finance_os.graph.services.lineage_service import lineage

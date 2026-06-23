@@ -111,22 +111,33 @@ class PaymentRepository:
     ) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.ap_payments
-                    SET status = %s,
-                        journal_id = COALESCE(%s::uuid, journal_id),
-                        updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, status, journal_id::text
-                    """,
-                    (status, journal_id, org_id, payment_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Payment not found")
-                return dict(row)
+            return self.set_status_conn(conn, org_id, payment_id=payment_id, status=status, journal_id=journal_id)
+
+    def set_status_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        payment_id: str,
+        status: str,
+        journal_id: str | None = None,
+    ) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.ap_payments
+                SET status = %s,
+                    journal_id = COALESCE(%s::uuid, journal_id),
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, status, journal_id::text
+                """,
+                (status, journal_id, org_id, payment_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Payment not found")
+            return dict(row)
 
     def add_allocation(self, org_id: str, *, payment_id: str, invoice_id: str, amount: float) -> dict:
         aid = str(uuid4())

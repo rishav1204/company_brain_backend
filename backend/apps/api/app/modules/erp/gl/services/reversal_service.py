@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from app.modules.erp.gl.repositories.ledger_query_repository import ledger_query_repository
-from app.modules.erp.gl.repositories.ledger_repository import ledger_repository
+from app.modules.erp.gl.services.posting_service import posting_service
 from app.services.db import get_db_conn, set_rls_org
 
 
@@ -14,11 +14,10 @@ class ReversalService:
             raise ValueError("Batch not found or has no entries")
 
         posting_date = str(entries[0]["posting_date"])
-        fiscal_period_id = str(entries[0]["fiscal_period_id"])
+        company_id = entries[0].get("company_id")
 
         lines: list[dict] = []
         for e in entries:
-            # Reverse by swapping sides; keep references
             lines.append(
                 {
                     "account_id": e["account_id"],
@@ -37,16 +36,15 @@ class ReversalService:
         batch_number = "RB-" + uuid.uuid4().hex[:12].upper()
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            batch = ledger_repository.create_batch(conn, org_id, batch_number=batch_number, posted_by=reversed_by)
-            new_batch_id = str(batch["id"])
-            ledger_repository.insert_entries(
+            gl_result = posting_service.post_with_conn(
                 conn,
                 org_id,
-                batch_id=new_batch_id,
-                fiscal_period_id=fiscal_period_id,
+                posted_by=reversed_by,
                 posting_date=posting_date,
                 lines=lines,
+                company_id=str(company_id) if company_id else None,
             )
+            new_batch_id = str(gl_result.get("batch_id") or "")
 
         try:
             from app.modules.platform.events.services.event_service import platform_event_service
@@ -62,8 +60,12 @@ class ReversalService:
         except Exception:
             pass
 
-        return {"reversed_batch_id": batch_id, "reversal_batch_id": new_batch_id, "batch": batch}
+        return {
+            "reversed_batch_id": batch_id,
+            "reversal_batch_id": new_batch_id,
+            "batch": gl_result.get("batch"),
+            "gl_result": gl_result,
+        }
 
 
 reversal_service = ReversalService()
-

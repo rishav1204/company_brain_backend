@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -214,26 +216,44 @@ class InvoiceRepository:
     def record_payment(self, org_id: str, *, invoice_id: str, amount: float) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.ap_invoices
-                    SET paid_amount = paid_amount + %s::numeric,
-                        status = CASE
-                          WHEN paid_amount + %s::numeric >= total_amount THEN 'paid'
-                          WHEN paid_amount + %s::numeric > 0 THEN 'partially_paid'
-                          ELSE status
-                        END,
-                        updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, paid_amount, total_amount, status
-                    """,
-                    (amount, amount, amount, org_id, invoice_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Invoice not found")
-                return dict(row)
+            return self.record_payment_conn(conn, org_id, invoice_id=invoice_id, amount=amount)
+
+    def record_payment_conn(self, conn, org_id: str, *, invoice_id: str, amount: float) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT paid_amount, total_amount FROM erp.ap_invoices
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                FOR UPDATE
+                """,
+                (org_id, invoice_id),
+            )
+            current = cur.fetchone()
+            if not current:
+                raise ValueError("Invoice not found")
+            paid = float(current.get("paid_amount") or 0)
+            total = float(current.get("total_amount") or 0)
+            if paid + float(amount) > total + 0.01:
+                raise ValueError("Payment would exceed invoice total")
+            cur.execute(
+                """
+                UPDATE erp.ap_invoices
+                SET paid_amount = paid_amount + %s::numeric,
+                    status = CASE
+                      WHEN paid_amount + %s::numeric >= total_amount THEN 'paid'
+                      WHEN paid_amount + %s::numeric > 0 THEN 'partially_paid'
+                      ELSE status
+                    END,
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, paid_amount, total_amount, status
+                """,
+                (amount, amount, amount, org_id, invoice_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invoice not found")
+            return dict(row)
 
     def list(
         self,
@@ -269,7 +289,7 @@ class InvoiceRepository:
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
-    def list_outstanding(self, org_id: str) -> list[dict]:
+    def list_outstanding(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -283,6 +303,7 @@ class InvoiceRepository:
                       AND status IN ('approved','partially_paid')
                       AND total_amount > paid_amount
                     ORDER BY due_date ASC
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

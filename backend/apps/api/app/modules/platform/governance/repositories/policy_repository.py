@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -24,8 +26,9 @@ class PolicyRepository:
         except Exception:
             return False
 
-    def list_active(self, org_id: str, *, policy_type: str | None = None) -> list[dict[str, Any]]:
+    def list_active(self, org_id: str, *, policy_type: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         clauses = ["org_id = %s::uuid", "is_active = TRUE"]
         params: list[Any] = [org_id]
@@ -43,6 +46,7 @@ class PolicyRepository:
                     FROM governance.policy_rules
                     WHERE {where}
                     ORDER BY priority ASC, policy_key ASC
+                    LIMIT %s
                     """,
                     tuple(params),
                 )

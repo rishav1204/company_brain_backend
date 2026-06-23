@@ -1,3 +1,4 @@
+from app.core.config import settings
 from app.modules.platform.events.queues.queue_manager import queue_manager
 from app.modules.platform.events.services.consumer_idempotency import consumer_idempotency
 from app.modules.platform.events.services.event_service import platform_event_service
@@ -5,6 +6,18 @@ from app.services.event_consumers import consume_event
 from app.services.event_topology import queue_groups
 from app.services.logger import log_event
 from app.services.redis_queue_service import redis_queue_service
+
+
+def _queues_for_worker() -> list[str]:
+    groups = queue_groups()
+    boundary = (settings.worker_service_boundary or "").strip()
+    if boundary:
+        from app.services.event_topology import service_boundaries
+
+        selected = service_boundaries().get(boundary)
+        if selected:
+            return list(selected)
+    return list(groups.values())
 
 
 def _process_queue(queue: str) -> dict:
@@ -18,6 +31,14 @@ def _process_queue(queue: str) -> dict:
     event_id = str(envelope.get("event_id", ""))
     event_type = str(envelope.get("event_type", ""))
 
+    from app.modules.platform.events.repositories.queue_repository import queue_repository
+
+    if org_id and event_id:
+        try:
+            queue_repository.update_job_by_event(org_id, event_id, status="processing")
+        except Exception:
+            pass
+
     if consumer_idempotency.already_processed(org_id, event_id, queue):
         queue_manager.complete_claim(queue, envelope, claim.claim_token)
         return {"status": "deduped", "detail": "consumer_idempotent"}
@@ -26,26 +47,45 @@ def _process_queue(queue: str) -> dict:
         from app.modules.platform.events.middleware.event_trace_middleware import trace_event_processing
         from app.modules.platform.events.middleware.event_validation_middleware import validate_incoming_event
 
-        if org_id:
-            validate_incoming_event(envelope, org_id=org_id)
+        from app.services.event_org_validation import require_org_id
+
+        validate_incoming_event(envelope, org_id=require_org_id(org_id, context="worker_consume"))
         with trace_event_processing(event_type, queue):
             consume_event(queue=queue, envelope=envelope)
         consumer_idempotency.mark_processed(org_id, event_id, queue)
         queue_manager.complete_claim(queue, envelope, claim.claim_token)
         if org_id and event_id:
             platform_event_service.mark_processed(org_id, event_id)
+            try:
+                queue_repository.update_job_by_event(org_id, event_id, status="completed")
+            except Exception:
+                pass
         return {"status": "processed"}
     except Exception as exc:
         log_event("worker.consumer.error", queue=queue, error=str(exc), event_id=event_id)
+        if org_id and event_id:
+            try:
+                queue_repository.update_job_by_event(
+                    org_id, event_id, status="failed", error_detail=str(exc)[:500]
+                )
+            except Exception:
+                pass
         result = queue_manager.fail_claim(queue, envelope, claim.claim_token, str(exc))
+        if result.status == "dlq" and org_id and event_id:
+            try:
+                queue_repository.update_job_by_event(org_id, event_id, status="dlq", error_detail=str(exc)[:500])
+            except Exception:
+                pass
         return {"status": result.status, "detail": result.detail}
 
 
 def run_queue_worker_once() -> dict:
-    result = redis_queue_service.process_next()
-    log_event("worker.process_next", status=result.status, detail=result.detail)
+    result = {"status": "skipped", "detail": "legacy_redis_queue_disabled"}
+    if settings.legacy_redis_queue_enabled:
+        result = redis_queue_service.process_next()
+        log_event("worker.process_next", status=result.status, detail=result.detail)
     routed_results = {}
-    for queue in queue_groups().values():
+    for queue in _queues_for_worker():
         try:
             routed_results[queue] = _process_queue(queue)
         except Exception as exc:
@@ -57,9 +97,9 @@ def run_queue_worker_once() -> dict:
             detail=routed_results[queue].get("detail"),
         )
     return {
-        "status": result.status,
-        "detail": result.detail,
-        "payload": result.payload,
+        "status": result.status if hasattr(result, "status") else result.get("status"),
+        "detail": getattr(result, "detail", None) or result.get("detail"),
+        "payload": getattr(result, "payload", None) or result.get("payload"),
         "routed_queue_results": routed_results,
     }
 
@@ -82,8 +122,8 @@ def run_queue_worker_batch(iterations: int = 10) -> dict:
             dlq += 1
         if "empty" in statuses or "delayed" in statuses:
             empty += 1
-    lag_snapshot = {queue: queue_manager.lag(queue) for queue in queue_groups().values()}
-    dlq_snapshot = {queue: queue_manager.dlq_lag(queue) for queue in queue_groups().values()}
+    lag_snapshot = {queue: queue_manager.lag(queue) for queue in _queues_for_worker()}
+    dlq_snapshot = {queue: queue_manager.dlq_lag(queue) for queue in _queues_for_worker()}
     return {
         "iterations": iterations,
         "processed_iterations": processed,

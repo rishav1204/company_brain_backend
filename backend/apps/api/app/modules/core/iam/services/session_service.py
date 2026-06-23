@@ -47,5 +47,10 @@ def resolve_refresh_session(raw_refresh: str) -> dict | None:
     return session
 
 
+def consume_refresh_session(raw_refresh: str) -> tuple[dict | None, bool]:
+    """Atomically consume refresh token. Returns (session, reuse_detected)."""
+    return session_repo.consume_refresh_session(_hash_token(raw_refresh))
+
+
 def revoke_refresh_session(org_id: str, session_id: str) -> bool:
     return session_repo.revoke_session(org_id, session_id)

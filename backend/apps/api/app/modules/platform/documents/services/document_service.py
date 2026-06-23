@@ -16,7 +16,7 @@ from app.modules.platform.documents.services.duplicate_detection_service import 
 from app.modules.platform.documents.services.malware_scan_service import malware_scan_service
 from app.modules.platform.documents.services.storage_service import storage_service
 from app.modules.platform.documents.services.versioning_service import versioning_service
-from app.modules.platform.documents.validators.upload_validator import validate_upload_payload
+from app.modules.platform.documents.validators.upload_validator import validate_decoded_upload_size, validate_upload_payload
 from datetime import datetime, timezone, timedelta
 
 
@@ -55,6 +55,7 @@ class DocumentService:
     ) -> dict:
         validate_upload_payload(file_name=file_name, mime_type=mime_type, file_size=file_size)
         raw = _decode_base64_content(base64_content)
+        validate_decoded_upload_size(declared_size=file_size, decoded_size=len(raw))
         malware_scan_service.scan_or_raise(raw_bytes=raw, file_name=file_name, mime_type=mime_type)
         checksum_hash = hashlib.sha256(raw if raw else f"{file_name}:{file_size}:{uuid4()}".encode("utf-8")).hexdigest()
         upload = storage_service.upload(
@@ -125,6 +126,7 @@ class DocumentService:
     ) -> dict:
         validate_upload_payload(file_name=file_name, mime_type=mime_type, file_size=file_size)
         raw = _decode_base64_content(base64_content)
+        validate_decoded_upload_size(declared_size=file_size, decoded_size=len(raw))
         malware_scan_service.scan_or_raise(raw_bytes=raw, file_name=file_name, mime_type=mime_type)
         upload = storage_service.upload(
             org_id=org_id,

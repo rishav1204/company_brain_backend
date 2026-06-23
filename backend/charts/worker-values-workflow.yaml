@@ -1,0 +1,30 @@
+worker:
+  enabled: true
+  name: finance-worker-workflow
+  image:
+    repository: company-brain/finance-worker
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  command:
+    - python
+    - /app/cmd/worker.py
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 800m
+      memory: 1Gi
+  env:
+    - name: APP_ENV
+      value: prod
+    - name: WORKER_SERVICE_BOUNDARY
+      value: workflow_service
+    - name: LEGACY_REDIS_QUEUE_ENABLED
+      value: "false"
+    - name: REDIS_URL
+      valueFrom:
+        secretKeyRef:
+          name: finance-api-secrets
+          key: redis_url

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from app.services.db import get_db_conn, set_rls_org
@@ -38,7 +40,7 @@ class InvoiceLineRepository:
                         out.append(dict(row))
                 return out
 
-    def list_by_invoice(self, org_id: str, *, invoice_id: str) -> list[dict]:
+    def list_by_invoice(self, org_id: str, *, invoice_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -49,6 +51,7 @@ class InvoiceLineRepository:
                     FROM erp.ap_invoice_lines
                     WHERE org_id = %s::uuid AND invoice_id = %s::uuid
                     ORDER BY created_at ASC
+                    LIMIT %s
                     """,
                     (org_id, invoice_id),
                 )

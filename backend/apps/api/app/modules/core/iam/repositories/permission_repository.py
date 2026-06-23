@@ -1,10 +1,12 @@
 from typing import Any
 
 from app.services.db import get_db_conn, set_rls_org
+from app.services.repository_pagination import clamp_limit
 
 
 class PermissionRepository:
-    def list_permissions(self) -> list[dict[str, Any]]:
+    def list_permissions(self, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -12,7 +14,9 @@ class PermissionRepository:
                     SELECT id::text AS id, resource, action, permission_key, description
                     FROM core.permissions
                     ORDER BY resource, action
-                    """
+                    LIMIT %s
+                    """,
+                    (limit,),
                 )
                 return list(cur.fetchall())
 
@@ -78,7 +82,8 @@ class PermissionRepository:
                 )
                 return cur.fetchone()
 
-    def list_permissions_for_user(self, org_id: str, user_id: str) -> list[str]:
+    def list_permissions_for_user(self, org_id: str, user_id: str, limit: int = 500) -> list[str]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -90,8 +95,9 @@ class PermissionRepository:
                     JOIN core.permissions p ON p.id = rp.permission_id
                     WHERE ur.org_id = %s::uuid AND ur.user_id = %s::uuid
                     ORDER BY 1
+                    LIMIT %s
                     """,
-                    (org_id, user_id),
+                    (org_id, user_id, limit),
                 )
                 rows = cur.fetchall()
                 return [str(row["permission_key"]) for row in rows]

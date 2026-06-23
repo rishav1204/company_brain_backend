@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -45,7 +47,8 @@ class StageMetricRepository:
                 )
                 return dict(cur.fetchone() or {})
 
-    def list_for_instance(self, org_id: str, workflow_instance_id: str) -> list[dict]:
+    def list_for_instance(self, org_id: str, workflow_instance_id: str, *, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -57,12 +60,14 @@ class StageMetricRepository:
                     FROM finance_os.workflow_stage_metrics
                     WHERE org_id = %s::uuid AND workflow_instance_id = %s::uuid
                     ORDER BY entered_at ASC NULLS LAST
+                    LIMIT %s
                     """,
-                    (org_id, workflow_instance_id),
+                    (org_id, workflow_instance_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 
-    def aggregate_by_step(self, org_id: str, *, workflow_type: str | None = None, days: int = 30) -> list[dict]:
+    def aggregate_by_step(self, org_id: str, *, workflow_type: str | None = None, days: int = 30, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -80,8 +85,9 @@ class StageMetricRepository:
                           AND m.created_at >= NOW() - (%s || ' days')::interval
                         GROUP BY m.step_key, m.stage_name
                         ORDER BY p95_seconds DESC NULLS LAST
+                        LIMIT %s
                         """,
-                        (org_id, workflow_type, days),
+                        (org_id, workflow_type, days, limit),
                     )
                 else:
                     cur.execute(
@@ -95,8 +101,9 @@ class StageMetricRepository:
                           AND created_at >= NOW() - (%s || ' days')::interval
                         GROUP BY step_key, stage_name
                         ORDER BY p95_seconds DESC NULLS LAST
+                        LIMIT %s
                         """,
-                        (org_id, days),
+                        (org_id, days, limit),
                     )
                 return [dict(r) for r in cur.fetchall()]
 

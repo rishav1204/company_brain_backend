@@ -62,20 +62,31 @@ class ReceiptRepository:
     def set_status(self, org_id: str, *, receipt_id: str, status: str, journal_id: str | None = None) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.customer_receipts
-                    SET status = %s, journal_id = COALESCE(%s::uuid, journal_id), updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, status, journal_id::text
-                    """,
-                    (status, journal_id, org_id, receipt_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Receipt not found")
-                return dict(row)
+            return self.set_status_conn(conn, org_id, receipt_id=receipt_id, status=status, journal_id=journal_id)
+
+    def set_status_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        receipt_id: str,
+        status: str,
+        journal_id: str | None = None,
+    ) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.customer_receipts
+                SET status = %s, journal_id = COALESCE(%s::uuid, journal_id), updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, status, journal_id::text
+                """,
+                (status, journal_id, org_id, receipt_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Receipt not found")
+            return dict(row)
 
     def add_allocation(self, org_id: str, *, receipt_id: str, invoice_id: str, amount: float) -> dict:
         aid = str(uuid4())

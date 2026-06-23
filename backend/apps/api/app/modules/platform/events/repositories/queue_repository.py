@@ -65,6 +65,41 @@ class QueueRepository:
                     tuple(params),
                 )
 
+    def update_job_by_event(
+        self,
+        org_id: str,
+        event_id: str,
+        *,
+        status: str,
+        attempt_count: int | None = None,
+        error_detail: str | None = None,
+    ) -> None:
+        if not event_id:
+            return
+        sets = ["status = %s"]
+        params: list[Any] = [status]
+        if attempt_count is not None:
+            sets.append("attempt_count = %s")
+            params.append(attempt_count)
+        if error_detail is not None:
+            sets.append("error_detail = %s")
+            params.append(error_detail)
+        if status == "processing":
+            sets.append("started_at = NOW()")
+        if status in {"completed", "failed", "dlq"}:
+            sets.append("completed_at = NOW()")
+        params.extend([event_id, org_id])
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE platform.queue_jobs SET {', '.join(sets)}
+                    WHERE event_id = %s::uuid AND org_id = %s::uuid
+                    """,
+                    tuple(params),
+                )
+
     def list_jobs(self, org_id: str, *, queue_name: str | None = None, status: str | None = None, limit: int = 50) -> list[dict]:
         clauses = ["org_id = %s::uuid"]
         params: list[Any] = [org_id]

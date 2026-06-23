@@ -52,6 +52,63 @@ class BankTransactionRepository:
                 )
                 return dict(cur.fetchone() or {"id": tid})
 
+    def create_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        bank_account_id: str,
+        transaction_reference: str,
+        transaction_date: str,
+        amount: float,
+        transaction_type: str,
+        currency_code: str,
+        description: str | None,
+        source: str,
+        counterparty_ref: str | None = None,
+        import_idempotency_key: str | None = None,
+        metadata: dict | None = None,
+        value_date: str | None = None,
+        status: str = "imported",
+        source_type: str | None = None,
+        source_id: str | None = None,
+    ) -> dict:
+        tid = str(uuid4())
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO erp.bank_transactions (
+                  id, org_id, bank_account_id, transaction_reference, transaction_date,
+                  amount, transaction_type, currency_code, description, source,
+                  counterparty_ref, import_idempotency_key, metadata, value_date, status,
+                  source_type, source_id
+                )
+                VALUES (%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::numeric,%s,%s,%s,%s,%s,%s::jsonb,%s::date,%s,%s,%s::uuid)
+                RETURNING id::text, transaction_reference, amount, transaction_type, reconciliation_status, status
+                """,
+                (
+                    tid, org_id, bank_account_id, transaction_reference, transaction_date,
+                    amount, transaction_type, currency_code, description, source,
+                    counterparty_ref, import_idempotency_key, Json(metadata or {}),
+                    value_date or transaction_date, status, source_type, source_id,
+                ),
+            )
+            return dict(cur.fetchone() or {"id": tid})
+
+    def find_by_idempotency_conn(self, conn, org_id: str, *, import_idempotency_key: str) -> dict | None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id::text, transaction_reference, amount, reconciliation_status
+                FROM erp.bank_transactions
+                WHERE org_id = %s::uuid AND import_idempotency_key = %s
+                LIMIT 1
+                """,
+                (org_id, import_idempotency_key),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
     def find_by_idempotency(self, org_id: str, *, import_idempotency_key: str) -> dict | None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -157,6 +214,38 @@ class BankTransactionRepository:
                 )
                 row = cur.fetchone()
                 return dict(row) if row else {"credits": 0, "debits": 0}
+
+    def sum_by_accounts(
+        self,
+        org_id: str,
+        *,
+        bank_account_ids: list[str],
+        reconciled_only: bool = False,
+    ) -> dict[str, dict]:
+        if not bank_account_ids:
+            return {}
+        where = "org_id = %s::uuid AND bank_account_id = ANY(%s::uuid[])"
+        params: list = [org_id, bank_account_ids]
+        if reconciled_only:
+            where += " AND reconciliation_status = 'matched'"
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT bank_account_id::text AS bank_account_id,
+                      COALESCE(SUM(CASE WHEN transaction_type = 'credit' THEN amount ELSE 0 END), 0) AS credits,
+                      COALESCE(SUM(CASE WHEN transaction_type = 'debit' THEN amount ELSE 0 END), 0) AS debits
+                    FROM erp.bank_transactions
+                    WHERE {where}
+                    GROUP BY bank_account_id
+                    """,
+                    tuple(params),
+                )
+                return {
+                    str(row["bank_account_id"]): {"credits": row["credits"], "debits": row["debits"]}
+                    for row in (cur.fetchall() or [])
+                }
 
     def sum_for_date(self, org_id: str, *, bank_account_id: str, position_date: str, reconciled_only: bool = True) -> dict:
         where = "org_id = %s::uuid AND bank_account_id = %s::uuid AND transaction_date = %s::date"

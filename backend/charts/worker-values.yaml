@@ -1,10 +1,26 @@
 worker:
+  enabled: true
+  name: finance-worker
   image:
     repository: company-brain/finance-worker
     tag: v1.0.0
     pullPolicy: IfNotPresent
   replicaCount: 2
-  queueGroup: agent.run
+  command:
+    - python
+    - /app/cmd/worker.py
+  env:
+    - name: APP_ENV
+      value: prod
+    - name: WORKER_SERVICE_BOUNDARY
+      value: audit_service
+    - name: LEGACY_REDIS_QUEUE_ENABLED
+      value: "false"
+    - name: REDIS_URL
+      valueFrom:
+        secretKeyRef:
+          name: finance-api-secrets
+          key: redis_url
   resources:
     requests:
       cpu: 200m
@@ -12,11 +28,3 @@ worker:
     limits:
       cpu: 800m
       memory: 1Gi
-  env:
-    - name: APP_ENV
-      value: prod
-    - name: REDIS_URL
-      valueFrom:
-        secretKeyRef:
-          name: finance-api-secrets
-          key: redis_url

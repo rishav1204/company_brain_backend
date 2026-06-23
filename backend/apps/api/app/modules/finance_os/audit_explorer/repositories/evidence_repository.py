@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -38,8 +40,9 @@ class AuditEvidenceRepository:
                 )
                 return dict(cur.fetchone() or {})
 
-    def list_for_timeline(self, org_id: str, timeline_id: str) -> list[dict[str, Any]]:
+    def list_for_timeline(self, org_id: str, timeline_id: str, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -51,13 +54,15 @@ class AuditEvidenceRepository:
                     FROM finance_audit.audit_evidence
                     WHERE org_id = %s::uuid AND timeline_id = %s::uuid
                     ORDER BY created_at ASC
+                    LIMIT %s
                     """,
                     (org_id, timeline_id),
                 )
                 return [dict(r) for r in cur.fetchall()]
 
-    def list_for_object(self, org_id: str, *, object_type: str, object_id: str) -> list[dict[str, Any]]:
+    def list_for_object(self, org_id: str, *, object_type: str, object_id: str, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -70,6 +75,7 @@ class AuditEvidenceRepository:
                     JOIN finance_audit.audit_timelines t ON t.id = e.timeline_id
                     WHERE e.org_id = %s::uuid AND t.object_type = %s AND t.object_id = %s::uuid
                     ORDER BY e.created_at ASC
+                    LIMIT %s
                     """,
                     (org_id, object_type, object_id),
                 )

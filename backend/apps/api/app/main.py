@@ -103,6 +103,11 @@ async def lifespan(_app: FastAPI):
                 "Billing schema not ready — run migration 065 before production"
             )
     yield
+    from app.services.db import close_pool
+    from app.services.redis_client import close_redis_pool
+
+    close_pool()
+    close_redis_pool()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -118,8 +123,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins or ["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=settings.cors_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Org-Id", "X-Request-Id", "X-Idempotency-Key"],
 )
 
 app.include_router(auth.router, prefix=settings.api_prefix)
@@ -200,8 +205,21 @@ def ready() -> dict:
             checks["postgres"] = "ok"
         except Exception as exc:
             checks["postgres"] = f"error:{exc.__class__.__name__}"
+        from app.services.migration_readiness import migration_status
+
+        mig = migration_status()
+        if mig.get("status") == "ok":
+            checks["migrations"] = "ok"
+        elif mig.get("status") == "pending":
+            pending = mig.get("pending") or []
+            checks["migrations"] = f"error:pending:{len(pending)}"
+        elif mig.get("status") == "skipped":
+            checks["migrations"] = "skipped"
+        else:
+            checks["migrations"] = f"error:{mig.get('detail', 'unknown')}"
     else:
         checks["postgres"] = "skipped"
+        checks["migrations"] = "skipped"
     if settings.redis_url:
         try:
             import redis

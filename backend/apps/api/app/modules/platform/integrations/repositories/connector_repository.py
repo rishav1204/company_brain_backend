@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -48,7 +50,7 @@ class ConnectorRepository:
                 )
                 return dict(cur.fetchone() or {"id": connector_id})
 
-    def list(self, org_id: str) -> list[dict]:
+    def list(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -58,6 +60,7 @@ class ConnectorRepository:
                     FROM integrations.connectors
                     WHERE org_id = %s::uuid
                     ORDER BY created_at DESC
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

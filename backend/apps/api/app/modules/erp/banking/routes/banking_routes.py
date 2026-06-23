@@ -58,9 +58,14 @@ def update_account(bank_account_id: str, request: BankAccountUpdateRequest, cont
     return {"request_id": context.request_id, "item": item}
 
 
+MAX_BANK_STATEMENT_BYTES = 20 * 1024 * 1024
+
+
 @router.post("/statements/import")
 async def import_statement(bank_account_id: str = Form(...), file_format: str = Form(...), file: UploadFile = File(...), context=Depends(require_banking_admin)) -> dict:
-    content = await file.read()
+    content = await file.read(MAX_BANK_STATEMENT_BYTES + 1)
+    if len(content) > MAX_BANK_STATEMENT_BYTES:
+        raise HTTPException(status_code=413, detail="Statement file exceeds 20MB limit")
     try:
         item = statement_import_service.import_file(context.org_id, bank_account_id=bank_account_id, file_format=file_format, content=content, imported_by=context.user_id)
     except ValueError as exc:

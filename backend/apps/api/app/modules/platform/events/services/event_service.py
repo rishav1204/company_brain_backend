@@ -13,6 +13,7 @@ from app.modules.platform.events.services.idempotency_service import platform_id
 from app.modules.platform.events.middleware.event_trace_middleware import trace_event_processing
 from app.modules.platform.events.services.rate_limit_service import event_rate_limit_service
 from app.modules.platform.events.validators.event_validator import validate_event_envelope
+from app.services.event_org_validation import require_org_id
 from app.services.event_topology import route_for_envelope, topic_for_event_type
 from app.services.principal_context import build_principal
 from app.services.repositories import audit_repo
@@ -42,6 +43,7 @@ class PlatformEventService:
         idempotency_key: str | None = None,
         idempotency_scope: str = "event_publish",
     ) -> dict[str, Any]:
+        org_id = require_org_id(org_id, context="platform_event_publish")
         if not validate_event_owner(event_type, source):
             raise PermissionError(f"Source {source} is not owner for event {event_type}")
 

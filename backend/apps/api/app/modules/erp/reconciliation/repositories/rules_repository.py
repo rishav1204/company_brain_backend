@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from psycopg.types.json import Json
 
+from app.services.repository_pagination import clamp_limit
+
 from app.services.db import get_db_conn, set_rls_org
 
 DEFAULT_RULES = [
@@ -15,7 +17,8 @@ DEFAULT_RULES = [
 
 
 class RulesRepository:
-    def list_active(self, org_id: str) -> list[dict]:
+    def list_active(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -24,8 +27,9 @@ class RulesRepository:
                     SELECT rule_name, rule_type, weight, is_active
                     FROM erp.reconciliation_rules
                     WHERE org_id = %s::uuid AND is_active = true
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 rows = [dict(r) for r in (cur.fetchall() or [])]
         if rows:

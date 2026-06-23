@@ -1,3 +1,4 @@
+"""Legacy decisions/memory routes — prefer /finance-os/memory/* (see LEGACY_ROUTE_MIGRATION.md)."""
 from fastapi import APIRouter, Depends
 
 from app.api.deps import build_request_context

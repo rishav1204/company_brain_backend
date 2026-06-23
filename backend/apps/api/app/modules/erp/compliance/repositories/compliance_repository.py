@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -18,14 +20,17 @@ LEGACY_TYPE_MAP = {
 
 
 class ComplianceTypeRepository:
-    def list_active(self) -> list[dict]:
+    def list_active(self, limit: int = 500) -> list[dict]:
+        limit = max(1, min(int(limit or 500), 1000))
         with get_db_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT id::text, compliance_code, compliance_name, regulator, frequency, metadata
                     FROM erp.compliance_types WHERE is_active = true ORDER BY compliance_code
-                    """
+                    LIMIT %s
+                    """,
+                    (limit,),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
@@ -57,7 +62,7 @@ class ComplianceTypeRepository:
 
 
 class ComplianceRuleRepository:
-    def list(self, org_id: str, *, active_only: bool = True) -> list[dict]:
+    def list(self, org_id: str, *, active_only: bool = True, limit: int = 500) -> list[dict]:
         where = ["r.org_id = %s::uuid"]
         params: list = [org_id]
         if active_only:
@@ -74,6 +79,7 @@ class ComplianceRuleRepository:
                     JOIN erp.compliance_types t ON t.id = r.compliance_type_id
                     WHERE {' AND '.join(where)}
                     ORDER BY t.compliance_code
+                    LIMIT %s
                     """,
                     tuple(params),
                 )
@@ -383,7 +389,8 @@ class ComplianceReminderRepository:
                 row = cur.fetchone()
                 return dict(row) if row else {"id": rid, "reminder_date": reminder_date}
 
-    def list_due_today(self, org_id: str, *, today: str) -> list[dict]:
+    def list_due_today(self, org_id: str, *, today: str, limit: int = 200) -> list[dict]:
+        limit = max(1, min(int(limit or 200), 500))
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -397,8 +404,10 @@ class ComplianceReminderRepository:
                     WHERE r.org_id = %s::uuid AND r.reminder_date = %s::date
                       AND r.notification_sent = false
                       AND o.status NOT IN ('completed', 'waived')
+                    ORDER BY r.reminder_date ASC
+                    LIMIT %s
                     """,
-                    (org_id, today),
+                    (org_id, today, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
@@ -431,7 +440,8 @@ class ComplianceEscalationRepository:
                 )
                 return dict(cur.fetchone() or {"id": eid})
 
-    def list_open(self, org_id: str) -> list[dict]:
+    def list_open(self, org_id: str, *, limit: int = 200) -> list[dict]:
+        limit = max(1, min(int(limit or 200), 500))
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -444,8 +454,9 @@ class ComplianceEscalationRepository:
                     JOIN erp.compliance_types t ON t.id = o.compliance_type_id
                     WHERE e.org_id = %s::uuid AND e.resolved = false
                     ORDER BY e.escalated_at DESC
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

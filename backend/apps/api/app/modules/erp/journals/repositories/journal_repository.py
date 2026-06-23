@@ -68,6 +68,62 @@ class JournalRepository:
                 )
                 return dict(cur.fetchone() or {"id": jid})
 
+    def create_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        journal_number: str,
+        journal_type: str,
+        posting_date: str,
+        description: str | None,
+        source_type: str | None,
+        source_id: str | None,
+        currency_code: str,
+        exchange_rate: float,
+        created_by: str | None,
+        company_id: str | None = None,
+        idempotency_key: str | None = None,
+        ai_confidence: dict | None = None,
+    ) -> dict:
+        jid = str(uuid4())
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO erp.journals (
+                  id, org_id, company_id, journal_number, journal_type, journal_status,
+                  posting_date, description, source_type, source_id,
+                  currency_code, exchange_rate, created_by, idempotency_key, ai_confidence
+                )
+                VALUES (
+                  %s::uuid, %s::uuid, %s::uuid, %s, %s, 'draft',
+                  %s::date, %s, %s, %s::uuid,
+                  %s, %s::numeric, %s::uuid, %s, %s::jsonb
+                )
+                RETURNING id::text, journal_number, journal_type, journal_status,
+                          posting_date::text, description, source_type, source_id::text,
+                          currency_code, exchange_rate::float8, created_by::text,
+                          idempotency_key, ai_confidence, created_at::text
+                """,
+                (
+                    jid,
+                    org_id,
+                    company_id,
+                    journal_number,
+                    journal_type,
+                    posting_date,
+                    description,
+                    source_type,
+                    source_id,
+                    currency_code,
+                    exchange_rate,
+                    created_by,
+                    idempotency_key,
+                    Json(ai_confidence or {}),
+                ),
+            )
+            return dict(cur.fetchone() or {"id": jid})
+
     def get(self, org_id: str, *, journal_id: str) -> dict | None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -114,7 +170,7 @@ class JournalRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
-        limit = max(1, min(int(limit or 100), 500))
+        limit = max(1, min(int(limit or 100), 200))
         offset = max(0, int(offset or 0))
         where = ["org_id = %s::uuid"]
         params: list = [org_id]

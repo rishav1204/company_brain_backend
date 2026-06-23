@@ -34,7 +34,7 @@ class TdsService:
                 if rule:
                     return str(rule["section_code"])
 
-        return "194C"
+        raise ValueError("TDS section could not be resolved; configure payment_type, expense_category, or section_code")
 
     def _section_rates(self, org_id: str, *, section_code: str) -> dict:
         section = tds_section_repository.get_by_code(org_id, section_code=section_code)
@@ -217,7 +217,7 @@ class TdsService:
         else:
             journal_lines = []
 
-        return {
+        result = {
             **calc,
             "section_code": section,
             "tds_transaction_id": existing.get("id") if existing else (row.get("id") if row else None),
@@ -226,6 +226,28 @@ class TdsService:
             "net_amount": net_amount,
             "tds_amount": tds_amount,
         }
+        try:
+            from app.modules.platform.governance.services.audit_service import audit_service
+
+            audit_service.record(
+                org_id=org_id,
+                actor_type="system",
+                actor_id="erp.tds",
+                action="tds.deducted",
+                object_ref=f"erp:ap_payment:{payment_id}",
+                payload={
+                    "payment_id": payment_id,
+                    "section_code": section,
+                    "tds_amount": tds_amount,
+                    "gross_amount": gross,
+                },
+                entity_type="ap_payment",
+                entity_id=payment_id,
+                source_service="erp.tds",
+            )
+        except Exception:
+            pass
+        return result
 
     def calculate_for_payment(self, org_id: str, *, payment_id: str, section_code: str | None = None) -> dict | None:
         """Idempotent post-payment hook — skips if deduct() already recorded."""

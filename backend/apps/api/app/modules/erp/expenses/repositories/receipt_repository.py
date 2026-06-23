@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -106,7 +108,7 @@ class ReceiptRepository:
 
 
 class PolicyRepository:
-    def list_active(self, org_id: str, *, expense_type: str | None = None) -> list[dict]:
+    def list_active(self, org_id: str, *, expense_type: str | None = None, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -128,6 +130,7 @@ class PolicyRepository:
                         FROM erp.expense_policies
                         WHERE org_id = %s::uuid AND is_active = true
                         ORDER BY expense_type
+                    LIMIT %s
                         """,
                         (org_id,),
                     )
@@ -190,7 +193,7 @@ class AdvanceRepository:
                 )
                 return dict(cur.fetchone() or {"id": aid})
 
-    def list_open(self, org_id: str, *, employee_id: str) -> list[dict]:
+    def list_open(self, org_id: str, *, employee_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -201,6 +204,7 @@ class AdvanceRepository:
                     WHERE org_id = %s::uuid AND employee_id = %s::uuid
                       AND status IN ('issued','partially_adjusted')
                     ORDER BY issued_date DESC
+                    LIMIT %s
                     """,
                     (org_id, employee_id),
                 )

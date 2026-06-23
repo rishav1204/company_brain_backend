@@ -367,6 +367,12 @@ def _plan_actions_node(state: GraphRuntimeState) -> None:
 
 
 def _policy_gate_node(state: GraphRuntimeState) -> None:
+    from app.modules.finance_os.agents.orchestrator.forbidden_actions import (
+        agent_tool_requires_approval,
+        is_agent_tool_allowed,
+        normalize_tool_method,
+    )
+
     amount_raw = state.payload.get("amount")
     parsed_amount: float | None = None
     if amount_raw is not None and str(amount_raw).strip():
@@ -390,6 +396,10 @@ def _policy_gate_node(state: GraphRuntimeState) -> None:
             amount=parsed_amount,
             vendor_risk=str(state.payload.get("vendor_risk")) if state.payload.get("vendor_risk") else None,
         )
+    human_approved = bool(state.payload.get("human_approved"))
+    principal_roles = state.principal_roles or ["viewer"]
+    principal_user = str(state.principal_attrs.get("user_id") or "agent-system")
+
     requires_approval = requires_human_approval(
         action=action,
         amount=object_context.amount,
@@ -397,36 +407,81 @@ def _policy_gate_node(state: GraphRuntimeState) -> None:
     )
     permission = evaluate_access(
         org_id=state.org_id,
-        user_id=str(state.principal_attrs.get("user_id") or "agent-system"),
-        roles=state.principal_roles or ["tenant_admin"],
+        user_id=principal_user,
+        roles=principal_roles,
         action=action,
         object_context=object_context,
         attrs=state.principal_attrs,
         created_by=str(state.payload.get("created_by") or state.payload.get("owner_user_id") or ""),
+        human_approved=human_approved,
     )
     if not permission.allowed:
         state.status = "failed"
         state.failure_contract = {"code": "POLICY_DENIED", "retryable": False, "step": "policy_gate"}
         state.checkpoint("policy_gate", "denied", {"reason": permission.reason, "checks": permission.checks or []})
         return
-    if requires_approval:
+    if requires_approval and not human_approved:
         state.status = "pending_human_approval"
         state.failure_contract = {"code": "HUMAN_APPROVAL_REQUIRED", "retryable": False, "step": "policy_gate"}
         state.checkpoint("policy_gate", "awaiting_approval", {"reason": "threshold_or_risk"})
         return
+
+    for proposed in state.proposed_actions:
+        tool = proposed.tool if hasattr(proposed, "tool") else str(proposed.get("tool", ""))
+        method = proposed.method if hasattr(proposed, "method") else str(proposed.get("method", ""))
+        if not is_agent_tool_allowed(tool, method):
+            state.status = "failed"
+            state.failure_contract = {
+                "code": "TOOL_NOT_ALLOWED",
+                "retryable": False,
+                "step": "policy_gate",
+                "detail": f"{tool}.{method}",
+            }
+            state.checkpoint("policy_gate", "denied", {"reason": "tool_not_allowed", "tool": tool, "method": method})
+            return
+        tool_l, method_l = normalize_tool_method(tool, method)
+        tool_action = f"{tool_l}.{method_l}"
+        tool_permission = evaluate_access(
+            org_id=state.org_id,
+            user_id=principal_user,
+            roles=principal_roles,
+            action=tool_action,
+            object_context=object_context,
+            attrs=state.principal_attrs,
+            created_by=str(state.payload.get("created_by") or state.payload.get("owner_user_id") or ""),
+            human_approved=human_approved,
+        )
+        if not tool_permission.allowed:
+            state.status = "failed"
+            state.failure_contract = {"code": "POLICY_DENIED", "retryable": False, "step": "policy_gate"}
+            state.checkpoint(
+                "policy_gate",
+                "denied",
+                {"reason": tool_permission.reason, "tool": tool, "method": method},
+            )
+            return
+        if agent_tool_requires_approval(tool, method) and not human_approved:
+            state.status = "pending_human_approval"
+            state.failure_contract = {"code": "HUMAN_APPROVAL_REQUIRED", "retryable": False, "step": "policy_gate"}
+            state.checkpoint("policy_gate", "awaiting_approval", {"reason": "tool_requires_approval", "tool": tool})
+            return
+
     state.checkpoint("policy_gate", "allowed", {"checks": permission.checks or []})
 
 
-def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None) -> dict:
-    from app.modules.finance_os.agents.orchestrator.forbidden_actions import is_forbidden_action
+def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None, roles: list[str] | None = None) -> dict:
+    from app.modules.finance_os.agents.orchestrator.forbidden_actions import is_agent_tool_allowed, is_forbidden_action
 
-    if is_forbidden_action(action.tool, action.method):
+    if is_forbidden_action(action.tool, action.method) or not is_agent_tool_allowed(action.tool, action.method):
         return {
             "status": "error",
             "target": action.tool,
             "detail": "forbidden_action",
             "response_code": 403,
         }
+    principal_roles = roles or (attrs or {}).get("roles") or ["viewer"]
+    actor_id = str((attrs or {}).get("user_id") or "agent-runtime")
+    human_approved = bool((attrs or {}).get("human_approved"))
     if action.tool == "workflow":
         from app.modules.workflows.engine.workflow_state_machine import legacy_state_to_status
         from app.modules.workflows.services.workflow_service import workflow_service
@@ -440,7 +495,7 @@ def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None) -> 
                     org_id=org_id,
                     workflow_id=workflow_id,
                     target_status=target_status,
-                    actor_id="agent-runtime",
+                    actor_id=actor_id,
                 )
             except Exception as exc:
                 return {
@@ -453,24 +508,24 @@ def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None) -> 
     if action.tool == "memory" and action.method == "search":
         return execute_action(
             org_id=org_id,
-            actor_id="agent-runtime",
+            actor_id=actor_id,
             tool="memory",
             method="search",
             params=action.params,
             attrs=attrs,
-            roles=["tenant_admin"],
-            human_approved=False,
+            roles=principal_roles,
+            human_approved=human_approved,
         )
     if action.tool == "graph" and action.method == "traverse":
         return execute_action(
             org_id=org_id,
-            actor_id="agent-runtime",
+            actor_id=actor_id,
             tool="graph",
             method="traverse",
             params=action.params,
             attrs=attrs,
-            roles=["tenant_admin"],
-            human_approved=False,
+            roles=principal_roles,
+            human_approved=human_approved,
         )
     if action.tool in {"slack", "email", "jira", "linear", "erp"}:
         method = action.method
@@ -480,13 +535,13 @@ def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None) -> 
             method = "writeback"
         return execute_action(
             org_id=org_id,
-            actor_id="agent-runtime",
+            actor_id=actor_id,
             tool=action.tool,
             method=method,
             params=action.params,
             attrs=attrs,
-            roles=["tenant_admin"],
-            human_approved=False,
+            roles=principal_roles,
+            human_approved=human_approved,
         )
     return {"status": "error", "target": action.tool, "detail": "unsupported_tool", "response_code": 400}
 
@@ -505,7 +560,10 @@ def _execute_actions_node(state: GraphRuntimeState) -> None:
         }
         state.checkpoint("execute_actions", "blocked", {"blocked": blocked})
         return
-    state.tool_results = [tool_adapter(state.org_id, action, attrs=state.principal_attrs) for action in allowed]
+    state.tool_results = [
+        tool_adapter(state.org_id, action, attrs=state.principal_attrs, roles=state.principal_roles)
+        for action in allowed
+    ]
     failed = [item for item in state.tool_results if str(item.get("status", "")).lower() != "completed"]
     if failed:
         first_error = str(failed[0].get("detail", "execution_failed"))
@@ -550,7 +608,7 @@ def run_langgraph_flow(
         agent_type=agent_type,
         trigger_type=trigger_type,
         payload=payload if isinstance(payload, dict) else {},
-        principal_roles=principal_roles or ["tenant_admin"],
+        principal_roles=principal_roles or ["viewer"],
         principal_attrs=principal_attrs or {},
     )
     state.checkpoint("init", "entered", {"agent_type": agent_type, "trigger_type": trigger_type})

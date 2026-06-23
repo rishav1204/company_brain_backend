@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import secrets
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -12,11 +13,33 @@ from psycopg.types.json import Json
 
 from app.core.config import settings
 from app.modules.platform.events.services.retry_service import next_retry_at, should_retry
+from app.modules.platform.integrations.security.credential_manager import credential_manager
+from app.modules.platform.integrations.security.url_safety import UnsafeUrlError, validate_outbound_url
 from app.services.db import get_db_conn, set_rls_org
 
 
 def sign_payload(secret: str, payload: bytes) -> str:
     return hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+
+
+def _encrypt_secret(secret: str) -> tuple[str, dict]:
+    secret_hash = hashlib.sha256(secret.encode()).hexdigest()
+    metadata = {"secret_encrypted": credential_manager.encrypt_json({"secret": secret})}
+    return secret_hash, metadata
+
+
+def _decrypt_secret(row: dict) -> str:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    encrypted = metadata.get("secret_encrypted")
+    if encrypted:
+        try:
+            return str(credential_manager.decrypt_json(str(encrypted)).get("secret") or "")
+        except Exception:
+            pass
+    legacy = str(row.get("secret") or "")
+    if legacy and not legacy.isdigit() and len(legacy) == 64:
+        return ""
+    return legacy
 
 
 class WebhookService:
@@ -44,6 +67,9 @@ class WebhookService:
         event_types: list[str],
         rate_limit_per_minute: int = 60,
     ) -> dict:
+        target_url = validate_outbound_url(target_url)
+        secret_plain = secret.strip() or ("whsec_" + secrets.token_urlsafe(24))
+        secret_hash, metadata = _encrypt_secret(secret_plain)
         sub_id = str(uuid4())
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -51,12 +77,12 @@ class WebhookService:
                 cur.execute(
                     """
                     INSERT INTO platform.webhook_subscriptions (
-                        id, org_id, name, target_url, secret, event_types, rate_limit_per_minute
+                        id, org_id, name, target_url, secret, event_types, rate_limit_per_minute, metadata
                     )
-                    VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s::text[], %s)
+                    VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s::text[], %s, %s::jsonb)
                     RETURNING id::text AS id, name, target_url, event_types, is_active, created_at
                     """,
-                    (sub_id, org_id, name, target_url, secret, event_types, rate_limit_per_minute),
+                    (sub_id, org_id, name, target_url, secret_hash, event_types, rate_limit_per_minute, Json(metadata)),
                 )
                 return cur.fetchone() or {"id": sub_id}
 
@@ -91,14 +117,17 @@ class WebhookService:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id::text AS id, target_url, secret, event_types
+                    SELECT id::text AS id, target_url, secret, event_types, metadata
                     FROM platform.webhook_subscriptions
                     WHERE org_id = %s::uuid AND is_active = TRUE
                     """,
                     (org_id,),
                 )
                 rows = cur.fetchall() or []
-        return [r for r in rows if not r.get("event_types") or event_type in (r.get("event_types") or [])]
+        matched = [r for r in rows if not r.get("event_types") or event_type in (r.get("event_types") or [])]
+        for row in matched:
+            row["secret_plain"] = _decrypt_secret(row)
+        return matched
 
     def _count_recent_deliveries(self, org_id: str, subscription_id: str, *, minutes: int = 1) -> int:
         with get_db_conn() as conn:
@@ -123,7 +152,10 @@ class WebhookService:
         delivery_id = str(uuid4())
         event_id = str(envelope.get("event_id", uuid4()))
         body = json.dumps({"event_type": event_type, "envelope": envelope}, default=str).encode()
-        signature = sign_payload(str(sub["secret"]), body)
+        secret_plain = str(sub.get("secret_plain") or _decrypt_secret(sub))
+        if not secret_plain:
+            raise RuntimeError("Webhook secret unavailable for signing")
+        signature = sign_payload(secret_plain, body)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -138,7 +170,7 @@ class WebhookService:
                     (delivery_id, org_id, sub["id"], event_id, event_type, Json(envelope), signature),
                 )
                 row = cur.fetchone() or {"id": delivery_id}
-        self._deliver_now(org_id, {**sub, "delivery_id": row["id"]}, event_type, envelope, body, signature)
+        self._deliver_now(org_id, {**sub, "delivery_id": row["id"], "secret_plain": secret_plain}, event_type, envelope, body, signature)
         return row
 
     def _deliver_now(
@@ -159,12 +191,13 @@ class WebhookService:
         status = "delivered"
         last_error = None
         try:
+            safe_url = validate_outbound_url(str(sub["target_url"]))
             with httpx.Client(timeout=settings.integration_timeout_seconds) as client:
-                resp = client.post(sub["target_url"], content=body, headers=headers)
+                resp = client.post(safe_url, content=body, headers=headers)
                 if resp.status_code >= 400:
                     status = "retrying"
                     last_error = f"HTTP {resp.status_code}"
-        except Exception as exc:
+        except (UnsafeUrlError, Exception) as exc:
             status = "retrying"
             last_error = str(exc)
         with get_db_conn() as conn:
@@ -214,7 +247,7 @@ class WebhookService:
                 cur.execute(
                     """
                     SELECT d.id::text AS delivery_id, d.payload, d.attempt_count, d.event_type,
-                           s.target_url, s.secret
+                           s.target_url, s.secret, s.metadata
                     FROM platform.webhook_deliveries d
                     JOIN platform.webhook_subscriptions s ON s.id = d.subscription_id
                     WHERE d.org_id = %s::uuid AND d.status IN ('pending', 'retrying')
@@ -231,10 +264,15 @@ class WebhookService:
                 continue
             envelope = row.get("payload") or {}
             body = json.dumps({"event_type": row["event_type"], "envelope": envelope}, default=str).encode()
-            signature = sign_payload(str(row["secret"]), body)
+            secret_plain = _decrypt_secret(row)
+            signature = sign_payload(secret_plain, body)
             self._deliver_now(
                 org_id,
-                {"delivery_id": row["delivery_id"], "target_url": row["target_url"], "secret": row["secret"]},
+                {
+                    "delivery_id": row["delivery_id"],
+                    "target_url": row["target_url"],
+                    "secret_plain": secret_plain,
+                },
                 row["event_type"],
                 envelope,
                 body,

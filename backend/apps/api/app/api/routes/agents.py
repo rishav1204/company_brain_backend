@@ -1,3 +1,4 @@
+"""Legacy agents routes — prefer /finance-os/agents/* (see LEGACY_ROUTE_MIGRATION.md)."""
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import build_request_context
@@ -186,7 +187,7 @@ def approve_agent_run(run_id: str, request: AgentApprovalRequest, context=Depend
             roles=context.roles,
             human_approved=True,
         )
-        outcome = "completed" if result.get("status") == "completed" else "failed"
+        outcome = "executed" if result.get("status") == "completed" else "failed"
         agents_repo.mark_action_outcome(org_id=context.org_id, action_id=action["action_id"], outcome=outcome)
         execution_results.append({"action_id": action["action_id"], "result": result})
     event_bus.publish(

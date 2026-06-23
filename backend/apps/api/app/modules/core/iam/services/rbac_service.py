@@ -5,6 +5,24 @@ from app.modules.core.iam.repositories import permission_repo, role_repo
 logger = logging.getLogger(__name__)
 
 
+PRIVILEGED_ROLE_NAMES = frozenset({"tenant_admin", "system_admin", "org.admin"})
+
+
+def is_privileged_role(role_name: str) -> bool:
+    return str(role_name or "").lower() in PRIVILEGED_ROLE_NAMES
+
+
+def assert_can_assign_role(org_id: str, actor_user_id: str, target_role_name: str) -> None:
+    if not is_privileged_role(target_role_name):
+        return
+    if has_permission(org_id, actor_user_id, "system.admin"):
+        return
+    db_roles = {r.lower() for r in list_role_names(org_id, actor_user_id)}
+    if "tenant_admin" in db_roles:
+        return
+    raise PermissionError(f"Insufficient privilege to assign role: {target_role_name}")
+
+
 def list_role_names(org_id: str, user_id: str) -> list[str]:
     rows = role_repo.list_user_roles(org_id, user_id)
     return [str(row["role_name"]) for row in rows if row.get("role_name")]

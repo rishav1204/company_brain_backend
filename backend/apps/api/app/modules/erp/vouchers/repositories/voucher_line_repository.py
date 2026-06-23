@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from app.services.db import get_db_conn, set_rls_org
@@ -44,7 +46,7 @@ class VoucherLineRepository:
                     out.append(dict(cur.fetchone() or {}))
                 return out
 
-    def list_by_voucher(self, org_id: str, *, voucher_id: str) -> list[dict]:
+    def list_by_voucher(self, org_id: str, *, voucher_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -57,6 +59,7 @@ class VoucherLineRepository:
                     FROM erp.voucher_lines
                     WHERE org_id = %s::uuid AND voucher_id = %s::uuid
                     ORDER BY line_number
+                    LIMIT %s
                     """,
                     (org_id, voucher_id),
                 )

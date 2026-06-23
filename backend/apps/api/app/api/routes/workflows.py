@@ -1,3 +1,4 @@
+"""Legacy workflow routes — prefer /workflows/* module routes (see LEGACY_ROUTE_MIGRATION.md)."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import build_request_context

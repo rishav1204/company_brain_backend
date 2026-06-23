@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from app.services.db import get_db_conn, set_rls_org
@@ -51,7 +53,7 @@ class DepreciationRepository:
                 )
                 return cur.fetchone() is not None
 
-    def list_for_asset(self, org_id: str, *, asset_id: str) -> list[dict]:
+    def list_for_asset(self, org_id: str, *, asset_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -62,6 +64,7 @@ class DepreciationRepository:
                     FROM erp.asset_depreciation
                     WHERE org_id = %s::uuid AND asset_id = %s::uuid
                     ORDER BY depreciation_date DESC
+                    LIMIT %s
                     """,
                     (org_id, asset_id),
                 )

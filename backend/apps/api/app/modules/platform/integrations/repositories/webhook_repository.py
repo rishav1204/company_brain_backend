@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -47,7 +49,7 @@ class WebhookRepository:
                 )
                 return dict(cur.fetchone() or {"id": sub_id})
 
-    def list_subscriptions(self, org_id: str) -> list[dict]:
+    def list_subscriptions(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -57,12 +59,14 @@ class WebhookRepository:
                     FROM integrations.webhook_subscriptions
                     WHERE org_id = %s::uuid
                     ORDER BY created_at DESC
+                    LIMIT %s
+
                     """,
                     (org_id,),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
-    def list_subscriptions_with_secrets(self, org_id: str) -> list[dict]:
+    def list_subscriptions_with_secrets(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -71,6 +75,8 @@ class WebhookRepository:
                     SELECT id::text, endpoint_url, secret_encrypted, event_types, is_active
                     FROM integrations.webhook_subscriptions
                     WHERE org_id = %s::uuid AND is_active = TRUE
+                    LIMIT %s
+
                     """,
                     (org_id,),
                 )

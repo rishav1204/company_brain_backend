@@ -49,7 +49,8 @@ class LedgerQueryRepository:
                 cur.execute(sql, tuple(params))
                 return [dict(r) for r in (cur.fetchall() or [])]
 
-    def get_batch_entries(self, org_id: str, *, batch_id: str) -> list[dict]:
+    def get_batch_entries(self, org_id: str, *, batch_id: str, limit: int = 500) -> list[dict]:
+        limit = max(1, min(int(limit or 500), 2000))
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -61,8 +62,9 @@ class LedgerQueryRepository:
                     FROM erp.ledger_entries
                     WHERE org_id = %s::uuid AND batch_id = %s::uuid
                     ORDER BY created_at ASC
+                    LIMIT %s
                     """,
-                    (org_id, batch_id),
+                    (org_id, batch_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

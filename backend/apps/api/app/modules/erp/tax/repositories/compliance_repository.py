@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -8,7 +10,8 @@ from app.services.db import get_db_conn, set_rls_org
 
 
 class TdsSectionRepository:
-    def list(self, org_id: str) -> list[dict]:
+    def list(self, org_id: str, *, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -16,8 +19,9 @@ class TdsSectionRepository:
                     """
                     SELECT id::text, section_code, section_name, description, rate, rate_pan, rate_no_pan, threshold_amount
                     FROM erp.tds_sections WHERE org_id=%s::uuid AND is_active=true
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
@@ -225,17 +229,19 @@ class ComplianceCalendarRepository:
                     count += 1
         return count
 
-    def list(self, org_id: str, *, status: str | None = None) -> list[dict]:
+    def list(self, org_id: str, *, status: str | None = None, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         where = ["org_id = %s::uuid"]
         params: list = [org_id]
         if status:
             where.append("status = %s")
             params.append(status)
+        params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT id::text, obligation_type, due_date::text, return_period, status FROM erp.compliance_calendar WHERE {' AND '.join(where)} ORDER BY due_date",
+                    f"SELECT id::text, obligation_type, due_date::text, return_period, status FROM erp.compliance_calendar WHERE {' AND '.join(where)} ORDER BY due_date LIMIT %s",
                     tuple(params),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
@@ -273,13 +279,14 @@ class TaxNoticeRepository:
                 )
                 return dict(cur.fetchone() or {"id": nid})
 
-    def list(self, org_id: str) -> list[dict]:
+    def list(self, org_id: str, *, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id::text, notice_type, received_date::text, status, ai_summary FROM erp.tax_notices WHERE org_id=%s::uuid ORDER BY received_date DESC",
-                    (org_id,),
+                    "SELECT id::text, notice_type, received_date::text, status, ai_summary FROM erp.tax_notices WHERE org_id=%s::uuid ORDER BY received_date DESC LIMIT %s",
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

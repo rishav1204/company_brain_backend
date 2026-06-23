@@ -7,10 +7,9 @@ from app.modules.core.iam.events.role_events import emit_role_assigned
 from app.modules.core.iam.events.user_events import emit_user_created
 from app.modules.core.iam.repositories import role_repo, user_repo
 from app.modules.core.iam.schemas.user_schema import AssignRoleRequest, UserListResponse, UserResponse
-from app.modules.core.iam.services.password_service import hash_password
+from app.modules.core.iam.services.rbac_service import assert_can_assign_role, has_permission
 from app.modules.core.iam.routes.idempotency_helper import check_idempotency, mark_idempotency
 from app.modules.core.iam.services.api_key_auth_service import scope_allows
-from app.modules.core.iam.services.rbac_service import has_permission
 from app.modules.core.iam.validators.password_validator import validate_password_strength
 
 class CreateUserRequest(BaseModel):
@@ -141,6 +140,10 @@ def assign_user_role(
     role = role_repo.get_role_by_name(context.org_id, body.role_name)
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
+    try:
+        assert_can_assign_role(context.org_id, context.user_id, body.role_name)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     user_repo.assign_role(
         org_id=context.org_id,
         user_id=user_id,

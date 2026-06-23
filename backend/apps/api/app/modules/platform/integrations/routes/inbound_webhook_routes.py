@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.modules.platform.integrations.repositories.webhook_repository import webhook_repository
 from app.modules.platform.integrations.security.credential_manager import credential_manager
 from app.modules.platform.integrations.security.signature_validator import verify_hmac_sha256
 from app.modules.platform.integrations.services.ingestion_service import ingestion_service
 from app.services.event_bus import event_bus
+from app.services.rate_limiter import FixedWindowRateLimiter
 
 router = APIRouter()
+_inbound_webhook_limiter = FixedWindowRateLimiter(limit_per_minute=120)
 
 
 @router.post("/webhooks/inbound/{org_id}/{subscription_id}")
@@ -28,11 +30,15 @@ async def inbound_webhook(
     - Resolve secret from `integrations.webhook_subscriptions.secret_encrypted`
     """
     raw = await request.body()
-    # Lookup subscription (RLS is org-scoped; here org is in path so we query directly).
+    client_ip = request.client.host if request.client else "unknown"
+    limit_key = f"inbound-webhook:{org_id}:{client_ip}"
+    if not _inbound_webhook_limiter.check(limit_key).allowed:
+        raise HTTPException(status_code=429, detail="Too many webhook requests")
+
     subs = webhook_repository.list_subscriptions_with_secrets(org_id)
     sub = next((s for s in subs if str(s.get("id")) == subscription_id), None)
     if not sub:
-        return {"status": "error", "detail": "subscription_not_found"}
+        raise HTTPException(status_code=401, detail="Unauthorized")
     secret_plain = ""
     if sub.get("secret_encrypted"):
         try:
@@ -40,7 +46,7 @@ async def inbound_webhook(
         except Exception:
             secret_plain = ""
     if not verify_hmac_sha256(secret=secret_plain, payload=raw, signature_hex=x_webhook_signature or ""):
-        return {"status": "error", "detail": "invalid_signature"}
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     payload: dict = {}
     try:

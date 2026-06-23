@@ -38,6 +38,13 @@ class ConnectorRegistry:
         self._connectors[key] = connector
 
     def resolve(self, *, connector_type: str, provider_name: str) -> Connector | None:
+        from app.modules.platform.integrations.security.connector_mode import integrations_use_stubs
+
+        if not integrations_use_stubs() and ("stub" in provider_name.lower()):
+            prod_key = (connector_type, provider_name.replace("stub_", "").replace("_stub", ""))
+            if prod_key in self._connectors:
+                return self._connectors[prod_key]
+            return None
         return self._connectors.get((connector_type, provider_name))
 
     def resolve_ocr(self, *, provider_name: str) -> OcrConnector | None:

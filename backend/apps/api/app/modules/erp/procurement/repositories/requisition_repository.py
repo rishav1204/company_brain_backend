@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -154,7 +156,7 @@ class RequisitionRepository:
                 )
                 return item
 
-    def list_items(self, org_id: str, *, pr_id: str) -> list[dict]:
+    def list_items(self, org_id: str, *, pr_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -165,6 +167,7 @@ class RequisitionRepository:
                     FROM erp.purchase_requisition_items
                     WHERE org_id = %s::uuid AND pr_id = %s::uuid
                     ORDER BY created_at
+                    LIMIT %s
                     """,
                     (org_id, pr_id),
                 )

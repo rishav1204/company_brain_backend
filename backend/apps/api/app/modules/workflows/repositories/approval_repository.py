@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -93,7 +95,7 @@ class ApprovalRepository:
                 )
                 return cur.fetchone()
 
-    def list_for_instance(self, org_id: str, workflow_instance_id: str) -> list[dict[str, Any]]:
+    def list_for_instance(self, org_id: str, workflow_instance_id: str, limit: int = 500) -> list[dict[str, Any]]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -108,6 +110,7 @@ class ApprovalRepository:
                     FROM workflow.approvals
                     WHERE org_id = %s::uuid AND workflow_instance_id = %s::uuid
                     ORDER BY level ASC, created_at ASC
+                    LIMIT %s
                     """,
                     (org_id, workflow_instance_id),
                 )

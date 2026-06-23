@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -181,7 +183,7 @@ class LayerRepository:
                 )
                 return dict(cur.fetchone() or {"id": lid})
 
-    def list_open(self, org_id: str, *, item_id: str, warehouse_id: str) -> list[dict]:
+    def list_open(self, org_id: str, *, item_id: str, warehouse_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -192,6 +194,8 @@ class LayerRepository:
                     WHERE org_id = %s::uuid AND item_id = %s::uuid AND warehouse_id = %s::uuid
                       AND remaining_quantity > 0
                     ORDER BY receipt_date, created_at
+                    LIMIT %s
+
                     """,
                     (org_id, item_id, warehouse_id),
                 )
@@ -222,7 +226,7 @@ class GrnLinkRepository:
                 )
                 return cur.fetchone() is not None
 
-    def list_by_grn(self, org_id: str, *, goods_receipt_id: str) -> list[dict]:
+    def list_by_grn(self, org_id: str, *, goods_receipt_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -233,6 +237,8 @@ class GrnLinkRepository:
                     FROM erp.grn_inventory_links l
                     JOIN erp.inventory_movements m ON m.id = l.inventory_movement_id
                     WHERE l.org_id = %s::uuid AND l.goods_receipt_id = %s::uuid
+                    LIMIT %s
+
                     """,
                     (org_id, goods_receipt_id),
                 )

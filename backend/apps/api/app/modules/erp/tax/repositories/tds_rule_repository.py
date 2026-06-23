@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from app.services.db import get_db_conn, set_rls_org
 
 
 class TdsRuleRepository:
-    def list(self, org_id: str) -> list[dict]:
+    def list(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -15,6 +17,7 @@ class TdsRuleRepository:
                     FROM erp.tds_rules
                     WHERE org_id=%s::uuid AND is_active=true
                     ORDER BY section_code
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

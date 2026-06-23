@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -138,7 +140,8 @@ class ExecutionRepository:
                 )
                 return [dict(r) for r in cur.fetchall()]
 
-    def summary(self, org_id: str) -> dict:
+    def summary(self, org_id: str, *, limit: int = 500) -> dict:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -148,8 +151,9 @@ class ExecutionRepository:
                     FROM finance_os.agent_executions
                     WHERE org_id = %s::uuid
                     GROUP BY status
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 by_status = {row["status"]: row["cnt"] for row in cur.fetchall()}
                 cur.execute(
@@ -158,8 +162,9 @@ class ExecutionRepository:
                     FROM finance_os.agent_executions
                     WHERE org_id = %s::uuid
                     GROUP BY agent_name
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 by_agent = {row["agent_name"]: row["cnt"] for row in cur.fetchall()}
         return {"by_status": by_status, "by_agent": by_agent}

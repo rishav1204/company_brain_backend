@@ -10,6 +10,9 @@ from app.core.config import settings
 from app.modules.platform.events.services.retry_service import is_ready_for_retry, schedule_retry, should_retry
 from app.services.event_topology import queue_dlq_name, route_for_envelope
 from app.services.metrics import metrics_store
+from app.services.redis_client import get_redis_client
+
+CONSUMER_DEDUP_TTL_SECONDS = 7 * 24 * 3600
 
 
 @dataclass
@@ -35,12 +38,7 @@ class QueueManager:
     """Redis Streams primary backend with list-queue fallback."""
 
     def __init__(self) -> None:
-        self.client: redis.Redis | None = None
-        redis_url = settings.redis_url.strip()
-        if redis_url:
-            if settings.redis_require_tls and not redis_url.lower().startswith("rediss://"):
-                raise RuntimeError("REDIS_REQUIRE_TLS=true requires REDIS_URL to use rediss://")
-            self.client = redis.Redis.from_url(redis_url, decode_responses=True)
+        self.client: redis.Redis | None = get_redis_client()
         self.use_streams = settings.event_queue_backend.lower() == "redis_streams"
 
     def _stream_key(self, queue: str) -> str:
@@ -72,7 +70,12 @@ class QueueManager:
         try:
             if self.use_streams:
                 self._ensure_group(queue)
-                self.client.xadd(self._stream_key(queue), {"data": payload})
+                self.client.xadd(
+                    self._stream_key(queue),
+                    {"data": payload},
+                    maxlen=settings.redis_stream_maxlen,
+                    approximate=True,
+                )
             else:
                 self.client.rpush(queue, payload)
             metrics_store.incr_event_published()
@@ -104,7 +107,11 @@ class QueueManager:
                 self.client.lrem(processing_queue, 1, raw)
                 return QueueClaimResult(status="deduped", queue=queue, envelope=envelope, idempotent_replay=True)
         if not is_ready_for_retry(envelope):
-            return QueueClaimResult(status="delayed", queue=queue, envelope=envelope, detail="retry_not_due")
+            self.client.lrem(processing_queue, 1, raw)
+            self.client.lpush(queue, raw)
+            return QueueClaimResult(
+                status="delayed", queue=queue, envelope=envelope, detail="retry_not_due", claim_token=raw
+            )
         return QueueClaimResult(status="claimed", queue=queue, envelope=envelope, claim_token=raw)
 
     def _claim_stream(self, queue: str, consumer_name: str) -> QueueClaimResult:
@@ -151,7 +158,7 @@ class QueueManager:
             processing_queue = f"{queue}:processing"
             self.client.lrem(processing_queue, 1, claim_token)
         if event_id:
-            self.client.setex(f"{queue}:processed:{event_id}", 24 * 3600, "1")
+            self.client.setex(f"{queue}:processed:{event_id}", CONSUMER_DEDUP_TTL_SECONDS, "1")
         metrics_store.incr_event_processed()
 
     def fail_claim(self, queue: str, envelope: dict, claim_token: str | None, error: str) -> QueuePublishResult:
@@ -195,7 +202,12 @@ class QueueManager:
         payload = json.dumps(envelope)
         if self.use_streams:
             self._release_claim_for_retry(queue, envelope, claim_token)
-            self.client.xadd(self._stream_key(dlq), {"data": payload})
+            self.client.xadd(
+                self._stream_key(dlq),
+                {"data": payload},
+                maxlen=settings.redis_stream_maxlen,
+                approximate=True,
+            )
         else:
             if claim_token:
                 processing_queue = f"{queue}:processing"

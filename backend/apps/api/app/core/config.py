@@ -53,6 +53,7 @@ class Settings(BaseModel):
     jwt_jwks_url: str = _env_or_yaml("JWT_JWKS_URL", "auth", "jwt_jwks_url", default="")
     jwt_require_jwks_in_prod: bool = os.getenv("JWT_REQUIRE_JWKS_IN_PROD", "true").lower() == "true"
     jwt_require_exp: bool = os.getenv("JWT_REQUIRE_EXP", "true").lower() == "true"
+    jwt_revocation_fail_closed: bool = os.getenv("JWT_REVOCATION_FAIL_CLOSED", "true").lower() == "true"
     auth_mode: str = _env_or_yaml("AUTH_MODE", "auth", "mode", default="bearer_only")
     jwt_tenant_claim: str = _env_or_yaml("JWT_TENANT_CLAIM", "auth", "tenant_claim", default="org_id")
     jwt_roles_claim: str = _env_or_yaml("JWT_ROLES_CLAIM", "auth", "roles_claim", default="roles")
@@ -78,6 +79,13 @@ class Settings(BaseModel):
     redis_url: str = _env_or_yaml("REDIS_URL", "queue", "redis_url", default="redis://localhost:6379")
     postgres_dsn: str = _env_or_yaml("POSTGRES_DSN", "databases", "postgres", "dsn", default="")
     postgres_require_tls: bool = os.getenv("POSTGRES_REQUIRE_TLS", "true").lower() == "true"
+    postgres_pool_min: int = int(os.getenv("POSTGRES_POOL_MIN", "2"))
+    postgres_pool_max: int = int(os.getenv("POSTGRES_POOL_MAX", "20"))
+    redis_stream_maxlen: int = int(os.getenv("REDIS_STREAM_MAXLEN", "100000"))
+    redis_pool_max_connections: int = int(os.getenv("REDIS_POOL_MAX_CONNECTIONS", "20"))
+    erp_require_company_id: bool = os.getenv("ERP_REQUIRE_COMPANY_ID", "true").lower() == "true"
+    worker_service_boundary: str = os.getenv("WORKER_SERVICE_BOUNDARY", "")
+    legacy_redis_queue_enabled: bool = os.getenv("LEGACY_REDIS_QUEUE_ENABLED", "false").lower() == "true"
     redis_require_tls: bool = os.getenv("REDIS_REQUIRE_TLS", "false").lower() == "true"
     neo4j_require_tls: bool = os.getenv("NEO4J_REQUIRE_TLS", "false").lower() == "true"
     queue_main_name: str = _env_or_yaml("QUEUE_MAIN_NAME", "queue", "queue_main_name", default="finance.agent.action")
@@ -178,8 +186,8 @@ class Settings(BaseModel):
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     log_sink_url: str = os.getenv("LOG_SINK_URL", "")
     disable_dev_auth_routes_in_prod: bool = os.getenv("DISABLE_DEV_AUTH_ROUTES_IN_PROD", "true").lower() == "true"
-    enable_dev_auth_routes: bool = os.getenv("ENABLE_DEV_AUTH_ROUTES", "true").lower() == "true"
-    enable_worker_routes: bool = os.getenv("ENABLE_WORKER_ROUTES", "true").lower() == "true"
+    enable_dev_auth_routes: bool = os.getenv("ENABLE_DEV_AUTH_ROUTES", "false").lower() == "true"
+    enable_worker_routes: bool = os.getenv("ENABLE_WORKER_ROUTES", "false").lower() == "true"
     dev_use_postgres: bool = os.getenv("DEV_USE_POSTGRES", "false").lower() == "true"
     allow_direct_ap_execute: bool = os.getenv("ALLOW_DIRECT_AP_EXECUTE", "false").lower() == "true"
     scheduler_org_ids: str = os.getenv("SCHEDULER_ORG_IDS", DEV_ORG_ID)
@@ -218,7 +226,9 @@ class Settings(BaseModel):
     gcp_documentai_processor_id: str = os.getenv("GCP_DOCUMENTAI_PROCESSOR_ID", "")
     gcp_credentials_json: str = os.getenv("GCP_CREDENTIALS_JSON", "")
 
+    api_key_pepper: str = os.getenv("API_KEY_PEPPER", "")
     integrations_credentials_key: str = os.getenv("INTEGRATIONS_CREDENTIALS_KEY", "")
+    oidc_allowed_redirect_uris: str = os.getenv("OIDC_ALLOWED_REDIRECT_URIS", "")
     integrations_api_key_rate_limit_per_minute: int = int(os.getenv("INTEGRATIONS_API_KEY_RATE_LIMIT_PER_MINUTE", "120"))
     gstn_base_url: str = os.getenv("GSTN_BASE_URL", "")
     gstn_username: str = os.getenv("GSTN_USERNAME", "")
@@ -231,6 +241,17 @@ class Settings(BaseModel):
     eway_username: str = os.getenv("EWAY_USERNAME", "")
     eway_password: str = os.getenv("EWAY_PASSWORD", "")
     gst_connector_provider: str = os.getenv("GST_CONNECTOR_PROVIDER", "auto")
+    integrations_mode: str = _env_or_yaml("INTEGRATIONS_MODE", "integrations", "mode", default="auto")
+    documents_s3_bucket: str = os.getenv("DOCUMENTS_S3_BUCKET", "")
+    push_api_token: str = os.getenv("PUSH_API_TOKEN", "")
+
+    def integrations_use_stubs(self) -> bool:
+        mode = (self.integrations_mode or "auto").strip().lower()
+        if mode == "stub":
+            return True
+        if mode == "production":
+            return False
+        return self.app_env.strip().lower() in {"dev", "local", "test"}
 
     def dev_auth_routes_enabled(self) -> bool:
         if not self.enable_dev_auth_routes:

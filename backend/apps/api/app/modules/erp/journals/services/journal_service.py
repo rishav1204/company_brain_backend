@@ -8,6 +8,10 @@ from app.modules.erp.journals.repositories.journal_repository import journal_rep
 from app.modules.erp.journals.validators.journal_validator import journal_validator
 
 
+from app.core.config import settings
+from app.modules.erp.security.company_scope import require_company_id_for_erp_write
+
+
 class JournalService:
     def _journal_number(self) -> str:
         return "JN-" + uuid.uuid4().hex[:12].upper()
@@ -29,6 +33,10 @@ class JournalService:
         idempotency_key: str | None = None,
         ai_confidence: dict | None = None,
     ) -> dict:
+        if settings.erp_require_company_id:
+            require_company_id_for_erp_write(
+                org_id=org_id, company_id=company_id, operation="journal.create_draft"
+            )
         if idempotency_key:
             existing = journal_repository.get_by_idempotency(org_id, idempotency_key=idempotency_key)
             if existing:

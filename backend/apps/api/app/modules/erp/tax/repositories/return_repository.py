@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -36,17 +38,19 @@ class GstReturnRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def list(self, org_id: str, *, return_type: str | None = None) -> list[dict]:
+    def list(self, org_id: str, *, return_type: str | None = None, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         where = ["org_id = %s::uuid"]
         params: list = [org_id]
         if return_type:
             where.append("return_type = %s")
             params.append(return_type)
+        params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT id::text, return_type, return_period, status, filed_at::text FROM erp.gst_returns WHERE {' AND '.join(where)} ORDER BY return_period DESC",
+                    f"SELECT id::text, return_type, return_period, status, filed_at::text FROM erp.gst_returns WHERE {' AND '.join(where)} ORDER BY return_period DESC LIMIT %s",
                     tuple(params),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
@@ -91,13 +95,14 @@ class Gstr2bRepository:
                     count += 1
         return count
 
-    def list(self, org_id: str, *, return_period: str) -> list[dict]:
+    def list(self, org_id: str, *, return_period: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id::text, vendor_gstin, invoice_ref, invoice_date::text, taxable_value, cgst_amount, sgst_amount, igst_amount FROM erp.gstr2b_imports WHERE org_id=%s::uuid AND return_period=%s",
-                    (org_id, return_period),
+                    "SELECT id::text, vendor_gstin, invoice_ref, invoice_date::text, taxable_value, cgst_amount, sgst_amount, igst_amount FROM erp.gstr2b_imports WHERE org_id=%s::uuid AND return_period=%s ORDER BY invoice_date DESC LIMIT %s",
+                    (org_id, return_period, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
@@ -122,7 +127,8 @@ class GstReconciliationRepository:
                 )
                 return dict(cur.fetchone() or {"id": rid})
 
-    def list(self, org_id: str, *, return_period: str | None = None, match_status: str | None = None) -> list[dict]:
+    def list(self, org_id: str, *, return_period: str | None = None, match_status: str | None = None, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         where = ["org_id = %s::uuid"]
         params: list = [org_id]
         if return_period:
@@ -131,11 +137,12 @@ class GstReconciliationRepository:
         if match_status:
             where.append("match_status = %s")
             params.append(match_status)
+        params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT id::text, gst_transaction_id::text, gstr2b_import_id::text, return_period, match_status, confidence_score, metadata FROM erp.gst_reconciliations WHERE {' AND '.join(where)} ORDER BY created_at DESC",
+                    f"SELECT id::text, gst_transaction_id::text, gstr2b_import_id::text, return_period, match_status, confidence_score, metadata FROM erp.gst_reconciliations WHERE {' AND '.join(where)} ORDER BY created_at DESC LIMIT %s",
                     tuple(params),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.api.deps import build_request_context
+from app.modules.core.iam.middleware.permission_guard import require_permission
 from app.core.config import settings
 from app.services.repositories import audit_repo
 from app.services.scheduler_service import run_scheduled_jobs_once
@@ -10,7 +10,7 @@ router = APIRouter(tags=["ops"])
 
 
 @router.post("/ops/worker/run-once")
-def ops_run_worker(context=Depends(build_request_context)) -> dict:
+def ops_run_worker(context=Depends(require_permission("ops.worker.manage"))) -> dict:
     if not settings.enable_worker_routes:
         raise HTTPException(status_code=403, detail="Worker routes are disabled")
     result = run_queue_worker_once()
@@ -31,7 +31,7 @@ def ops_run_worker(context=Depends(build_request_context)) -> dict:
 
 
 @router.post("/ops/worker/run-batch")
-def ops_run_worker_batch(iterations: int = 25, context=Depends(build_request_context)) -> dict:
+def ops_run_worker_batch(iterations: int = 25, context=Depends(require_permission("ops.worker.manage"))) -> dict:
     if not settings.enable_worker_routes:
         raise HTTPException(status_code=403, detail="Worker routes are disabled")
     summary = run_queue_worker_batch(iterations=iterations)

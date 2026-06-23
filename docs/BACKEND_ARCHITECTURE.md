@@ -167,7 +167,7 @@ backend/
 ├── eval/                            (benchmark_manifest.json)
 ├── infra/                           (docker-compose.yml)
 ├── internal/                        (6 domain READMEs)
-├── migrations/                      (001–008 SQL files)
+├── migrations/                      (001–067 SQL files)
 ├── pkg/contracts/                   (api_contracts.md, event_envelope.json)
 └── scripts/                         (11 operational scripts)
 ```
@@ -514,26 +514,41 @@ Documentation-only folders mapping architecture domains to implemented services.
 
 ## 13. Database Migrations (`migrations/`)
 
-Applied by [`scripts/run_migrations.py`](scripts/run_migrations.py). Tracked in `schema_migrations` table with checksums.
+Applied by [`scripts/run_migrations.py`](scripts/run_migrations.py). Tracked in `schema_migrations` table with checksums. **67 migration files** (001–067) spanning core IAM, platform events/workflows, Finance OS, and the full ERP engine (COA → GL → journals → AP/AR → tax/fiscal → treasury/banking → consolidation → billing).
 
-| File | Version | Description |
-|------|---------|-------------|
-| [`001_init.sql`](migrations/001_init.sql) | 001 | **Baseline schema:** orgs, users, roles, RLS policies, pgvector extension, documents, document_chunks, workflows, workflow_steps, agents, agent_actions, audit_logs, memory_records, decisions, invoices, data_sources, ingestion_runs. |
-| [`002_training_eval.sql`](migrations/002_training_eval.sql) | 002 | QA gold examples, retrieval judgments, safety events, feedback events, eval_runs. |
-| [`003_connector_sync.sql`](migrations/003_connector_sync.sql) | 003 | Connector sync state, CDC replay tracking, external record deduplication. |
-| [`004_benchmark_org_seed.sql`](migrations/004_benchmark_org_seed.sql) | 004 | Seeds benchmark dev org `11111111-1111-4111-8111-111111111111` (Benchmark Org). |
-| [`005_tenant_b_seed.sql`](migrations/005_tenant_b_seed.sql) | 005 | Seeds tenant B org `22222222-2222-4222-8222-222222222222` for isolation testing. |
-| [`006_rls_hardening.sql`](migrations/006_rls_hardening.sql) | 006 | **RLS hardening:** FORCE ROW LEVEL SECURITY, WITH CHECK policies on all tenant tables. |
-| [`007_canonical_finance_model.sql`](migrations/007_canonical_finance_model.sql) | 007 | Contracts, canonical finance entities (expanded AP/AR/GL model). |
-| [`008_learning_governance.sql`](migrations/008_learning_governance.sql) | 008 | Learning labeling tasks, governance cycles, promotion/canary tracking. |
+| Range | Theme |
+|-------|--------|
+| 001–008 | Baseline schema, RLS hardening, canonical finance model, learning governance |
+| 009–019 | Core IAM, workflow engine v1–v3, platform event bus, governance, audit, notifications |
+| 020–029 | Dev login seed, documents DMS, integrations platform, ERP COA foundation |
+| 030–041 | ERP GL, journals, AP/AR, tax, fiscal, procurement, expenses, assets |
+| 042–049 | Inventory, TDS, compliance, banking, reconciliation, treasury |
+| 050–058 | Finance OS (invoice AI, memory, agents, forecasting, analytics, audit explorer) |
+| 059–065 | Policy engine, consolidation, API gateway, vouchers, credit/debit notes, billing |
+| 066–067 | Architecture review indexes + FORCE RLS; P1 tenancy (fiscal canonicalization, legacy write blocks) |
+
+Notable recent migrations:
+
+| File | Description |
+|------|-------------|
+| [`066_architecture_review_indexes.sql`](migrations/066_architecture_review_indexes.sql) | Performance indexes, FORCE RLS on tenant tables flagged in architecture review |
+| [`067_p1_tenancy_hardening.sql`](migrations/067_p1_tenancy_hardening.sql) | Sync `core.fiscal_periods` → `erp.fiscal_periods`; block writes to deprecated `core.fiscal_periods`, `public.invoices`, `public.journal_entries` |
+
+**Check status:**
+
+```bash
+python backend/scripts/migration_status.py --dsn "$POSTGRES_DSN"
+```
 
 **Apply migrations:**
 
 ```bash
 python backend/scripts/run_migrations.py \
-  --dsn "postgresql://..." \
+  --dsn "$POSTGRES_DSN" \
   --migrations-dir backend/migrations
 ```
+
+`/ready` reports `migrations: ok` when all files through 067 are applied (see `migration_readiness.py`).
 
 ---
 
@@ -797,7 +812,7 @@ Non-prefixed: `GET /health`, `GET /ready`
 | Schema modules | 10 |
 | Service modules | 48 |
 | Test modules | 35 |
-| SQL migrations | 8 |
+| SQL migrations | 67 |
 | Scripts | 11 |
 | Helm templates/values | 10 |
 | Internal READMEs | 6 |

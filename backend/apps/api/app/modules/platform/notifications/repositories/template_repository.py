@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -29,7 +31,7 @@ class TemplateRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def list_templates(self, org_id: str) -> list[dict]:
+    def list_templates(self, org_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -39,6 +41,7 @@ class TemplateRepository:
                     FROM notifications.templates
                     WHERE org_id = %s::uuid OR org_id IS NULL
                     ORDER BY template_key, channel
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

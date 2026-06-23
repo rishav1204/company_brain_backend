@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -76,8 +78,9 @@ class EliminationRepository:
                     "credit_amount": float(row[3]),
                 }
 
-    def list_for_run(self, org_id: str, consolidation_run_id: str) -> list[dict[str, Any]]:
+    def list_for_run(self, org_id: str, consolidation_run_id: str, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -89,6 +92,7 @@ class EliminationRepository:
                     FROM erp.elimination_entries
                     WHERE org_id = %s::uuid AND consolidation_run_id = %s::uuid
                     ORDER BY created_at ASC
+                    LIMIT %s
                     """,
                     (org_id, consolidation_run_id),
                 )

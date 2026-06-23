@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from uuid import uuid4
 
 from psycopg.types.json import Json
@@ -25,13 +27,14 @@ class GstRegistrationRepository:
                 )
                 return dict(cur.fetchone() or {"id": rid})
 
-    def list(self, org_id: str) -> list[dict]:
+    def list(self, org_id: str, *, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id::text, gstin, legal_name, trade_name, state_code, registration_type, status, metadata FROM erp.gst_registrations WHERE org_id=%s::uuid ORDER BY created_at",
-                    (org_id,),
+                    "SELECT id::text, gstin, legal_name, trade_name, state_code, registration_type, status, metadata FROM erp.gst_registrations WHERE org_id=%s::uuid ORDER BY created_at LIMIT %s",
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
@@ -113,13 +116,14 @@ class GstTransactionRepository:
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
-    def get_by_source(self, org_id: str, *, source_type: str, source_id: str) -> list[dict]:
+    def get_by_source(self, org_id: str, *, source_type: str, source_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id::text, gst_type, taxable_value, cgst_amount, sgst_amount, igst_amount FROM erp.gst_transactions WHERE org_id=%s::uuid AND source_type=%s AND source_id=%s::uuid",
-                    (org_id, source_type, source_id),
+                    "SELECT id::text, gst_type, taxable_value, cgst_amount, sgst_amount, igst_amount FROM erp.gst_transactions WHERE org_id=%s::uuid AND source_type=%s AND source_id=%s::uuid LIMIT %s",
+                    (org_id, source_type, source_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

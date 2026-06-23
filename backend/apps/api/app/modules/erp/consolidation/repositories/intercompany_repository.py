@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -145,8 +147,9 @@ class IntercompanyRepository:
                 cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, row)) for row in cur.fetchall()]
 
-    def list_balances(self, org_id: str) -> list[dict[str, Any]]:
+    def list_balances(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
+            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -157,6 +160,7 @@ class IntercompanyRepository:
                     FROM erp.intercompany_balances
                     WHERE org_id = %s::uuid
                     ORDER BY updated_at DESC
+                    LIMIT %s
                     """,
                     (org_id,),
                 )

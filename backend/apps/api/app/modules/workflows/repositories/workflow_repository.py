@@ -43,7 +43,8 @@ class WorkflowRepository:
                 )
                 return cur.fetchone()
 
-    def list_definitions(self, org_id: str) -> list[dict[str, Any]]:
+    def list_definitions(self, org_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit or 200), 500))
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -53,8 +54,9 @@ class WorkflowRepository:
                     FROM workflow.workflow_definitions
                     WHERE org_id = %s::uuid
                     ORDER BY workflow_key, version DESC
+                    LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return list(cur.fetchall())
 
@@ -143,6 +145,8 @@ class WorkflowRepository:
         limit: int = 200,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit or 200), 500))
+        offset = max(0, int(offset or 0))
         clauses = ["org_id = %s::uuid"]
         params: list[Any] = [org_id]
         if workflow_type:

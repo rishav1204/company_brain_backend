@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from app.services.db import get_db_conn, set_rls_org
 
 
@@ -29,7 +31,7 @@ class StatementMvRepository:
                     count += 1
                 return count
 
-    def list_period(self, org_id: str, *, fiscal_period_id: str) -> list[dict]:
+    def list_period(self, org_id: str, *, fiscal_period_id: str, limit: int = 500) -> list[dict]:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -39,6 +41,7 @@ class StatementMvRepository:
                     FROM erp_reporting.{self._table}
                     WHERE org_id = %s::uuid AND fiscal_period_id = %s::uuid
                     ORDER BY reporting_category ASC
+                    LIMIT %s
                     """,
                     (org_id, fiscal_period_id),
                 )
