@@ -6,7 +6,9 @@ from app.modules.core.iam.routes import (
     auth_routes,
     invite_routes,
     mfa_routes,
+    oidc_routes,
     organization_routes,
+    password_routes,
     permission_routes,
     role_routes,
     session_routes,
@@ -16,6 +18,8 @@ from app.modules.core.iam.routes import (
 router = APIRouter()
 router.include_router(admin_routes.router)
 router.include_router(auth_routes.router)
+router.include_router(oidc_routes.router)
+router.include_router(password_routes.router)
 router.include_router(user_routes.router)
 router.include_router(role_routes.router)
 router.include_router(permission_routes.router)

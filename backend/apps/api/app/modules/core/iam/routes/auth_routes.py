@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from app.core.config import settings
 from app.modules.core.iam.schemas.auth_schema import (
@@ -10,6 +10,7 @@ from app.modules.core.iam.schemas.auth_schema import (
     RefreshRequest,
     RefreshResponse,
 )
+from app.modules.core.iam.services.auth_cookies import clear_access_token_cookie, set_access_token_cookie
 from app.modules.core.iam.services.auth_service import AuthError, iam_db_enabled, login, logout, refresh
 from app.modules.core.iam.services.iam_schema_service import IamSchemaError
 from app.modules.core.iam.services.session_service import resolve_refresh_session
@@ -28,7 +29,7 @@ def _client_ip(request: Request) -> str | None:
 
 
 @router.post("/auth/login", response_model=LoginResponse)
-def auth_login(request_body: LoginRequest, request: Request) -> LoginResponse:
+def auth_login(request_body: LoginRequest, request: Request, response: Response) -> LoginResponse:
     if not iam_db_enabled():
         raise HTTPException(status_code=503, detail="IAM database authentication is not enabled")
     rate_key = f"login:{request_body.email.lower()}:{_client_ip(request) or 'unknown'}"
@@ -46,6 +47,7 @@ def auth_login(request_body: LoginRequest, request: Request) -> LoginResponse:
     except IamSchemaError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    set_access_token_cookie(response, result["access_token"], max_age=result["expires_in"])
     now = datetime.now(timezone.utc)
     return LoginResponse(
         request_id=f"login-{int(now.timestamp())}",
@@ -62,7 +64,7 @@ def auth_login(request_body: LoginRequest, request: Request) -> LoginResponse:
 
 
 @router.post("/auth/refresh", response_model=RefreshResponse)
-def auth_refresh(request_body: RefreshRequest, request: Request) -> RefreshResponse:
+def auth_refresh(request_body: RefreshRequest, request: Request, response: Response) -> RefreshResponse:
     if not iam_db_enabled():
         raise HTTPException(status_code=503, detail="IAM database authentication is not enabled")
     rate_key = f"refresh:{_client_ip(request) or 'unknown'}"
@@ -74,6 +76,10 @@ def auth_refresh(request_body: RefreshRequest, request: Request) -> RefreshRespo
         )
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except IamSchemaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    set_access_token_cookie(response, result["access_token"], max_age=result["expires_in"])
     now = datetime.now(timezone.utc)
     return RefreshResponse(
         request_id=f"refresh-{int(now.timestamp())}",
@@ -90,6 +96,7 @@ def auth_refresh(request_body: RefreshRequest, request: Request) -> RefreshRespo
 @router.post("/auth/logout")
 def auth_logout(
     request_body: LogoutRequest,
+    response: Response,
     authorization: str | None = Header(default=None),
 ) -> dict:
     if not iam_db_enabled():
@@ -124,6 +131,7 @@ def auth_logout(
             trace_id=f"logout-{int(now.timestamp())}",
             access_token=access_token,
         )
+    clear_access_token_cookie(response)
     return {
         "request_id": f"logout-{int(now.timestamp())}",
         "status": "logged_out",

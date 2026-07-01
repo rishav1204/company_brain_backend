@@ -70,16 +70,18 @@ class RecurringRepository:
                 return [dict(r) for r in (cur.fetchall() or [])]
 
     def list_due(self, org_id: str, *, as_of_date: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
+                # limit is a clamped int — safe to inline and avoids placeholder mismatch
                 cur.execute(
-                    """
+                    f"""
                     SELECT id::text, template_name, frequency, next_run_date::text, journal_template
                     FROM erp.recurring_journals
                     WHERE org_id = %s::uuid AND is_active = true AND next_run_date <= %s::date
                     ORDER BY next_run_date ASC
-                    LIMIT %s
+                    LIMIT {limit}
                     """,
                     (org_id, as_of_date),
                 )

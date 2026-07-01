@@ -24,6 +24,7 @@ def executive_dashboard(
         actor_id=context.user_id,
         event_type="analytics.dashboard.viewed",
         object_ref=f"finance_os:analytics:dashboard:{data.get('snapshot_date')}",
+        payload_jsonb={"snapshot_date": data.get("snapshot_date")},
     )
     return DashboardResponse(
         snapshot_date=data.get("snapshot_date"),

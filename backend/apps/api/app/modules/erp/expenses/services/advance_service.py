@@ -21,7 +21,7 @@ class AdvanceService:
             settlement_due_date=settlement_due_date,
         )
 
-    def list_open(self, org_id: str, *, employee_id: str) -> list[dict]:
+    def list_open(self, org_id: str, *, employee_id: str | None = None) -> list[dict]:
         return advance_repository.list_open(org_id, employee_id=employee_id)
 
     def settle_against_claim(self, org_id: str, *, employee_id: str, claim_amount: float) -> None:

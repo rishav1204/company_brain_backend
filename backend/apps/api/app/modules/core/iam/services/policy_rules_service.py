@@ -10,6 +10,8 @@ def evaluate_policy_context_rules(
     fiscal_period_open: bool | None = None,
     branch_id: str | None = None,
     allowed_branch_ids: list[str] | None = None,
+    department_id: str | None = None,
+    allowed_department_ids: list[str] | None = None,
 ) -> PolicyDecision | None:
     ctx = policy_context or {}
     rules = ctx.get("rules")
@@ -61,6 +63,10 @@ def evaluate_policy_context_rules(
 
         if condition.get("fiscal_period_open") is True and fiscal_period_open is False:
             return PolicyDecision(allowed=False, reason="fiscal_period_closed", checks=["policy_rule_fiscal_denied"])
+
+        if allowed_department_ids and department_id:
+            if department_id not in {str(d) for d in allowed_department_ids}:
+                return PolicyDecision(allowed=False, reason="department_scope_denied", checks=["policy_rule_department_denied"])
 
         branch_outside_limit = condition.get("branch_amount_outside_limit")
         if branch_outside_limit is not None and amount is not None and branch_id:

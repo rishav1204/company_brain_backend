@@ -1,11 +1,18 @@
 from datetime import datetime, timezone
 
+from app.core.config import settings
+
 
 class DevAuthStore:
     def __init__(self) -> None:
         self.users_by_email: dict[str, dict] = {}
 
+    def _allowed(self) -> bool:
+        return settings.app_env.lower() in {"dev", "local", "test"}
+
     def create_user(self, email: str, password: str, org_id: str, roles: list[str], display_name: str | None = None) -> dict:
+        if not self._allowed():
+            raise PermissionError("Dev auth store is only available in dev/local/test environments")
         user = {
             "user_id": f"dev-user-{email.lower()}",
             "email": email.lower(),
@@ -19,6 +26,8 @@ class DevAuthStore:
         return user
 
     def get_user(self, email: str) -> dict | None:
+        if not self._allowed():
+            return None
         return self.users_by_email.get(email.lower())
 
 

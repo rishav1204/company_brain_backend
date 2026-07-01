@@ -9,23 +9,12 @@ from uuid import uuid4
 from psycopg.types.json import Json
 
 from app.services.db import get_db_conn, set_rls_org
+from app.services.schema_registry import table_ready
 
 
 class BillingRepository:
     def schema_ready(self) -> bool:
-        try:
-            with get_db_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT 1 FROM information_schema.tables
-                        WHERE table_schema = 'billing' AND table_name = 'plans'
-                        LIMIT 1
-                        """
-                    )
-                    return cur.fetchone() is not None
-        except Exception:
-            return False
+        return table_ready("billing", "plans")
 
     def list_plans(self, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
@@ -54,7 +43,7 @@ class BillingRepository:
                     LIMIT %s
 
                     """,
-                    (plan_key,),
+                    (plan_key, limit),
                 )
                 return [row["feature_code"] for row in cur.fetchall()]
 
@@ -70,7 +59,7 @@ class BillingRepository:
                     LIMIT %s
 
                     """,
-                    (plan_key,),
+                    (plan_key, limit),
                 )
                 return {row["limit_code"]: row["limit_value"] for row in cur.fetchall()}
 
@@ -137,7 +126,7 @@ class BillingRepository:
                     LIMIT %s
 
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(row) for row in cur.fetchall()]
 

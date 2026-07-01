@@ -74,6 +74,7 @@ class AccrualRepository:
                 return [dict(r) for r in (cur.fetchall() or [])]
 
     def list_due_reversals(self, org_id: str, *, as_of_date: str, limit: int = 500) -> list[dict]:
+        limit = max(1, min(int(limit or 500), 500))
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -89,7 +90,7 @@ class AccrualRepository:
                     ORDER BY reversal_date ASC
                     LIMIT %s
                     """,
-                    (org_id, as_of_date),
+                    (org_id, as_of_date, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.modules.platform.governance.api.deps import require_auditor_read, require_governance_admin, require_governance_write
@@ -92,8 +92,45 @@ def upsert_matrix(request: MatrixUpsertRequest, context=Depends(require_governan
 @router.get("/policies/sod")
 def sod_catalog(context=Depends(require_auditor_read)) -> dict:
     from app.modules.core.iam.services.maker_checker_service import MAKER_CHECKER_ACTIONS
+    from app.modules.platform.governance.repositories.sod_conflict_repository import sod_conflict_repo
 
-    return {"request_id": context.request_id, "maker_checker_actions": sorted(MAKER_CHECKER_ACTIONS)}
+    conflicts = sod_conflict_repo.list_conflicts(context.org_id)
+    return {
+        "request_id": context.request_id,
+        "maker_checker_actions": sorted(MAKER_CHECKER_ACTIONS),
+        "conflicts": conflicts,
+    }
+
+
+class SodConflictRequest(BaseModel):
+    role_a: str
+    role_b: str
+    scope: str = "org"
+    description: str | None = None
+
+
+@router.post("/policies/sod/conflicts")
+def create_sod_conflict(request: SodConflictRequest, context=Depends(require_governance_admin)) -> dict:
+    from app.modules.platform.governance.repositories.sod_conflict_repository import sod_conflict_repo
+
+    row = sod_conflict_repo.upsert_conflict(
+        context.org_id,
+        role_a=request.role_a,
+        role_b=request.role_b,
+        scope=request.scope,
+        description=request.description,
+    )
+    return {"request_id": context.request_id, "conflict": row}
+
+
+@router.delete("/policies/sod/conflicts/{conflict_id}")
+def delete_sod_conflict(conflict_id: str, context=Depends(require_governance_admin)) -> dict:
+    from app.modules.platform.governance.repositories.sod_conflict_repository import sod_conflict_repo
+
+    ok = sod_conflict_repo.deactivate(context.org_id, conflict_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Conflict not found")
+    return {"request_id": context.request_id, "status": "deactivated"}
 
 
 class ExceptionRequest(BaseModel):

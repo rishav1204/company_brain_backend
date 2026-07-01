@@ -47,4 +47,8 @@ def refresh_kpis(org_id: str, *, fiscal_period_id: str | None = None, snapshot_d
     for ins in insight_engine.generate_insights(computed, prior_kpis=prior_kpis):
         insights_saved.append(insight_repository.create(org_id, **ins))
 
+    from app.services.cache.redis_cache import invalidate_namespace
+
+    invalidate_namespace(org_id, "analytics")
+
     return {"snapshot_date": snap, "kpis": len(saved), "trends": len(trends_saved), "insights": len(insights_saved)}

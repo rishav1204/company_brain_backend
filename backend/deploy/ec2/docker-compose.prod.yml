@@ -1,0 +1,73 @@
+services:
+  api:
+    image: ${FINANCE_API_IMAGE:-company-brain-finance-api:latest}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - /opt/company-brain/.env
+    environment:
+      APP_ENV: prod
+      STORAGE_PROVIDER: s3
+      AWS_REGION: ap-south-1
+      DOCUMENTS_S3_BUCKET: ${DOCUMENTS_S3_BUCKET:-company-brain-docs-prod}
+      TEXTRACT_S3_BUCKET: ${TEXTRACT_S3_BUCKET:-company-brain-textract-prod}
+      OCR_PROVIDER: aws_textract
+      POSTGRES_REQUIRE_TLS: "true"
+      ENABLE_DEV_AUTH_ROUTES: "false"
+      DISABLE_DEV_AUTH_ROUTES_IN_PROD: "true"
+      OBSERVABILITY_REQUIRE_IN_PROD: "false"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  worker:
+    image: ${FINANCE_API_IMAGE:-company-brain-finance-api:latest}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["python", "cmd/worker.py"]
+    env_file:
+      - /opt/company-brain/.env
+    environment:
+      APP_ENV: prod
+      STORAGE_PROVIDER: s3
+      AWS_REGION: ap-south-1
+      DOCUMENTS_S3_BUCKET: ${DOCUMENTS_S3_BUCKET:-company-brain-docs-prod}
+      TEXTRACT_S3_BUCKET: ${TEXTRACT_S3_BUCKET:-company-brain-textract-prod}
+      OCR_PROVIDER: aws_textract
+      POSTGRES_REQUIRE_TLS: "true"
+      OBSERVABILITY_REQUIRE_IN_PROD: "false"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  scheduler:
+    image: ${FINANCE_API_IMAGE:-company-brain-finance-api:latest}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    command: ["python", "cmd/scheduler.py"]
+    env_file:
+      - /opt/company-brain/.env
+    environment:
+      APP_ENV: prod
+      STORAGE_PROVIDER: s3
+      AWS_REGION: ap-south-1
+      DOCUMENTS_S3_BUCKET: ${DOCUMENTS_S3_BUCKET:-company-brain-docs-prod}
+      TEXTRACT_S3_BUCKET: ${TEXTRACT_S3_BUCKET:-company-brain-textract-prod}
+      OCR_PROVIDER: aws_textract
+      POSTGRES_REQUIRE_TLS: "true"
+      OBSERVABILITY_REQUIRE_IN_PROD: "false"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy

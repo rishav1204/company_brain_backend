@@ -13,7 +13,8 @@ pyotp==2.9.0
 httpx
 opentelemetry-api
 opentelemetry-sdk
-opentelemetry-exporter-otlp
+prometheus_client==0.21.1
+opentelemetry-instrumentation-fastapi
 pip-audit
 cloudinary
 pypdf

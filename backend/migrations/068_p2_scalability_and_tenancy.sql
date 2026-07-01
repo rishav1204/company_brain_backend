@@ -47,14 +47,14 @@ ALTER TABLE erp.vouchers
   ADD CONSTRAINT chk_erp_vouchers_company_id_not_null CHECK (company_id IS NOT NULL) NOT VALID;
 
 -- High-traffic / audit-flagged tenant indexes
-CREATE INDEX IF NOT EXISTS idx_workflow_escalations_org_status
-  ON workflow.escalations (org_id, status);
+CREATE INDEX IF NOT EXISTS idx_workflow_escalations_org_type
+  ON workflow.escalations (org_id, escalation_type);
 
 CREATE INDEX IF NOT EXISTS idx_workflow_org_holidays_org
   ON workflow.org_holidays (org_id, holiday_date);
 
 CREATE INDEX IF NOT EXISTS idx_workflow_scheduled_workflows_org
-  ON workflow.scheduled_workflows (org_id, next_run_at);
+  ON workflow.scheduled_workflows (org_id, last_run_at);
 
 CREATE INDEX IF NOT EXISTS idx_documents_versions_org_doc
   ON documents.document_versions (org_id, document_id);
@@ -66,16 +66,16 @@ CREATE INDEX IF NOT EXISTS idx_erp_gst_reconciliations_org_period
   ON erp.gst_reconciliations (org_id, return_period);
 
 CREATE INDEX IF NOT EXISTS idx_erp_fiscal_years_org_start
-  ON erp.fiscal_years (org_id, year_start);
+  ON erp.fiscal_years (org_id, start_date);
 
 CREATE INDEX IF NOT EXISTS idx_erp_inventory_adjustments_org_item
   ON erp.inventory_adjustments (org_id, item_id);
 
 CREATE INDEX IF NOT EXISTS idx_erp_compliance_rules_org
-  ON erp.compliance_rules (org_id, rule_code);
+  ON erp.compliance_rules (org_id, compliance_type_id);
 
 CREATE INDEX IF NOT EXISTS idx_erp_compliance_reminders_org_due
-  ON erp.compliance_reminders (org_id, due_date);
+  ON erp.compliance_reminders (org_id, reminder_date);
 
 CREATE INDEX IF NOT EXISTS idx_erp_tds_rules_org_section
   ON erp.tds_rules (org_id, section_code);
@@ -84,7 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_erp_tds_challans_org_period
   ON erp.tds_challans (org_id, financial_year, quarter);
 
 CREATE INDEX IF NOT EXISTS idx_erp_tds_returns_org_period
-  ON erp.tds_returns (org_id, financial_year, quarter);
+  ON erp.tds_returns (org_id, return_period);
 
 CREATE INDEX IF NOT EXISTS idx_erp_expense_policy_violations_org
   ON erp.expense_policy_violations (org_id, claim_id);
@@ -96,7 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_preferences_org_user
   ON notifications.preferences (org_id, user_id);
 
 CREATE INDEX IF NOT EXISTS idx_public_journal_entries_org
-  ON public.journal_entries (org_id, created_at DESC);
+  ON public.journal_entries (org_id, entry_date DESC);
 
-CREATE INDEX IF NOT EXISTS idx_public_roles_org
-  ON public.roles (org_id);
+CREATE INDEX IF NOT EXISTS idx_core_roles_org
+  ON core.roles (org_id);

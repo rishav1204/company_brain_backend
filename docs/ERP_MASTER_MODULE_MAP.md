@@ -8,6 +8,8 @@
 - Platform architecture: [`../Readme_Architecture.md`](../Readme_Architecture.md)
 - Existing backend (Finance OS): [`BACKEND_ARCHITECTURE.md`](BACKEND_ARCHITECTURE.md)
 - UI integration guide: [`../backend_documentation.md`](../backend_documentation.md)
+- **Frontend architecture bible:** [`FRONTEND_ARCHITECTURE.md`](FRONTEND_ARCHITECTURE.md)
+- **Frontend modules reference (APIs, screens, components):** [`FRONTEND_MODULES_REFERENCE.md`](FRONTEND_MODULES_REFERENCE.md)
 - API contracts (v1): [`pkg/contracts/api_contracts.md`](pkg/contracts/api_contracts.md)
 
 ---
@@ -1180,7 +1182,8 @@ When you request implementation of a module, we will add a section (or file `ERP
 | M26 | Workflow Intelligence | 6 | 4 | **Done** (see M26_workflow_intelligence.md) |
 | M27 | Memory System | 6 | 4 | **Done** (see M27_memory.md) |
 | M28 | Graph Engine | 6 | 4 | **Done** (see M28_graph.md) |
-| M29 | AI Agents | 6 | 4 | **Done** (see M29_agents.md) |
+| M29 | AI Agents | 6 | 4 | **Done** (see M29_agents.md) — compatibility shim for M38 |
+| M38 | Platform AI Runtime | 6 | 4 | **Phase 1** (see M38_platform_ai_runtime.md) |
 | M30 | Forecasting | 6 | 5 | **Done** (see M30_forecasting.md) |
 | M31 | Reporting | 7 | 2+ | **Done** |
 | M32 | Analytics & BI | 7 | 4–5 | **Done** |
@@ -1196,7 +1199,7 @@ When you request implementation of a module, we will add a section (or file `ERP
 
 | Date | Change |
 |------|--------|
-| 2026-06-22 | M37 Billing Engine — subscriptions, entitlements, usage quotas, AI credits, guard integration |
+| 2026-06-25 | M38 Platform AI Runtime — goal planner, execution graph, copilot API, event triggers (Phase 1) |
 | 2026-06-22 | Architecture sync: `modules/` layout documented; M11 voucher deferred; M21 `/compliance` alias fixed; tax compliance at `/tax/compliance`; IAM MFA/API keys marked done; YAML config wired to Settings; legacy route migration plan |
 | 2026-06-20 | M36 API + Webhook Platform — partner gateway, unified webhooks, idempotency, accounting connector stubs |
 | 2026-06-20 | M35 Multi-Entity Consolidation — entity hierarchy, intercompany, elimination, consolidated reporting |

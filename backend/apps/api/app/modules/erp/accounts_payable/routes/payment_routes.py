@@ -96,20 +96,10 @@ def list_payments(context=Depends(require_ap_read), status: str | None = Query(d
     return {"request_id": context.request_id, "items": items}
 
 
-@router.post("/payments/propose-schedule")
-def propose_payment_schedule(request: PaymentScheduleProposalRequest, context=Depends(require_ap_admin)) -> dict:
-    item = payment_scheduler_service.propose_schedule(
-        context.org_id,
-        cash_available=request.cash_available,
-        as_of_date=request.as_of_date,
-    )
-    return {"request_id": context.request_id, "item": item}
-
-
 @router.get("/payments/recommendations")
 def payment_recommendations(
-    context=Depends(require_ap_admin),
-    cash_available: float = Query(gt=0),
+    context=Depends(require_ap_read),
+    cash_available: float | None = Query(default=None, gt=0),
     as_of_date: str | None = Query(default=None),
 ) -> dict:
     item = payment_scheduler_service.payment_recommendations(
@@ -126,6 +116,16 @@ def payment_recommendations_post(
     context=Depends(require_ap_admin),
 ) -> dict:
     item = payment_scheduler_service.payment_recommendations(
+        context.org_id,
+        cash_available=request.cash_available,
+        as_of_date=request.as_of_date,
+    )
+    return {"request_id": context.request_id, "item": item}
+
+
+@router.post("/payments/propose-schedule")
+def propose_payment_schedule(request: PaymentScheduleProposalRequest, context=Depends(require_ap_admin)) -> dict:
+    item = payment_scheduler_service.propose_schedule(
         context.org_id,
         cash_available=request.cash_available,
         as_of_date=request.as_of_date,

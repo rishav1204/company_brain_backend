@@ -954,6 +954,52 @@ def _consume_agents_trigger(envelope: dict) -> None:
         pass
 
 
+def _consume_goal_triggers(envelope: dict) -> None:
+    """M38: event-driven goals via Platform AI Runtime GoalManager."""
+    from app.modules.finance_os.platform_ai_runtime.events.event_listener import consume_goal_trigger
+
+    try:
+        consume_goal_trigger(envelope)
+    except Exception:
+        pass
+
+
+def _consume_m38_scheduler(envelope: dict) -> None:
+    """M38 Phase 4: proactive goals from scheduler ticks."""
+    event_type = str(envelope.get("event_type", ""))
+    if event_type not in {
+        "scheduler.collections.daily",
+        "scheduler.treasury.daily",
+        "scheduler.compliance.daily",
+    }:
+        return
+    org_id = str(envelope.get("org_id", ""))
+    if not org_id:
+        return
+    try:
+        from app.modules.platform.billing.billing_hooks import gate_ai_event
+
+        if not gate_ai_event(org_id, feature="agents", operation_code="agent_execution"):
+            return
+    except Exception:
+        pass
+    try:
+        from app.modules.finance_os.platform_ai_runtime.goals.goal_manager import GOAL_TRIGGER_MAP, goal_manager
+
+        template_key = GOAL_TRIGGER_MAP.get(event_type)
+        if not template_key:
+            return
+        message = goal_manager.template_message(template_key, envelope.get("payload") or {})
+        goal_manager.create_or_resume(
+            org_id,
+            title=message[:200],
+            message=message,
+            trigger_type="scheduler",
+        )
+    except Exception:
+        pass
+
+
 def _consume_forecasting_refresh(envelope: dict) -> None:
     """M30: refresh forecasts on posted/reconciled events (debounced per org)."""
     event_type = str(envelope.get("event_type", ""))

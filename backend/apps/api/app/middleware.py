@@ -1,3 +1,6 @@
+import logging
+import time
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse, Response
@@ -6,6 +9,8 @@ from app.core.config import settings
 from app.services.metrics import metrics_store
 from app.services.rate_limiter import rate_limiter
 from app.services.trace import trace_span
+
+logger = logging.getLogger(__name__)
 
 _PUBLIC_PATHS = {
     "/health",
@@ -70,18 +75,29 @@ class RequestMiddleware(BaseHTTPMiddleware):
         org_id = request.headers.get("x-org-id")
         if not org_id:
             authorization = request.headers.get("authorization", "")
+            if not authorization.lower().startswith("bearer "):
+                cookie_token = request.cookies.get("cb_access_token") or request.cookies.get("access_token")
+                if cookie_token and str(cookie_token).strip():
+                    authorization = f"Bearer {str(cookie_token).strip()}"
+            if not authorization.lower().startswith("bearer "):
+                token = request.query_params.get("access_token") or request.query_params.get("token")
+                if token and str(token).strip():
+                    authorization = f"Bearer {str(token).strip()}"
             if authorization.lower().startswith("bearer "):
                 org_id = "token-org-scope"
         if not org_id:
             metrics_store.incr_request_error()
             return JSONResponse(status_code=401, content={"detail": "Missing authenticated org or bearer token"})
 
+        billing_ms = 0.0
         if org_id != "token-org-scope":
             try:
                 from app.modules.platform.billing.exceptions import BillingDenied
-                from app.modules.platform.billing.services.usage_service import usage_service
+                from app.services.cache.api_quota_cache import check_and_increment
 
-                usage_service.check_quota(org_id, "api_calls_monthly", increment=1)
+                billing_start = time.perf_counter()
+                check_and_increment(org_id)
+                billing_ms = (time.perf_counter() - billing_start) * 1000
             except BillingDenied as exc:
                 metrics_store.incr_request_error()
                 return JSONResponse(
@@ -103,19 +119,36 @@ class RequestMiddleware(BaseHTTPMiddleware):
             )
 
         metrics_store.incr_request()
+        started = time.perf_counter()
         try:
             with trace_span("http.request", path=request.url.path, method=request.method, org_hint=org_id):
                 response: Response = await call_next(request)
+            duration_ms = (time.perf_counter() - started) * 1000
             if response.status_code >= 400:
                 metrics_store.incr_request_error()
-            elif org_id and org_id != "token-org-scope":
+            else:
                 try:
-                    from app.modules.platform.billing.services.usage_service import usage_service
+                    from app.services.metrics.prometheus_exporter import record_http_request
 
-                    usage_service.record(org_id, "api_calls")
+                    record_http_request(
+                        request.method,
+                        request.url.path,
+                        response.status_code,
+                        duration_ms / 1000,
+                    )
                 except Exception:
                     pass
+            logger.info(
+                "http_request path=%s method=%s status=%s duration_ms=%.1f billing_ms=%.1f org_id=%s",
+                request.url.path,
+                request.method,
+                response.status_code,
+                duration_ms,
+                billing_ms,
+                org_id,
+            )
             response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
+            response.headers["X-Response-Time-Ms"] = f"{duration_ms:.1f}"
             return response
         except Exception:
             metrics_store.incr_request_error()

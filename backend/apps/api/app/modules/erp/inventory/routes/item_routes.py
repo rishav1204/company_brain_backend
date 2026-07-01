@@ -9,7 +9,8 @@ from app.modules.erp.inventory.services.item_service import item_service
 router = APIRouter()
 
 
-@router.post("/")
+@router.post("", include_in_schema=True)
+@router.post("/", include_in_schema=False)
 def create_item(request: ItemCreateRequest, context=Depends(require_inventory_create)) -> dict:
     try:
         item = item_service.create(
@@ -26,7 +27,8 @@ def create_item(request: ItemCreateRequest, context=Depends(require_inventory_cr
     return {"request_id": context.request_id, "item": item}
 
 
-@router.get("/")
+@router.get("", include_in_schema=True)
+@router.get("/", include_in_schema=False)
 def list_items(context=Depends(require_inventory_read), status: str | None = Query(default=None)) -> dict:
     items = item_service.list(context.org_id, status=status)
     return {"request_id": context.request_id, "items": items}

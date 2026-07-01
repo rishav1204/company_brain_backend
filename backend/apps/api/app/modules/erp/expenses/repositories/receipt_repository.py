@@ -109,6 +109,7 @@ class ReceiptRepository:
 
 class PolicyRepository:
     def list_active(self, org_id: str, *, expense_type: str | None = None, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -130,9 +131,9 @@ class PolicyRepository:
                         FROM erp.expense_policies
                         WHERE org_id = %s::uuid AND is_active = true
                         ORDER BY expense_type
-                    LIMIT %s
+                        LIMIT %s
                         """,
-                        (org_id,),
+                        (org_id, limit),
                     )
                 return [dict(r) for r in cur.fetchall()]
 
@@ -193,20 +194,26 @@ class AdvanceRepository:
                 )
                 return dict(cur.fetchone() or {"id": aid})
 
-    def list_open(self, org_id: str, *, employee_id: str, limit: int = 500) -> list[dict]:
+    def list_open(self, org_id: str, *, employee_id: str | None = None, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
+        clauses = ["org_id = %s::uuid", "status IN ('issued','partially_adjusted')"]
+        params: list = [org_id]
+        if employee_id:
+            clauses.append("employee_id = %s::uuid")
+            params.append(employee_id)
+        params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT id::text, advance_amount, settled_amount, status, issued_date::text
+                    f"""
+                    SELECT id::text, employee_id::text, advance_amount, settled_amount, status, issued_date::text
                     FROM erp.employee_advances
-                    WHERE org_id = %s::uuid AND employee_id = %s::uuid
-                      AND status IN ('issued','partially_adjusted')
+                    WHERE {' AND '.join(clauses)}
                     ORDER BY issued_date DESC
                     LIMIT %s
                     """,
-                    (org_id, employee_id),
+                    tuple(params),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

@@ -63,7 +63,8 @@ class RoleRepository:
                 cur.execute(
                     """
                     SELECT r.id::text AS role_id, r.name AS role_name, r.policy_context,
-                           ur.company_id::text AS company_id, ur.branch_id::text AS branch_id
+                           ur.company_id::text AS company_id, ur.branch_id::text AS branch_id,
+                           ur.department_id::text AS department_id
                     FROM core.user_roles ur
                     JOIN core.roles r ON r.id = ur.role_id
                     WHERE ur.org_id = %s::uuid AND ur.user_id = %s::uuid

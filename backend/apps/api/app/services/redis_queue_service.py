@@ -4,13 +4,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-import redis
 from redis.exceptions import RedisError
 
 from app.core.config import DEV_ORG_ID, settings
 from app.services.event_queue import event_queue
 from app.services.metrics import metrics_store
 from app.services.principal_context import build_principal
+from app.services.redis_client import get_redis_client
 
 
 @dataclass
@@ -22,10 +22,7 @@ class RedisQueueResult:
 
 class RedisQueueService:
     def __init__(self) -> None:
-        self.client: redis.Redis | None = None
-        redis_url = settings.redis_url.strip()
-        if redis_url:
-            self.client = redis.Redis.from_url(redis_url, decode_responses=True)
+        self.client = get_redis_client()
         self.main_queue = settings.queue_main_name
         self.dlq_queue = settings.queue_dlq_name
         self.processed_ttl_seconds = 24 * 3600

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from psycopg.errors import UniqueViolation
 from psycopg.types.json import Json
 
 from app.services.db import get_db_conn, set_rls_org
@@ -23,6 +24,23 @@ class DocumentRepository:
         except Exception:
             return False
 
+    def get_by_checksum(self, org_id: str, *, checksum_hash: str, document_type: str) -> dict | None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text, document_type, file_name, mime_type, storage_path, checksum_hash,
+                           status, file_size, metadata, created_at::text
+                    FROM documents.documents
+                    WHERE org_id = %s::uuid AND checksum_hash = %s AND document_type = %s
+                    LIMIT 1
+                    """,
+                    (org_id, checksum_hash, document_type),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
     def create_document(
         self,
         org_id: str,
@@ -37,41 +55,62 @@ class DocumentRepository:
         metadata: dict | None = None,
         malware_scan_status: str = "pending",
         retention_until: str | None = None,
-    ) -> dict:
+    ) -> tuple[dict, bool]:
+        """Insert a document. Returns (row, is_duplicate_replay)."""
         doc_id = str(uuid4())
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO documents.documents (
-                        id, org_id, document_type, file_name, mime_type, storage_path,
-                        checksum_hash, uploaded_by, status, file_size, metadata, malware_scan_status, retention_until,
-                        original_storage_path, current_storage_path, current_version_number
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO documents.documents (
+                            id, org_id, document_type, file_name, mime_type, storage_path,
+                            checksum_hash, uploaded_by, status, file_size, metadata, malware_scan_status, retention_until,
+                            original_storage_path, current_storage_path, current_version_number
+                        )
+                        VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s::uuid, 'uploaded', %s, %s::jsonb, %s, %s::timestamptz,
+                                %s, %s, 1)
+                        RETURNING id::text, document_type, file_name, mime_type, storage_path, checksum_hash,
+                                  status, file_size, created_at::text
+                        """,
+                        (
+                            doc_id,
+                            org_id,
+                            document_type,
+                            file_name,
+                            mime_type,
+                            storage_path,
+                            checksum_hash,
+                            uploaded_by,
+                            file_size,
+                            Json(metadata or {}),
+                            malware_scan_status,
+                            retention_until,
+                            storage_path,
+                            storage_path,
+                        ),
                     )
-                    VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s::uuid, 'uploaded', %s, %s::jsonb, %s, %s::timestamptz,
-                            %s, %s, 1)
-                    RETURNING id::text, document_type, file_name, mime_type, storage_path, checksum_hash,
-                              status, file_size, created_at::text
-                    """,
-                    (
-                        doc_id,
-                        org_id,
-                        document_type,
-                        file_name,
-                        mime_type,
-                        storage_path,
-                        checksum_hash,
-                        uploaded_by,
-                        file_size,
-                        Json(metadata or {}),
-                        malware_scan_status,
-                        retention_until,
-                        storage_path,
-                        storage_path,
-                    ),
-                )
-                return dict(cur.fetchone() or {})
+                    return dict(cur.fetchone() or {}), False
+                except UniqueViolation as exc:
+                    if "documents_org_id_checksum_hash_document_type_key" not in str(exc):
+                        raise
+                    conn.rollback()
+                    set_rls_org(conn, org_id)
+                    cur.execute(
+                        """
+                        SELECT id::text, document_type, file_name, mime_type, storage_path, checksum_hash,
+                               status, file_size, metadata, created_at::text
+                        FROM documents.documents
+                        WHERE org_id = %s::uuid AND checksum_hash = %s AND document_type = %s
+                        LIMIT 1
+                        """,
+                        (org_id, checksum_hash, document_type),
+                    )
+                    existing = cur.fetchone()
+                    if not existing:
+                        raise
+                    return dict(existing), True
 
     def get_document(self, org_id: str, document_id: str) -> dict | None:
         with get_db_conn() as conn:

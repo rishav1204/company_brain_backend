@@ -36,11 +36,13 @@ class FiscalYearRepository:
                 return dict(cur.fetchone() or {"id": yid})
 
     def list(self, org_id: str, *, company_id: str | None = None, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         where = ["org_id = %s::uuid"]
         params: list = [org_id]
         if company_id:
             where.append("company_id = %s::uuid")
             params.append(company_id)
+        params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:

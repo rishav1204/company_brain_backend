@@ -55,6 +55,7 @@ class VendorBankRepository:
                 return dict(row) if row else None
 
     def list_by_vendor(self, org_id: str, *, vendor_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -66,7 +67,7 @@ class VendorBankRepository:
                     ORDER BY is_primary DESC, created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, vendor_id),
+                    (org_id, vendor_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

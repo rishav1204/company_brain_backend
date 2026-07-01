@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 
 class EventRateLimitService:
@@ -10,15 +11,7 @@ class EventRateLimitService:
         self._memory: dict[str, list[float]] = {}
 
     def _redis_client(self):
-        try:
-            import redis
-
-            url = settings.redis_url.strip()
-            if not url:
-                return None
-            return redis.Redis.from_url(url, decode_responses=True)
-        except Exception:
-            return None
+        return get_redis_client()
 
     def allow_publish(self, org_id: str) -> tuple[bool, str | None]:
         limit = settings.event_publish_rate_limit_per_minute

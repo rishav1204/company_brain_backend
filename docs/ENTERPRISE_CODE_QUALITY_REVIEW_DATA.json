@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-23T10:40:09.948861+00:00",
+  "generated_at": "2026-06-30T06:48:35.642738+00:00",
   "inventories": {
     "all_python": [
       "__init__.py",
@@ -27,6 +27,7 @@
       "api/routes/workflows.py",
       "core/__init__.py",
       "core/config.py",
+      "core/exception_handlers.py",
       "core/request_context.py",
       "core/security_validation.py",
       "core/yaml_config.py",
@@ -79,6 +80,7 @@
       "modules/core/iam/services/access_control.py",
       "modules/core/iam/services/api_key_auth_service.py",
       "modules/core/iam/services/approval_gate_service.py",
+      "modules/core/iam/services/auth_cookies.py",
       "modules/core/iam/services/auth_service.py",
       "modules/core/iam/services/branch_scope_service.py",
       "modules/core/iam/services/finance_route_guard.py",
@@ -96,6 +98,7 @@
       "modules/core/iam/services/policy_evaluator.py",
       "modules/core/iam/services/policy_rules_service.py",
       "modules/core/iam/services/rbac_service.py",
+      "modules/core/iam/services/refresh_grace.py",
       "modules/core/iam/services/session_service.py",
       "modules/core/iam/services/token_revocation.py",
       "modules/core/iam/tests/conftest.py",
@@ -1171,6 +1174,46 @@
       "modules/finance_os/memory/services/memory_writer_service.py",
       "modules/finance_os/memory/services/retrieval_service.py",
       "modules/finance_os/memory/tests/test_memory_m27.py",
+      "modules/finance_os/platform_ai_runtime/__init__.py",
+      "modules/finance_os/platform_ai_runtime/context/__init__.py",
+      "modules/finance_os/platform_ai_runtime/context/answer_synthesizer.py",
+      "modules/finance_os/platform_ai_runtime/context/context_bridge.py",
+      "modules/finance_os/platform_ai_runtime/context/context_compressor.py",
+      "modules/finance_os/platform_ai_runtime/context/context_planner.py",
+      "modules/finance_os/platform_ai_runtime/context/context_ranker.py",
+      "modules/finance_os/platform_ai_runtime/context/entity_resolver.py",
+      "modules/finance_os/platform_ai_runtime/context/intent_engine.py",
+      "modules/finance_os/platform_ai_runtime/context/platform_context_engine.py",
+      "modules/finance_os/platform_ai_runtime/context/prompt_assembler.py",
+      "modules/finance_os/platform_ai_runtime/context/retrieval_orchestrator.py",
+      "modules/finance_os/platform_ai_runtime/context/schemas/__init__.py",
+      "modules/finance_os/platform_ai_runtime/context/schemas/context_schema.py",
+      "modules/finance_os/platform_ai_runtime/context/working_memory.py",
+      "modules/finance_os/platform_ai_runtime/context/world_state_builder.py",
+      "modules/finance_os/platform_ai_runtime/engine/execution_graph.py",
+      "modules/finance_os/platform_ai_runtime/engine/goal_planner.py",
+      "modules/finance_os/platform_ai_runtime/engine/observer.py",
+      "modules/finance_os/platform_ai_runtime/engine/rollback_manager.py",
+      "modules/finance_os/platform_ai_runtime/engine/self_correction.py",
+      "modules/finance_os/platform_ai_runtime/events/event_listener.py",
+      "modules/finance_os/platform_ai_runtime/goals/goal_manager.py",
+      "modules/finance_os/platform_ai_runtime/repositories/goal_repository.py",
+      "modules/finance_os/platform_ai_runtime/routes/router.py",
+      "modules/finance_os/platform_ai_runtime/routes/runtime_routes.py",
+      "modules/finance_os/platform_ai_runtime/schemas/runtime_schema.py",
+      "modules/finance_os/platform_ai_runtime/services/executor.py",
+      "modules/finance_os/platform_ai_runtime/services/runtime_service.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_ai_runtime_m38.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_ai_runtime_phases_3_7.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_ai_runtime_tools_phase2.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_context_engine.py",
+      "modules/finance_os/platform_ai_runtime/tools/__init__.py",
+      "modules/finance_os/platform_ai_runtime/tools/catalog.py",
+      "modules/finance_os/platform_ai_runtime/tools/catalog_draft.py",
+      "modules/finance_os/platform_ai_runtime/tools/catalog_read.py",
+      "modules/finance_os/platform_ai_runtime/tools/erp_tools.py",
+      "modules/finance_os/platform_ai_runtime/tools/registry.py",
+      "modules/finance_os/platform_ai_runtime/tools/tool_spec.py",
       "modules/finance_os/workflow_intelligence/__init__.py",
       "modules/finance_os/workflow_intelligence/ai/bottleneck_detector.py",
       "modules/finance_os/workflow_intelligence/ai/optimization_advisor.py",
@@ -1322,6 +1365,7 @@
       "modules/platform/documents/tests/test_confidence_engine.py",
       "modules/platform/documents/tests/test_document_services.py",
       "modules/platform/documents/tests/test_extraction_validator.py",
+      "modules/platform/documents/tests/test_s3_storage.py",
       "modules/platform/documents/tests/test_upload_validator.py",
       "modules/platform/documents/validators/extraction_validator.py",
       "modules/platform/documents/validators/mime_validator.py",
@@ -1933,6 +1977,8 @@
       "modules/finance_os/memory/routes/memory_routes.py",
       "modules/finance_os/memory/routes/retrieval_routes.py",
       "modules/finance_os/memory/routes/router.py",
+      "modules/finance_os/platform_ai_runtime/routes/router.py",
+      "modules/finance_os/platform_ai_runtime/routes/runtime_routes.py",
       "modules/finance_os/workflow_intelligence/routes/__init__.py",
       "modules/finance_os/workflow_intelligence/routes/analytics_routes.py",
       "modules/finance_os/workflow_intelligence/routes/bottleneck_routes.py",
@@ -2171,6 +2217,7 @@
       "modules/finance_os/memory/repositories/entry_repository.py",
       "modules/finance_os/memory/repositories/memory_store_repository.py",
       "modules/finance_os/memory/repositories/reference_repository.py",
+      "modules/finance_os/platform_ai_runtime/repositories/goal_repository.py",
       "modules/finance_os/workflow_intelligence/repositories/prediction_repository.py",
       "modules/finance_os/workflow_intelligence/repositories/recommendation_repository.py",
       "modules/finance_os/workflow_intelligence/repositories/snapshot_repository.py",
@@ -2249,6 +2296,9 @@
       "modules/finance_os/graph/schemas/graph_schema.py",
       "modules/finance_os/invoice_ai/schemas/invoice_ai_schema.py",
       "modules/finance_os/memory/schemas/memory_schema.py",
+      "modules/finance_os/platform_ai_runtime/context/schemas/__init__.py",
+      "modules/finance_os/platform_ai_runtime/context/schemas/context_schema.py",
+      "modules/finance_os/platform_ai_runtime/schemas/runtime_schema.py",
       "modules/finance_os/workflow_intelligence/schemas/workflow_intelligence_schema.py",
       "modules/platform/api_gateway/schemas/__init__.py",
       "modules/platform/api_gateway/schemas/gateway_schema.py",
@@ -2276,6 +2326,7 @@
       "modules/core/iam/services/access_control.py",
       "modules/core/iam/services/api_key_auth_service.py",
       "modules/core/iam/services/approval_gate_service.py",
+      "modules/core/iam/services/auth_cookies.py",
       "modules/core/iam/services/auth_service.py",
       "modules/core/iam/services/branch_scope_service.py",
       "modules/core/iam/services/finance_route_guard.py",
@@ -2293,6 +2344,7 @@
       "modules/core/iam/services/policy_evaluator.py",
       "modules/core/iam/services/policy_rules_service.py",
       "modules/core/iam/services/rbac_service.py",
+      "modules/core/iam/services/refresh_grace.py",
       "modules/core/iam/services/session_service.py",
       "modules/core/iam/services/token_revocation.py",
       "modules/erp/accounts_payable/services/aging_service.py",
@@ -2515,6 +2567,8 @@
       "modules/finance_os/memory/services/memory_summarization_service.py",
       "modules/finance_os/memory/services/memory_writer_service.py",
       "modules/finance_os/memory/services/retrieval_service.py",
+      "modules/finance_os/platform_ai_runtime/services/executor.py",
+      "modules/finance_os/platform_ai_runtime/services/runtime_service.py",
       "modules/finance_os/workflow_intelligence/services/approval_optimization_service.py",
       "modules/finance_os/workflow_intelligence/services/bottleneck_service.py",
       "modules/finance_os/workflow_intelligence/services/sla_prediction_service.py",
@@ -2695,6 +2749,10 @@
       "modules/finance_os/graph/tests/test_graph_m28.py",
       "modules/finance_os/invoice_ai/tests/test_invoice_ai_m25.py",
       "modules/finance_os/memory/tests/test_memory_m27.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_ai_runtime_m38.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_ai_runtime_phases_3_7.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_ai_runtime_tools_phase2.py",
+      "modules/finance_os/platform_ai_runtime/tests/test_platform_context_engine.py",
       "modules/finance_os/workflow_intelligence/tests/test_workflow_intelligence_m26.py",
       "modules/platform/api_gateway/tests/__init__.py",
       "modules/platform/api_gateway/tests/test_api_gateway_api_m36.py",
@@ -2704,6 +2762,7 @@
       "modules/platform/documents/tests/test_confidence_engine.py",
       "modules/platform/documents/tests/test_document_services.py",
       "modules/platform/documents/tests/test_extraction_validator.py",
+      "modules/platform/documents/tests/test_s3_storage.py",
       "modules/platform/documents/tests/test_upload_validator.py",
       "modules/platform/events/tests/test_event_service.py",
       "modules/platform/governance/tests/test_audit_service.py",
@@ -2862,7 +2921,7 @@
     "all": [
       {
         "file": "core/config.py",
-        "line": 250,
+        "line": 255,
         "kind": "stub_keyword",
         "snippet": "if mode == \"stub\":"
       },
@@ -3095,6 +3154,12 @@
         "snippet": "# Create a workflow instance without executing a full workflow definition (safe for now)."
       },
       {
+        "file": "modules/finance_os/platform_ai_runtime/tools/erp_tools.py",
+        "line": 57,
+        "kind": "stub_keyword",
+        "snippet": "return {\"status\": \"completed\", \"target\": \"inventory\", \"detail\": \"deactivate_item\", \"note\": \"Item deactivation stub \u2014 man"
+      },
+      {
         "file": "modules/finance_os/forecasting/pipelines/forecast_refresh_pipeline.py",
         "line": 80,
         "kind": "placeholder",
@@ -3111,6 +3176,12 @@
         "line": 48,
         "kind": "stub_keyword",
         "snippet": "\"summary\": {\"total_tax\": 0, \"transaction_count\": 0, \"note\": \"Salary TDS stub \u2014 integrate payroll\"},"
+      },
+      {
+        "file": "modules/erp/journals/repositories/recurring_repository.py",
+        "line": 77,
+        "kind": "placeholder",
+        "snippet": "# limit is a clamped int \u2014 safe to inline and avoids placeholder mismatch"
       },
       {
         "file": "modules/erp/inventory/ai/demand_predictor.py",
@@ -3162,7 +3233,7 @@
     "large_files": [
       {
         "file": "modules/platform/events/consumers/handlers/legacy_handlers.py",
-        "lines": 2567
+        "lines": 2613
       },
       {
         "file": "services/legacy_repos/legacy_repositories.py",
@@ -3170,7 +3241,11 @@
       },
       {
         "file": "services/langgraph_runner.py",
-        "lines": 638
+        "lines": 677
+      },
+      {
+        "file": "modules/finance_os/platform_ai_runtime/services/runtime_service.py",
+        "lines": 593
       },
       {
         "file": "modules/erp/compliance/repositories/compliance_repository.py",
@@ -3218,11 +3293,11 @@
         "file": "modules/finance_os/agents/pipelines/agent_orchestration_pipeline.py",
         "line": 64,
         "name": "_run_inner",
-        "lines": 160
+        "lines": 174
       },
       {
         "file": "modules/platform/events/consumers/handlers/legacy_handlers.py",
-        "line": 1475,
+        "line": 1521,
         "name": "_consume_treasury_events",
         "lines": 158
       },
@@ -3231,6 +3306,18 @@
         "line": 121,
         "name": "issue_invoice",
         "lines": 152
+      },
+      {
+        "file": "modules/finance_os/platform_ai_runtime/services/runtime_service.py",
+        "line": 443,
+        "name": "_execute_loop",
+        "lines": 148
+      },
+      {
+        "file": "modules/finance_os/platform_ai_runtime/services/runtime_service.py",
+        "line": 70,
+        "name": "_chat_inner",
+        "lines": 142
       },
       {
         "file": "services/action_service.py",
@@ -3302,18 +3389,24 @@
         "file": "services/event_consumers_router.py",
         "line": 21,
         "name": "consume_event",
-        "lines": 115
+        "lines": 117
       },
       {
         "file": "services/oidc_service.py",
-        "line": 171,
+        "line": 168,
         "name": "issue_api_session",
         "lines": 114
       },
       {
         "file": "modules/platform/events/consumers/handlers/legacy_handlers.py",
-        "line": 2335,
+        "line": 2381,
         "name": "_consume_tax_events",
+        "lines": 113
+      },
+      {
+        "file": "modules/finance_os/platform_ai_runtime/engine/goal_planner.py",
+        "line": 16,
+        "name": "_heuristic_plan",
         "lines": 113
       },
       {
@@ -3335,28 +3428,10 @@
         "lines": 109
       },
       {
-        "file": "modules/core/iam/services/access_control.py",
-        "line": 54,
-        "name": "_evaluate_access_inner",
+        "file": "modules/finance_os/platform_ai_runtime/context/retrieval_orchestrator.py",
+        "line": 47,
+        "name": "fetch",
         "lines": 108
-      },
-      {
-        "file": "services/canonicalization_service.py",
-        "line": 70,
-        "name": "normalize_connector_payload",
-        "lines": 105
-      },
-      {
-        "file": "modules/erp/inventory/services/issue_service.py",
-        "line": 19,
-        "name": "issue",
-        "lines": 104
-      },
-      {
-        "file": "modules/erp/tax/services/e_invoice_service.py",
-        "line": 57,
-        "name": "generate",
-        "lines": 103
       }
     ],
     "silent_except_exception_pass": [],
@@ -3368,7 +3443,7 @@
       "name": "IAM",
       "path": "modules/core/iam",
       "completion_pct": 94.0,
-      "services": 23,
+      "services": 25,
       "routes": 13,
       "repos": 7,
       "tests": 7,
@@ -3434,7 +3509,7 @@
       "services": 13,
       "routes": 11,
       "repos": 3,
-      "tests": 4,
+      "tests": 5,
       "stub_files": [
         "modules/platform/documents/ai/invoice_extractor.py",
         "modules/platform/documents/ai/ledger_suggester.py",
@@ -3494,14 +3569,16 @@
     "M10": {
       "name": "Journal Engine",
       "path": "modules/erp/journals",
-      "completion_pct": 85.0,
+      "completion_pct": 84.2,
       "services": 11,
       "routes": 6,
       "repos": 5,
       "tests": 9,
-      "stub_files": [],
+      "stub_files": [
+        "modules/erp/journals/repositories/recurring_repository.py"
+      ],
       "unbounded_repos": [],
-      "production_ready": "yes"
+      "production_ready": "conditional"
     },
     "M11": {
       "name": "Voucher Engine",
@@ -3845,7 +3922,7 @@
     }
   },
   "scores": {
-    "code_quality": 9.4,
+    "code_quality": 9.2,
     "testability": 9.0,
     "maintainability": 10.0,
     "avg_module_completion_pct": 79.3

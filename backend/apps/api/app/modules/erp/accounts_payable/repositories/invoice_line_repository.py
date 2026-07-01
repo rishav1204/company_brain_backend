@@ -41,6 +41,7 @@ class InvoiceLineRepository:
                 return out
 
     def list_by_invoice(self, org_id: str, *, invoice_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -53,7 +54,7 @@ class InvoiceLineRepository:
                     ORDER BY created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, invoice_id),
+                    (org_id, invoice_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

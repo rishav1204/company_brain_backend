@@ -29,8 +29,8 @@ class InventoryService:
             "weighted_avg_cost": 0,
         }
 
-    def list_balances(self, org_id: str, *, warehouse_id: str | None = None) -> list[dict]:
-        return balance_repository.list_all(org_id, warehouse_id=warehouse_id)
+    def list_balances(self, org_id: str, *, warehouse_id: str | None = None, limit: int = 500) -> list[dict]:
+        return balance_repository.list_all(org_id, warehouse_id=warehouse_id, limit=limit)
 
     def _apply_receipt(
         self,

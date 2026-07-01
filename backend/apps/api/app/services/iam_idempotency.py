@@ -1,14 +1,12 @@
-import redis
 from redis.exceptions import RedisError
 
-from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 
 class IamIdempotencyService:
     def __init__(self) -> None:
         self.prefix = "idempotency:iam"
-        redis_url = settings.redis_url.strip()
-        self.client = redis.Redis.from_url(redis_url, decode_responses=True) if redis_url else None
+        self.client = get_redis_client()
 
     def _key(self, scope: str, org_id: str, idempotency_key: str) -> str:
         return f"{self.prefix}:{scope}:{org_id}:{idempotency_key}"

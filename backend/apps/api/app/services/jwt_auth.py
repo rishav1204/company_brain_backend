@@ -4,9 +4,9 @@ from time import time
 import jwt
 from jwt import InvalidTokenError
 from jwt import PyJWKClient
-import redis
 
 from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 
 @dataclass
@@ -28,11 +28,13 @@ def _revocation_key(jti: str) -> str:
 def _is_token_revoked(jti: str) -> bool:
     if not jti.strip():
         return False
+    client = get_redis_client()
+    if client is None:
+        return False
     try:
-        client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
         return bool(client.get(_revocation_key(jti)))
     except Exception:
-        if settings.jwt_revocation_fail_closed:
+        if settings.jwt_revocation_fail_closed and settings.app_env.lower() == "prod":
             return True
         return False
 

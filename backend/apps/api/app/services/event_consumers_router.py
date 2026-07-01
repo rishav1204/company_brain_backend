@@ -104,6 +104,8 @@ def consume_event(queue: str, envelope: dict) -> None:
     finance_os_consumer.consume_memory_ingestion(envelope)
     finance_os_consumer.consume_graph_ingestion(envelope)
     finance_os_consumer.consume_agents_trigger(envelope)
+    finance_os_consumer.consume_goal_triggers(envelope)
+    finance_os_consumer.consume_m38_scheduler(envelope)
     finance_os_consumer.consume_forecasting_refresh(envelope)
     finance_os_consumer.consume_reporting_refresh(envelope)
     finance_os_consumer.consume_analytics_refresh(envelope)

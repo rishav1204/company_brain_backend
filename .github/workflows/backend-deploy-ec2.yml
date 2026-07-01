@@ -1,0 +1,86 @@
+name: backend-deploy-ec2
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: AWS region
+        required: true
+        default: ap-south-1
+      ec2_instance_id:
+        description: EC2 instance ID for SSM deploy
+        required: true
+
+env:
+  ECR_REPOSITORY: company-brain-finance-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ github.event.inputs.aws_region }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repository exists
+        run: |
+          aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" 2>/dev/null \
+            || aws ecr create-repository --repository-name "${{ env.ECR_REPOSITORY }}"
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f backend/Dockerfile -t "${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}" backend
+          docker tag "${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}" "${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:latest"
+          docker push "${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:${IMAGE_TAG}"
+          docker push "${ECR_REGISTRY}/${{ env.ECR_REPOSITORY }}:latest"
+
+      - name: Deploy to EC2 via SSM
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          INSTANCE_ID: ${{ github.event.inputs.ec2_instance_id }}
+          AWS_REGION: ${{ github.event.inputs.aws_region }}
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          region = os.environ["AWS_REGION"]
+          registry = os.environ["ECR_REGISTRY"]
+          repo = os.environ["ECR_REPOSITORY"]
+          tag = os.environ["IMAGE_TAG"]
+          image = f"{registry}/{repo}:{tag}"
+          script = f"""#!/bin/bash
+          set -euo pipefail
+          APP_DIR=/opt/company-brain
+          aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin {registry}
+          export FINANCE_API_IMAGE="{image}"
+          cd "${{APP_DIR}}/backend/deploy/ec2"
+          docker compose -f docker-compose.prod.yml up -d
+          docker image prune -f
+          curl -sf http://localhost:8000/health
+          """
+          with open("/tmp/deploy-ec2-ssm.json", "w", encoding="utf-8") as f:
+              json.dump({"commands": [script]}, f)
+          PY
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file:///tmp/deploy-ec2-ssm.json \
+            --query "Command.CommandId" \
+            --output text)
+          aws ssm wait command-executed --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}"
+          aws ssm get-command-invocation --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}"

@@ -6,10 +6,12 @@ def evaluate_branch_scope(
     attrs: dict | None,
     object_branch_id: str | None,
     object_company_id: str | None,
+    object_department_id: str | None = None,
 ) -> PolicyDecision | None:
     attrs = attrs or {}
     allowed_branches = attrs.get("allowed_branch_ids")
     allowed_companies = attrs.get("allowed_company_ids")
+    allowed_departments = attrs.get("allowed_department_ids")
     if isinstance(allowed_branches, list) and allowed_branches:
         if not object_branch_id or str(object_branch_id) not in {str(b) for b in allowed_branches}:
             return PolicyDecision(
@@ -23,5 +25,12 @@ def evaluate_branch_scope(
                 allowed=False,
                 reason="company_scope_denied",
                 checks=["company_abac_denied"],
+            )
+    if isinstance(allowed_departments, list) and allowed_departments:
+        if not object_department_id or str(object_department_id) not in {str(d) for d in allowed_departments}:
+            return PolicyDecision(
+                allowed=False,
+                reason="department_scope_denied",
+                checks=["department_abac_denied"],
             )
     return None

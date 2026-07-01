@@ -1,12 +1,12 @@
 import json
 from dataclasses import dataclass
 
-import redis
 from redis.exceptions import RedisError
 
 from app.core.config import settings
 from app.services.event_topology import queue_dlq_name, route_for_envelope
 from app.services.metrics import metrics_store
+from app.services.redis_client import get_redis_client
 
 
 @dataclass
@@ -20,15 +20,15 @@ class EventQueueResult:
 
 class EventQueue:
     def __init__(self) -> None:
-        self.client: redis.Redis | None = None
         redis_url = settings.redis_url.strip()
         if not redis_url:
             if settings.app_env.lower() != "dev":
                 raise RuntimeError("REDIS_URL is required outside dev")
+            self.client = None
             return
         if settings.redis_require_tls and not redis_url.lower().startswith("rediss://"):
             raise RuntimeError("REDIS_REQUIRE_TLS=true requires REDIS_URL to use rediss://")
-        self.client = redis.Redis.from_url(redis_url, decode_responses=True)
+        self.client = get_redis_client()
 
     def publish(self, envelope: dict) -> EventQueueResult:
         from app.modules.platform.events.queues.queue_manager import queue_manager

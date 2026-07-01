@@ -8,33 +8,24 @@ from uuid import uuid4
 from psycopg.types.json import Json
 
 from app.services.db import get_db_conn, set_rls_org
+from app.services.schema_registry import table_ready
 
 
 class PolicyRepository:
     def schema_ready(self) -> bool:
-        try:
-            with get_db_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT 1 FROM information_schema.tables
-                        WHERE table_schema = 'governance' AND table_name = 'policy_rules'
-                        LIMIT 1
-                        """
-                    )
-                    return cur.fetchone() is not None
-        except Exception:
-            return False
+        return table_ready("governance", "policy_rules")
 
     def list_active(self, org_id: str, *, policy_type: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
         if not self.schema_ready():
             limit = clamp_limit(limit)
             return []
+        limit = clamp_limit(limit)
         clauses = ["org_id = %s::uuid", "is_active = TRUE"]
         params: list[Any] = [org_id]
         if policy_type:
             clauses.append("policy_type = %s")
             params.append(policy_type)
+        params.append(limit)
         where = " AND ".join(clauses)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)

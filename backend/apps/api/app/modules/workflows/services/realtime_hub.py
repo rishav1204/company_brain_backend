@@ -5,7 +5,7 @@ import threading
 from collections import defaultdict, deque
 from typing import Any
 
-from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 _MAX_EVENTS_PER_ORG = 500
 _REDIS_CHANNEL_PREFIX = "workflow:events:"
@@ -15,14 +15,7 @@ class WorkflowRealtimeHub:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._events: dict[str, deque[dict[str, Any]]] = defaultdict(lambda: deque(maxlen=_MAX_EVENTS_PER_ORG))
-        self._redis = None
-        if settings.redis_url.strip():
-            try:
-                import redis
-
-                self._redis = redis.Redis.from_url(settings.redis_url, decode_responses=True)
-            except Exception:
-                self._redis = None
+        self._redis = get_redis_client()
 
     def publish(self, org_id: str, event: dict[str, Any]) -> None:
         with self._lock:

@@ -169,6 +169,7 @@ class ClaimRepository:
                 return item
 
     def list_items(self, org_id: str, *, claim_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -181,7 +182,7 @@ class ClaimRepository:
                     ORDER BY expense_date
                     LIMIT %s
                     """,
-                    (org_id, claim_id),
+                    (org_id, claim_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

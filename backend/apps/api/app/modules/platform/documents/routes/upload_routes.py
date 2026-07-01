@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import build_request_context
@@ -111,17 +111,20 @@ def sign_cloudinary_upload(request: CloudinaryDirectUploadSignRequest, context=D
 
 @router.post("/uploads/cloudinary/finalize")
 def finalize_cloudinary_upload(request: CloudinaryFinalizeRequest, context=Depends(build_request_context)) -> dict:
-    item = document_service.finalize_cloudinary_upload(
-        context.org_id,
-        uploaded_by=context.user_id,
-        document_type=request.document_type,
-        file_name=request.file_name,
-        mime_type=request.mime_type,
-        file_size=request.file_size,
-        checksum_hash=request.checksum_hash,
-        resource_type=request.resource_type,
-        public_id=request.public_id,
-        secure_url=request.secure_url,
-        metadata=request.metadata,
-    )
+    try:
+        item = document_service.finalize_cloudinary_upload(
+            context.org_id,
+            uploaded_by=context.user_id,
+            document_type=request.document_type,
+            file_name=request.file_name,
+            mime_type=request.mime_type,
+            file_size=request.file_size,
+            checksum_hash=request.checksum_hash,
+            resource_type=request.resource_type,
+            public_id=request.public_id,
+            secure_url=request.secure_url,
+            metadata=request.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"request_id": context.request_id, "item": item}

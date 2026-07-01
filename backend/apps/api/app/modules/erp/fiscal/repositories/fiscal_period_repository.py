@@ -167,6 +167,7 @@ class ChecklistRepository:
         return count
 
     def list_for_period(self, org_id: str, *, period_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -177,7 +178,7 @@ class ChecklistRepository:
                     WHERE org_id = %s::uuid AND period_id = %s::uuid ORDER BY check_name
                     LIMIT %s
                     """,
-                    (org_id, period_id),
+                    (org_id, period_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

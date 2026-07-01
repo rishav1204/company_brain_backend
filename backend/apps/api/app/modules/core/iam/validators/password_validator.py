@@ -1,6 +1,7 @@
 import re
 
 _MIN_LENGTH = 12
+_SPECIAL = re.compile(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]")
 
 
 def validate_password_strength(password: str) -> None:
@@ -12,3 +13,5 @@ def validate_password_strength(password: str) -> None:
         raise ValueError("Password must include a lowercase letter")
     if not re.search(r"[0-9]", password):
         raise ValueError("Password must include a digit")
+    if not _SPECIAL.search(password):
+        raise ValueError("Password must include a special character")

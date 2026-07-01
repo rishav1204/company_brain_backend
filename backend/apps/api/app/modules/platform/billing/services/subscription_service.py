@@ -18,6 +18,12 @@ class SubscriptionService:
 
     def assign_plan(self, org_id: str, plan_key: str, *, status: str = "active") -> dict[str, Any]:
         row = billing_repository.upsert_org_subscription(org_id, plan_key=plan_key, status=status)
+        try:
+            from app.services.cache.api_quota_cache import invalidate_plan_limit
+
+            invalidate_plan_limit(org_id)
+        except Exception:
+            pass
         included = PLAN_INCLUDED_CREDITS.get(plan_key, 0)
         if billing_repository.schema_ready():
             from app.modules.platform.billing.services.credit_service import credit_service

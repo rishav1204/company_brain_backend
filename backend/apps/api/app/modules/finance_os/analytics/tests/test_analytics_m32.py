@@ -546,6 +546,23 @@ def test_trend_service(mock_schema, mock_repo) -> None:
 
 
 @patch("app.modules.finance_os.analytics.services.benchmark_service.benchmark_engine")
+@patch("app.modules.finance_os.analytics.services.benchmark_service.kpi_snapshot_repository")
+@patch("app.modules.finance_os.analytics.services.benchmark_service.analytics_schema_repository")
+def test_benchmark_service_list_all(mock_schema, mock_snap, mock_be) -> None:
+    from app.modules.finance_os.analytics.services.benchmark_service import benchmark_service
+
+    mock_schema.schema_ready.return_value = True
+    mock_snap.list.return_value = [
+        {"kpi_code": "collections.dso"},
+        {"kpi_code": "treasury.cash_runway_days"},
+    ]
+    mock_be.compare.side_effect = lambda org, kpi_code: {"kpi_code": kpi_code, "benchmarks": []}
+    items = benchmark_service.list("org")
+    assert len(items) == 2
+    assert items[0]["kpi_code"] == "collections.dso"
+
+
+@patch("app.modules.finance_os.analytics.services.benchmark_service.benchmark_engine")
 @patch("app.modules.finance_os.analytics.services.benchmark_service.analytics_schema_repository")
 def test_benchmark_service(mock_schema, mock_be) -> None:
     from app.modules.finance_os.analytics.services.benchmark_service import benchmark_service

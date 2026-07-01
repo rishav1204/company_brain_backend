@@ -7,11 +7,15 @@ def emit_ocr_requested(org_id: str, *, document_id: str, extraction_type: str = 
     event_bus.publish(
         event_type="ai.ocr.requested",
         org_id=org_id,
-        source="documents",
+        source="ai.runtime",
         trace_id="",
         entity_type="document",
         entity_id=document_id,
-        payload={"document_id": document_id, "extraction_type": extraction_type},
+        payload={
+            "document_id": document_id,
+            "extraction_type": extraction_type,
+            "triggered_by": "documents",
+        },
     )
 
 

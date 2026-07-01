@@ -592,6 +592,42 @@ def _runtime_payload(state: GraphRuntimeState) -> dict:
     }
 
 
+def _delegate_to_m38_runtime(
+    org_id: str,
+    agent_type: str,
+    trigger_type: str,
+    payload: dict,
+    principal_roles: list[str] | None = None,
+    principal_attrs: dict | None = None,
+) -> dict | None:
+    """M38 bridge: optional iterative runtime instead of linear 3-node langgraph."""
+    if not isinstance(payload, dict) or not payload.get("use_m38_runtime"):
+        return None
+    try:
+        from app.modules.finance_os.platform_ai_runtime.services.runtime_service import runtime_service
+
+        if not runtime_service.schema_ready():
+            return None
+        message = str(payload.get("user_message") or payload.get("query") or f"Run {agent_type} via M38 runtime")
+        resp = runtime_service.chat(
+            org_id,
+            message=message,
+            user_id=str((principal_attrs or {}).get("user_id") or "langgraph-m38"),
+            roles=principal_roles,
+            attrs=principal_attrs,
+            human_approved=bool(payload.get("human_approved")),
+        )
+        return {
+            "status": resp.status,
+            "executed_at": datetime.now(timezone.utc).isoformat(),
+            "proposed_actions": [],
+            "graph_runtime": {"delegated_to": "m38", "goal_run_id": resp.goal_run_id},
+            "m38": resp.model_dump(),
+        }
+    except Exception:
+        return None
+
+
 def run_langgraph_flow(
     org_id: str,
     agent_type: str,
@@ -600,6 +636,9 @@ def run_langgraph_flow(
     principal_roles: list[str] | None = None,
     principal_attrs: dict | None = None,
 ) -> dict:
+    delegated = _delegate_to_m38_runtime(org_id, agent_type, trigger_type, payload, principal_roles, principal_attrs)
+    if delegated is not None:
+        return delegated
     now = datetime.now(timezone.utc).isoformat()
     state = GraphRuntimeState(
         run_id=str(uuid4()),

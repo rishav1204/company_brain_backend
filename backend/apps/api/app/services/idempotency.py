@@ -1,15 +1,11 @@
-import redis
 from redis.exceptions import RedisError
 
-from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 
 class IdempotencyService:
     def __init__(self) -> None:
-        self.client: redis.Redis | None = None
-        redis_url = settings.redis_url.strip()
-        if redis_url:
-            self.client = redis.Redis.from_url(redis_url, decode_responses=True)
+        self.client = get_redis_client()
         self.prefix = "idempotency:workflow"
 
     def is_replay(self, workflow_id: str, key: str) -> bool:

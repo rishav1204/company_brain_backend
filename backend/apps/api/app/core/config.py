@@ -79,7 +79,7 @@ class Settings(BaseModel):
     redis_url: str = _env_or_yaml("REDIS_URL", "queue", "redis_url", default="redis://localhost:6379")
     postgres_dsn: str = _env_or_yaml("POSTGRES_DSN", "databases", "postgres", "dsn", default="")
     postgres_require_tls: bool = os.getenv("POSTGRES_REQUIRE_TLS", "true").lower() == "true"
-    postgres_pool_min: int = int(os.getenv("POSTGRES_POOL_MIN", "2"))
+    postgres_pool_min: int = int(os.getenv("POSTGRES_POOL_MIN", "5"))
     postgres_pool_max: int = int(os.getenv("POSTGRES_POOL_MAX", "20"))
     redis_stream_maxlen: int = int(os.getenv("REDIS_STREAM_MAXLEN", "100000"))
     redis_pool_max_connections: int = int(os.getenv("REDIS_POOL_MAX_CONNECTIONS", "20"))
@@ -188,6 +188,10 @@ class Settings(BaseModel):
     disable_dev_auth_routes_in_prod: bool = os.getenv("DISABLE_DEV_AUTH_ROUTES_IN_PROD", "true").lower() == "true"
     enable_dev_auth_routes: bool = os.getenv("ENABLE_DEV_AUTH_ROUTES", "false").lower() == "true"
     enable_worker_routes: bool = os.getenv("ENABLE_WORKER_ROUTES", "false").lower() == "true"
+    m38_context_engine_enabled: bool = os.getenv("M38_CONTEXT_ENGINE_ENABLED", "true").lower() == "true"
+    m38_read_answer_mode: bool = os.getenv("M38_READ_ANSWER_MODE", "true").lower() == "true"
+    m38_working_memory: bool = os.getenv("M38_WORKING_MEMORY", "true").lower() == "true"
+    m38_unified_copilot: bool = os.getenv("M38_UNIFIED_COPILOT", "false").lower() == "true"
     dev_use_postgres: bool = os.getenv("DEV_USE_POSTGRES", "false").lower() == "true"
     allow_direct_ap_execute: bool = os.getenv("ALLOW_DIRECT_AP_EXECUTE", "false").lower() == "true"
     scheduler_org_ids: str = os.getenv("SCHEDULER_ORG_IDS", DEV_ORG_ID)
@@ -203,6 +207,7 @@ class Settings(BaseModel):
     cloudinary_api_secret: str = os.getenv("CLOUDINARY_API_SECRET", "")
     cloudinary_secure: bool = os.getenv("CLOUDINARY_SECURE", "true").lower() == "true"
     cloudinary_upload_preset: str = os.getenv("CLOUDINARY_UPLOAD_PRESET", "")
+    storage_provider: str = os.getenv("STORAGE_PROVIDER", "auto")  # auto|s3|cloudinary
     documents_bucket_prefix: str = os.getenv("DOCUMENTS_BUCKET_PREFIX", "finance-docs")
     document_confidence_threshold: float = float(os.getenv("DOCUMENT_CONFIDENCE_THRESHOLD", "0.85"))
     document_retention_years: int = int(os.getenv("DOCUMENT_RETENTION_YEARS", "8"))
@@ -229,6 +234,13 @@ class Settings(BaseModel):
     api_key_pepper: str = os.getenv("API_KEY_PEPPER", "")
     integrations_credentials_key: str = os.getenv("INTEGRATIONS_CREDENTIALS_KEY", "")
     oidc_allowed_redirect_uris: str = os.getenv("OIDC_ALLOWED_REDIRECT_URIS", "")
+    oidc_jit_provisioning_enabled: bool = os.getenv("OIDC_JIT_PROVISIONING_ENABLED", "false").lower() == "true"
+    oidc_jit_default_role: str = os.getenv("OIDC_JIT_DEFAULT_ROLE", "viewer")
+    allow_password_auth_in_prod: bool = os.getenv("ALLOW_PASSWORD_AUTH_IN_PROD", "true").lower() == "true"
+    password_reset_email_enabled: bool = os.getenv("PASSWORD_RESET_EMAIL_ENABLED", "true").lower() == "true"
+    app_public_base_url: str = os.getenv("APP_PUBLIC_BASE_URL", "http://localhost:3000")
+    webauthn_rp_id: str = os.getenv("WEBAUTHN_RP_ID", "localhost")
+    webauthn_rp_name: str = os.getenv("WEBAUTHN_RP_NAME", "FinanceOS")
     integrations_api_key_rate_limit_per_minute: int = int(os.getenv("INTEGRATIONS_API_KEY_RATE_LIMIT_PER_MINUTE", "120"))
     gstn_base_url: str = os.getenv("GSTN_BASE_URL", "")
     gstn_username: str = os.getenv("GSTN_USERNAME", "")
@@ -259,6 +271,28 @@ class Settings(BaseModel):
         if self.disable_dev_auth_routes_in_prod and self.app_env.lower() == "prod":
             return False
         return True
+
+    def _cloudinary_configured(self) -> bool:
+        return bool(
+            self.cloudinary_cloud_name.strip()
+            and self.cloudinary_api_key.strip()
+            and self.cloudinary_api_secret.strip()
+        )
+
+    def _s3_storage_configured(self) -> bool:
+        return bool(self.documents_s3_bucket.strip() or self.textract_s3_bucket.strip())
+
+    def resolved_storage_provider(self) -> str:
+        provider = (self.storage_provider or "auto").strip().lower()
+        if provider == "s3":
+            return "s3"
+        if provider == "cloudinary":
+            return "cloudinary"
+        if self._s3_storage_configured():
+            return "s3"
+        if self._cloudinary_configured():
+            return "cloudinary"
+        return "s3"
 
 
 settings = Settings()

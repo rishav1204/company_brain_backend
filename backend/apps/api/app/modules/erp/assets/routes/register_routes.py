@@ -6,21 +6,10 @@ from app.modules.erp.assets.ai.anomaly_detector import detect_anomalies
 from app.modules.erp.assets.ai.asset_copilot import suggest
 from app.modules.erp.assets.schemas.asset_schema import CandidateConvertRequest, CopilotSuggestRequest
 from app.modules.erp.assets.security.asset_guard import require_asset_create, require_asset_read
-from app.modules.erp.assets.services.asset_register_service import asset_register_service
 from app.modules.erp.assets.services.asset_service import asset_service
 from app.modules.erp.assets.services.candidate_service import candidate_service
 
 router = APIRouter()
-
-
-@router.get("/register")
-def asset_register(
-    context=Depends(require_asset_read),
-    status: str | None = Query(default=None),
-    category_id: str | None = Query(default=None),
-) -> dict:
-    data = asset_register_service.get_register(context.org_id, status=status, category_id=category_id)
-    return {"request_id": context.request_id, **data}
 
 
 @router.get("/candidates")

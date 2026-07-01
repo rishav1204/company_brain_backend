@@ -20,6 +20,11 @@ class RequestContext:
     api_key_id: str | None = None
     api_key_scopes: list[str] | None = None
 
+    @property
+    def user(self) -> "RequestContext":
+        # Backwards-compat: some guards/routes expect `context.user`.
+        return self
+
 
 _context: ContextVar[RequestContext | None] = ContextVar("request_context", default=None)
 

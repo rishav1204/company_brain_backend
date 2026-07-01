@@ -1,18 +1,11 @@
 from __future__ import annotations
 
-import redis
-
-from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 
 class GatewayRateLimitService:
     def __init__(self) -> None:
-        self._redis: redis.Redis | None = None
-        if settings.redis_url:
-            try:
-                self._redis = redis.from_url(settings.redis_url, decode_responses=True)
-            except Exception:
-                self._redis = None
+        self._redis = get_redis_client()
         self._memory: dict[str, tuple[int, float]] = {}
 
     def allow(

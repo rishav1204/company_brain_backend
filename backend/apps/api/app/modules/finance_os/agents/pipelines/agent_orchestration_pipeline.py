@@ -76,6 +76,20 @@ class AgentOrchestrationPipeline:
     ) -> dict:
         payload = payload or {}
         agent_name = resolve_agent(agent_type, payload)
+
+        delegated = self._try_m38_delegate(
+            org_id,
+            agent_name,
+            trigger_type,
+            payload,
+            user_id=user_id,
+            principal_roles=principal_roles,
+            principal_attrs=principal_attrs,
+            source_event_type=source_event_type,
+        )
+        if delegated is not None:
+            return delegated
+
         if agent_name not in FINANCE_OS_AGENTS and agent_name not in {
             "ap_agent",
             "reconciliation_agent",
@@ -221,6 +235,57 @@ class AgentOrchestrationPipeline:
             "flow_result": flow_result,
             "workflow_instance_id": workflow_instance_id,
         }
+
+    def _try_m38_delegate(
+        self,
+        org_id: str,
+        agent_name: str,
+        trigger_type: str,
+        payload: dict,
+        *,
+        user_id: str | None,
+        principal_roles: list[str] | None,
+        principal_attrs: dict | None,
+        source_event_type: str | None,
+    ) -> dict | None:
+        """M38 Phase 7: delegate M29 agent runs to Platform AI Runtime when schema is ready."""
+        try:
+            from app.modules.finance_os.platform_ai_runtime.services.runtime_service import runtime_service
+
+            if not runtime_service.schema_ready():
+                return None
+            message = str(payload.get("user_message") or payload.get("query") or "").strip()
+            if not message:
+                entity = str(payload.get("entity_id") or payload.get("invoice_id") or "")
+                message = f"Run {agent_name} analysis"
+                if entity:
+                    message += f" for entity {entity}"
+                if source_event_type:
+                    message += f" (event: {source_event_type})"
+            resp = runtime_service.chat(
+                org_id,
+                message=message,
+                user_id=user_id or "m29-delegate",
+                roles=principal_roles,
+                attrs={**(principal_attrs or {}), "user_id": user_id or "m29-delegate", "m29_agent": agent_name},
+                human_approved=bool(payload.get("human_approved")),
+            )
+            return {
+                "execution_id": None,
+                "platform_run_id": resp.goal_run_id,
+                "status": resp.status,
+                "delegated_to_m38": True,
+                "goal_id": resp.goal_id,
+                "m38": resp.model_dump(),
+                "confidence": resp.plan.confidence if resp.plan else 0,
+                "confidence_band": resp.plan.confidence_band if resp.plan else "manual",
+                "verification_status": "m38_runtime",
+                "recommendations": [],
+                "flow_result": {"mode": resp.mode, "progress_percent": resp.progress_percent},
+                "workflow_instance_id": None,
+            }
+        except Exception:
+            return None
 
 
 agent_orchestration_pipeline = AgentOrchestrationPipeline()

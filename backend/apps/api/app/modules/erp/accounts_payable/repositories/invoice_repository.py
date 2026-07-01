@@ -290,6 +290,7 @@ class InvoiceRepository:
                 return [dict(r) for r in (cur.fetchall() or [])]
 
     def list_outstanding(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = max(1, min(int(limit or 500), 500))
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -305,7 +306,7 @@ class InvoiceRepository:
                     ORDER BY due_date ASC
                     LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

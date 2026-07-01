@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 from uuid import uuid4
 
 from app.core.config import settings
@@ -18,6 +19,8 @@ from app.modules.platform.documents.services.storage_service import storage_serv
 from app.modules.platform.documents.services.versioning_service import versioning_service
 from app.modules.platform.documents.validators.upload_validator import validate_decoded_upload_size, validate_upload_payload
 from datetime import datetime, timezone, timedelta
+
+logger = logging.getLogger(__name__)
 
 
 def _decode_base64_content(raw: str | None) -> bytes:
@@ -66,7 +69,7 @@ class DocumentService:
             mime_type=mime_type,
         )
         retention_until = (datetime.now(timezone.utc) + timedelta(days=365 * 8)).isoformat()
-        row = document_repository.create_document(
+        row, is_duplicate = document_repository.create_document(
             org_id,
             document_type=document_type,
             file_name=file_name,
@@ -79,6 +82,22 @@ class DocumentService:
             malware_scan_status="clean" if raw else "pending",
             retention_until=retention_until,
         )
+        if is_duplicate:
+            logger.info(
+                "Duplicate document upload replay org_id=%s checksum=%s type=%s document_id=%s",
+                org_id,
+                checksum_hash[:12],
+                document_type,
+                row.get("id"),
+            )
+            return {
+                **row,
+                "signed_url": storage_service.signed_download_url(str(row.get("storage_path", ""))),
+                "requires_human_review": False,
+                "confidence_threshold": settings.document_confidence_threshold,
+                "duplicate": True,
+                "idempotent_replay": True,
+            }
         versioning_service.create_version(
             org_id,
             document_id=str(row["id"]),
@@ -168,7 +187,26 @@ class DocumentService:
             raise ValueError("Invalid public_id: org isolation policy violation")
         storage_path = f"cloudinary://{settings.cloudinary_cloud_name}/{resource_type}/{public_id}"
         retention_until = (datetime.now(timezone.utc) + timedelta(days=365 * 8)).isoformat()
-        row = document_repository.create_document(
+        existing = document_repository.get_by_checksum(
+            org_id,
+            checksum_hash=checksum_hash,
+            document_type=document_type,
+        )
+        if existing:
+            logger.info(
+                "Cloudinary finalize duplicate org_id=%s checksum=%s type=%s document_id=%s",
+                org_id,
+                checksum_hash[:12],
+                document_type,
+                existing.get("id"),
+            )
+            return {
+                **existing,
+                "signed_url": storage_service.signed_download_url(str(existing.get("storage_path", ""))),
+                "duplicate": True,
+                "idempotent_replay": True,
+            }
+        row, is_duplicate = document_repository.create_document(
             org_id,
             document_type=document_type,
             file_name=file_name,
@@ -181,6 +219,20 @@ class DocumentService:
             malware_scan_status="pending",
             retention_until=retention_until,
         )
+        if is_duplicate:
+            logger.info(
+                "Cloudinary finalize race duplicate org_id=%s checksum=%s type=%s document_id=%s",
+                org_id,
+                checksum_hash[:12],
+                document_type,
+                row.get("id"),
+            )
+            return {
+                **row,
+                "signed_url": storage_service.signed_download_url(str(row.get("storage_path", ""))),
+                "duplicate": True,
+                "idempotent_replay": True,
+            }
         versioning_service.create_version(
             org_id,
             document_id=str(row["id"]),

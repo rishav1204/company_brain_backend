@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,8 @@ from app.core.config import settings
 
 if TYPE_CHECKING:
     from psycopg_pool import ConnectionPool
+
+logger = logging.getLogger(__name__)
 
 _pool: ConnectionPool | None = None
 
@@ -27,6 +30,18 @@ def _connection_dsn() -> str:
     return dsn
 
 
+def _check_pool_connection(conn) -> None:
+    """Discard stale connections (common with Neon pooler idle timeouts)."""
+    conn.rollback()
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1")
+    conn.rollback()
+
+
+def _reset_pool_connection(conn) -> None:
+    conn.rollback()
+
+
 def _get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
@@ -37,6 +52,10 @@ def _get_pool() -> ConnectionPool:
             min_size=settings.postgres_pool_min,
             max_size=settings.postgres_pool_max,
             kwargs={"row_factory": dict_row, "connect_timeout": 15},
+            check=_check_pool_connection,
+            reset=_reset_pool_connection,
+            max_lifetime=600,
+            max_idle=120,
             open=True,
         )
     return _pool

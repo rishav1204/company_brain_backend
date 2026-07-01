@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from app.modules.finance_os.analytics.ai.executive_reasoner import build_context
+from app.core.config import settings
+from app.modules.finance_os.analytics.ai.executive_reasoner import build_context as legacy_build_context
+from app.modules.finance_os.platform_ai_runtime.context.context_bridge import build_unified_context
 from app.services.llm_provider import llm_provider
 
 
 def answer(org_id: str, question: str) -> dict:
-    context = build_context(org_id, question)
+    context = legacy_build_context(org_id, question)
+    if settings.m38_unified_copilot:
+        unified = build_unified_context(org_id, question, module_hint="analytics")
+        if unified:
+            context = f"{unified}\n\n{context}"
     if not llm_provider.is_ready():
         return {"answer": f"Based on latest KPIs and insights:\n{context[:1200]}", "sources": {}, "confidence_band": "review"}
     try:

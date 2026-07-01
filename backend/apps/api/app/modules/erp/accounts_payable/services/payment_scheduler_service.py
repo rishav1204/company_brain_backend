@@ -7,7 +7,15 @@ from app.modules.erp.accounts_payable.repositories.invoice_repository import inv
 
 
 class PaymentSchedulerService:
-    def propose_schedule(self, org_id: str, *, cash_available: float, as_of_date: str | None = None) -> dict:
+    def _resolve_cash_available(self, org_id: str, cash_available: float | None) -> tuple[float, bool]:
+        if cash_available is not None:
+            return float(cash_available), False
+        outstanding = invoice_repository.list_outstanding(org_id)
+        total = sum(max(0.0, float(inv.get("outstanding") or 0)) for inv in outstanding)
+        return total, True
+
+    def propose_schedule(self, org_id: str, *, cash_available: float | None = None, as_of_date: str | None = None) -> dict:
+        cash_available, cash_inferred = self._resolve_cash_available(org_id, cash_available)
         outstanding = invoice_repository.list_outstanding(org_id)
         ranked = rank_invoices_for_payment(outstanding)
         proposals: list[dict] = []
@@ -27,13 +35,15 @@ class PaymentSchedulerService:
         return {
             "as_of_date": as_of_date or date.today().isoformat(),
             "cash_available": cash_available,
+            "cash_inferred_from_outstanding": cash_inferred,
             "proposals": proposals,
             "remaining_cash": remaining,
         }
 
-    def payment_recommendations(self, org_id: str, *, cash_available: float, as_of_date: str | None = None) -> dict:
+    def payment_recommendations(self, org_id: str, *, cash_available: float | None = None, as_of_date: str | None = None) -> dict:
         """AI payment assistant: which vendors/invoices to pay this week."""
         schedule = self.propose_schedule(org_id, cash_available=cash_available, as_of_date=as_of_date)
+        cash_available = float(schedule["cash_available"])
         by_vendor: dict[str, dict] = {}
         for proposal in schedule.get("proposals") or []:
             vid = str(proposal.get("vendor_id"))

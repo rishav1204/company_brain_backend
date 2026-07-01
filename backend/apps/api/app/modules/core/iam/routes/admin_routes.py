@@ -96,8 +96,34 @@ def update_user_status(user_id: str, body: UpdateUserStatusRequest, context=Depe
     row = user_repo.update_status(context.org_id, user_id, body.status)
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
+    if body.status == "suspended":
+        from app.modules.core.iam.repositories import session_repo
+
+        session_repo.revoke_all_for_user(context.org_id, user_id)
     mark_idempotency("iam:user_status", context, body.idempotency_key)
     return {"request_id": context.request_id, "user": row, "verification_status": "iam_user_status_updated"}
+
+
+@router.post("/admin/users/{user_id}/sessions/revoke-all")
+def admin_revoke_all_sessions(user_id: str, context=Depends(build_request_context)) -> dict:
+    _require_admin(context)
+    from app.modules.core.iam.repositories import session_repo
+    from app.modules.core.iam.services.auth_audit_service import record_auth_event
+
+    count = session_repo.revoke_all_for_user(context.org_id, user_id)
+    record_auth_event(
+        event="admin_revoke_sessions",
+        success=True,
+        org_id=context.org_id,
+        user_id=user_id,
+        metadata={"revoked_count": count, "actor_id": context.user_id},
+    )
+    return {
+        "request_id": context.request_id,
+        "status": "revoked",
+        "revoked_count": count,
+        "verification_status": "iam_admin_sessions_revoked",
+    }
 
 
 @router.post("/roles")

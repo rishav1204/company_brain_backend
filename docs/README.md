@@ -3,7 +3,10 @@
 This backend monorepo implements the finance architecture defined in `Readme_Architecture.md`.
 
 **Complete file-by-file reference:** [`BACKEND_ARCHITECTURE.md`](BACKEND_ARCHITECTURE.md)  
-**ERP master module map (planning — implement per module only):** [`ERP_MASTER_MODULE_MAP.md`](ERP_MASTER_MODULE_MAP.md)
+**ERP master module map (planning — implement per module only):** [`ERP_MASTER_MODULE_MAP.md`](ERP_MASTER_MODULE_MAP.md)  
+**Frontend architecture bible:** [`FRONTEND_ARCHITECTURE.md`](FRONTEND_ARCHITECTURE.md)  
+**Frontend modules reference (APIs, screens, components):** [`FRONTEND_MODULES_REFERENCE.md`](FRONTEND_MODULES_REFERENCE.md)  
+**Frontend UX documentation suite (product & UX constitution):** [`frontend-docs/README.md`](frontend-docs/README.md)
 
 ## Structure
 

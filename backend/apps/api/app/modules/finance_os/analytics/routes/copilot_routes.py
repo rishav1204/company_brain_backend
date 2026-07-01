@@ -22,6 +22,7 @@ def copilot_ask(body: CopilotRequest, context=Depends(build_request_context)) ->
         actor_id=context.user_id,
         event_type="analytics.copilot.asked",
         object_ref="finance_os:analytics:copilot",
+        payload_jsonb={"question": body.question},
     )
     return CopilotResponse(**result)
 
@@ -36,5 +37,6 @@ def refresh_analytics(context=Depends(build_request_context)) -> dict:
         actor_id=context.user_id,
         event_type="analytics.kpi.calculated",
         object_ref="finance_os:analytics:refresh",
+        payload_jsonb=result if isinstance(result, dict) else {"result": result},
     )
     return {"request_id": context.request_id, "result": result}

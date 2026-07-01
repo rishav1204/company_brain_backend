@@ -26,10 +26,10 @@ def emit_ocr_requested(
     return platform_event_service.publish(
         event_type="ai.ocr.requested",
         org_id=org_id,
-        source="ingestion",
+        source="ai.runtime",
         entity_type="document",
         entity_id=document_id,
-        payload={"document_id": document_id, "source": source},
+        payload={"document_id": document_id, "triggered_by": source},
         trace_id=trace_id,
         idempotency_key=idempotency_key,
     )

@@ -31,6 +31,8 @@ from app.modules.finance_os.workflow_intelligence.routes.router import router as
 from app.modules.finance_os.memory.routes.router import router as finance_os_memory_router
 from app.modules.finance_os.graph.routes.router import router as finance_os_graph_router
 from app.modules.finance_os.agents.routes.router import router as finance_os_agents_router
+from app.modules.finance_os.platform_ai_runtime.routes.router import copilot_router as finance_os_copilot_router
+from app.modules.finance_os.platform_ai_runtime.routes.router import router as finance_os_platform_runtime_router
 from app.modules.finance_os.forecasting.routes.router import router as finance_os_forecasting_router
 from app.modules.finance_os.analytics.routes.router import router as finance_os_analytics_router
 from app.modules.finance_os.audit_explorer.routes.router import router as finance_os_audit_explorer_router
@@ -64,6 +66,7 @@ from app.api.routes import (
     workflows,
 )
 from app.core.config import settings
+from app.core.exception_handlers import register_exception_handlers
 from app.legacy_deprecation_middleware import LegacyDeprecationMiddleware
 from app.middleware import RequestMiddleware
 
@@ -76,6 +79,13 @@ async def lifespan(_app: FastAPI):
     from app.core.security_validation import assert_prod_security
 
     assert_prod_security()
+    if settings.postgres_dsn:
+        from app.services.schema_registry import set_core_ready, warm_common_tables
+
+        warm_common_tables()
+        from app.modules.core.iam.services.iam_schema_service import core_schema_ready
+
+        set_core_ready(core_schema_ready())
     if settings.postgres_dsn and settings.iam_use_db_auth:
         from app.modules.core.iam.services.iam_schema_service import core_schema_ready
         import logging
@@ -111,6 +121,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+register_exception_handlers(app)
 app.add_middleware(IdempotencyMiddleware)
 app.add_middleware(GatewayMiddleware)
 app.add_middleware(AuditCaptureMiddleware)
@@ -168,6 +179,8 @@ app.include_router(finance_os_workflow_intelligence_router, prefix=settings.api_
 app.include_router(finance_os_memory_router, prefix=settings.api_prefix)
 app.include_router(finance_os_graph_router, prefix=settings.api_prefix)
 app.include_router(finance_os_agents_router, prefix=settings.api_prefix)
+app.include_router(finance_os_platform_runtime_router, prefix=settings.api_prefix)
+app.include_router(finance_os_copilot_router, prefix=settings.api_prefix)
 app.include_router(finance_os_forecasting_router, prefix=settings.api_prefix)
 app.include_router(finance_os_analytics_router, prefix=settings.api_prefix)
 app.include_router(finance_os_audit_explorer_router, prefix=settings.api_prefix)
@@ -222,13 +235,14 @@ def ready() -> dict:
         checks["migrations"] = "skipped"
     if settings.redis_url:
         try:
-            import redis
+            from app.services.redis_client import get_redis_client
 
-            client = redis.Redis.from_url(
-                settings.redis_url, decode_responses=True, socket_connect_timeout=15
-            )
-            client.ping()
-            checks["redis"] = "ok"
+            client = get_redis_client()
+            if client:
+                client.ping()
+                checks["redis"] = "ok"
+            else:
+                checks["redis"] = "skipped"
         except Exception as exc:
             checks["redis"] = f"error:{exc.__class__.__name__}"
     else:

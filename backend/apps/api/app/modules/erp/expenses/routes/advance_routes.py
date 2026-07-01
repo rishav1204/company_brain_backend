@@ -27,7 +27,7 @@ def issue_advance(request: AdvanceIssueRequest, context=Depends(require_expense_
 @router.get("/advances")
 def list_advances(
     context=Depends(require_expense_read),
-    employee_id: str = Query(...),
+    employee_id: str | None = Query(default=None),
 ) -> dict:
     items = advance_service.list_open(context.org_id, employee_id=employee_id)
     return {"request_id": context.request_id, "items": items}

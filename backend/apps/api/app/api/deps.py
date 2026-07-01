@@ -19,6 +19,22 @@ def _trace_from_request(request: Request | None) -> tuple[str | None, str | None
     return trace_id, request_id, ip_address, user_agent
 
 
+def _authorization_from_request(request: Request, authorization: str | None = None) -> str | None:
+    """Resolve bearer auth from header, cookie, or query (SSE/EventSource cannot set headers)."""
+    if authorization and authorization.strip():
+        return authorization.strip()
+    header = request.headers.get("authorization")
+    if header and header.strip():
+        return header.strip()
+    cookie_token = request.cookies.get("cb_access_token") or request.cookies.get("access_token")
+    if cookie_token and str(cookie_token).strip():
+        return f"Bearer {str(cookie_token).strip()}"
+    token = request.query_params.get("access_token") or request.query_params.get("token")
+    if token and str(token).strip():
+        return f"Bearer {str(token).strip()}"
+    return None
+
+
 def build_request_context(
     request: Request,
     authorization: str | None = Header(default=None),
@@ -27,6 +43,7 @@ def build_request_context(
     x_roles: str | None = Header(default=None),
 ) -> RequestContext:
     trace_id, header_request_id, ip_address, user_agent = _trace_from_request(request)
+    authorization = _authorization_from_request(request, authorization)
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         if token.startswith("cb_"):

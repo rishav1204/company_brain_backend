@@ -14,6 +14,24 @@ AGENT_DENIED_ACTIONS = frozenset(
 )
 
 
+def check_role_conflicts(*, org_id: str, role_names: list[str]) -> str | None:
+    if len(role_names) < 2:
+        return None
+    try:
+        from app.modules.platform.governance.repositories.sod_conflict_repository import sod_conflict_repo
+
+        conflicts = sod_conflict_repo.list_conflicts(org_id)
+        normalized = {r.lower() for r in role_names}
+        for row in conflicts:
+            a = str(row.get("role_a", "")).lower()
+            b = str(row.get("role_b", "")).lower()
+            if a in normalized and b in normalized:
+                return f"SoD conflict: roles {row.get('role_a')} and {row.get('role_b')} cannot be combined"
+    except Exception:
+        pass
+    return None
+
+
 def check_sod(*, action: str, created_by: str | None, actor_user_id: str | None, org_id: str) -> str | None:
     from app.modules.core.iam.services.maker_checker_service import (
         MakerCheckerViolation,

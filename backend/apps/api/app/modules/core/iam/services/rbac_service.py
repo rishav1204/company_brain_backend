@@ -39,9 +39,8 @@ def has_permission(org_id: str, user_id: str, permission_key: str) -> bool:
         return False
 
 
-def merge_policy_context(org_id: str, user_id: str) -> dict:
-    """Merge ABAC policy_context from all assigned roles into JWT attrs."""
-    rows = role_repo.list_user_roles(org_id, user_id)
+def merge_policy_context_from_rows(rows: list[dict]) -> dict:
+    """Merge ABAC policy_context from preloaded role rows."""
     merged: dict = {}
     max_amounts: list[float] = []
     disallowed: set[str] = set()
@@ -61,7 +60,6 @@ def merge_policy_context(org_id: str, user_id: str) -> dict:
                 pass
         for action in ctx.get("disallowed_actions", []) or []:
             disallowed.add(str(action))
-    # If any role has no cap (null), the user inherits unlimited approval for amount ABAC.
     has_unlimited = any((row.get("policy_context") or {}).get("max_approve_amount") is None for row in rows)
     if not has_unlimited and max_amounts:
         merged["max_approve_amount"] = max(max_amounts)
@@ -85,6 +83,17 @@ def merge_policy_context(org_id: str, user_id: str) -> dict:
     if company_ids and not has_unscoped_assignment:
         merged["allowed_company_ids"] = sorted(set(company_ids))
 
+    department_ids: list[str] = []
+    has_unscoped_dept = False
+    for row in rows:
+        dept_id = row.get("department_id")
+        if dept_id:
+            department_ids.append(str(dept_id))
+        elif not row.get("branch_id") and not row.get("company_id"):
+            has_unscoped_dept = True
+    if department_ids and not has_unscoped_dept:
+        merged["allowed_department_ids"] = sorted(set(department_ids))
+
     merged_rules: list[dict] = []
     for row in rows:
         ctx = row.get("policy_context") or {}
@@ -96,6 +105,12 @@ def merge_policy_context(org_id: str, user_id: str) -> dict:
     if merged_rules:
         merged["rules"] = merged_rules
     return merged
+
+
+def merge_policy_context(org_id: str, user_id: str) -> dict:
+    """Merge ABAC policy_context from all assigned roles into JWT attrs."""
+    rows = role_repo.list_user_roles(org_id, user_id)
+    return merge_policy_context_from_rows(rows)
 
 
 def permission_key_for_action(action: str, object_type: str = "") -> str:

@@ -15,6 +15,7 @@ class ObjectContext:
     invoice_type: str | None = None
     branch_id: str | None = None
     company_id: str | None = None
+    department_id: str | None = None
 
     def as_summary(self) -> dict:
         return {key: value for key, value in asdict(self).items() if value is not None}

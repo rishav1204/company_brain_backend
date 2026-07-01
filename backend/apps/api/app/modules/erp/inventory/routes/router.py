@@ -20,10 +20,25 @@ erp_inventory_router.include_router(adjustment_routes.router, tags=["inventory-a
 erp_inventory_router.include_router(valuation_routes.router, prefix="/valuation", tags=["inventory-valuation"])
 
 
+def _optional_uuid_query(value: str | None) -> str | None:
+    """Treat JS undefined/null sent as query strings as absent filters."""
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    if not normalized or normalized.lower() in {"undefined", "null", "none"}:
+        return None
+    return normalized
+
+
 @erp_inventory_router.get("/balances")
 def list_balances(
     context=Depends(require_inventory_read),
     warehouse_id: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=500),
 ) -> dict:
-    items = inventory_service.list_balances(context.org_id, warehouse_id=warehouse_id)
+    items = inventory_service.list_balances(
+        context.org_id,
+        warehouse_id=_optional_uuid_query(warehouse_id),
+        limit=limit,
+    )
     return {"request_id": context.request_id, "items": items}

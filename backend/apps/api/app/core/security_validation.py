@@ -24,6 +24,8 @@ def validate_prod_security() -> tuple[bool, list[str]]:
         issues.append("auth_mode_must_be_bearer_only_in_prod")
     if settings.dev_auth_routes_enabled():
         issues.append("dev_auth_routes_enabled_in_prod")
+    if not settings.oidc_enabled and not settings.allow_password_auth_in_prod:
+        issues.append("oidc_disabled_and_password_auth_not_allowed_in_prod")
     return len(issues) == 0, issues
 
 

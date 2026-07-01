@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.deps import build_request_context
 from app.modules.core.iam.middleware.permission_guard import require_permission
 from app.core.config import settings
 from app.services.repositories import audit_repo

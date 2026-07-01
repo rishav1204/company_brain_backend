@@ -1,10 +1,5 @@
-from __future__ import annotations
-
-import time
-
-import redis
-
 from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 
 class IntegrationsRateLimitService:
@@ -16,12 +11,9 @@ class IntegrationsRateLimitService:
         limit = int(settings.integrations_api_key_rate_limit_per_minute or 120)
         if limit <= 0:
             return True
-        redis_url = (settings.redis_url or "").strip()
-        if not redis_url:
+        client = get_redis_client()
+        if not client:
             return True
-        if settings.redis_require_tls and not redis_url.lower().startswith("rediss://"):
-            return True
-        client = redis.Redis.from_url(redis_url, decode_responses=True)
         window = int(time.time() // 60)
         key = f"ratelimit:integrations:api_key:{org_id}:{api_key_id}:{window}"
         try:

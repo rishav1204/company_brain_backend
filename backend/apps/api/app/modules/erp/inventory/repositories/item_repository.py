@@ -53,7 +53,7 @@ class ItemRepository:
                       id, org_id, company_id, item_code, item_name, item_type, uom,
                       valuation_method, inventory_account_id, cogs_account_id, metadata
                     )
-                    VALUES (%s::uuid,%s::uuid,%s::uuid,%s,%s,%s,%s,%s::uuid,%s::uuid,%s::jsonb)
+                    VALUES (%s::uuid, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s::uuid, %s::uuid, %s::jsonb)
                     RETURNING id::text, item_code, status
                     """,
                     (
@@ -151,6 +151,7 @@ class WarehouseRepository:
                 return dict(row) if row else None
 
     def list_active(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -161,7 +162,7 @@ class WarehouseRepository:
                     ORDER BY warehouse_code
                     LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

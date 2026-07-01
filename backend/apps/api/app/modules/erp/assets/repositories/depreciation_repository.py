@@ -54,6 +54,7 @@ class DepreciationRepository:
                 return cur.fetchone() is not None
 
     def list_for_asset(self, org_id: str, *, asset_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit, default=500, maximum=500)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -66,7 +67,7 @@ class DepreciationRepository:
                     ORDER BY depreciation_date DESC
                     LIMIT %s
                     """,
-                    (org_id, asset_id),
+                    (org_id, asset_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

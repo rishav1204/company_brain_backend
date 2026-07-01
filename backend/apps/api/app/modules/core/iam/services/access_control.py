@@ -101,6 +101,7 @@ def _evaluate_access_inner(
         attrs=attrs,
         object_branch_id=object_branch_id or object_context.branch_id,
         object_company_id=object_company_id or object_context.company_id,
+        object_department_id=object_context.department_id,
     )
     if branch_decision is not None:
         return _deny(org_id, user_id, action, branch_decision.reason, branch_decision.checks or [], emit_denial_event)
@@ -114,6 +115,8 @@ def _evaluate_access_inner(
         fiscal_period_open=fiscal_open,
         branch_id=object_branch_id or object_context.branch_id,
         allowed_branch_ids=attrs.get("allowed_branch_ids") if isinstance(attrs.get("allowed_branch_ids"), list) else None,
+        department_id=object_context.department_id,
+        allowed_department_ids=attrs.get("allowed_department_ids") if isinstance(attrs.get("allowed_department_ids"), list) else None,
     )
     if rule_decision is not None:
         return _deny(org_id, user_id, action, rule_decision.reason, rule_decision.checks or [], emit_denial_event)

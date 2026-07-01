@@ -19,6 +19,14 @@ The backend is an **API-first BFF**. The UI team should:
 
 There is **no Next.js app in this monorepo today**. Build the UI in your own project and point it at the API base URL (e.g. `http://localhost:8000` locally, or your deployed gateway URL).
 
+**Frontend implementation references (in this repo):**
+
+| Document | Purpose |
+|----------|---------|
+| [`FRONTEND_ARCHITECTURE.md`](FRONTEND_ARCHITECTURE.md) | App shell, routing, shared components, role matrix, screen inventory |
+| [`FRONTEND_MODULES_REFERENCE.md`](FRONTEND_MODULES_REFERENCE.md) | Per-module APIs (payloads/responses), screens, and component trees |
+| [`ERP_MODULES/`](ERP_MODULES/) | Backend module specs (behavioral source of truth) |
+
 **Browser CORS:** The API does not currently configure CORS middleware. For local UI development, either:
 
 - Proxy `/api/v1` through your frontend dev server (recommended), or

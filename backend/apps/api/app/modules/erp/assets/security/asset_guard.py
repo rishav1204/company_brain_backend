@@ -6,7 +6,8 @@ from app.api.deps import RequestContext, build_request_context
 
 
 ASSET_ADMIN_ROLES = {
-    "asset_manager", "finance_controller", "cfo", "controller", "finance_manager", "tenant_admin",
+    "asset_manager", "finance_controller", "cfo", "controller", "finance_manager",
+    "tenant_admin", "super_admin", "finance_admin",
 }
 ASSET_READ_ROLES = ASSET_ADMIN_ROLES | {"auditor", "analyst"}
 

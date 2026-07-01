@@ -1,7 +1,7 @@
 import jwt
-import redis
 
 from app.core.config import settings
+from app.services.redis_client import get_redis_client
 
 
 def _revocation_key(jti: str) -> str:
@@ -29,8 +29,10 @@ def revoke_access_token_jti(access_token: str) -> None:
     ttl = 3600
     if isinstance(exp, (int, float)):
         ttl = max(60, int(exp) - int(__import__("time").time()))
+    client = get_redis_client()
+    if not client:
+        return
     try:
-        client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
         client.setex(_revocation_key(jti), ttl, "1")
     except Exception:
         pass

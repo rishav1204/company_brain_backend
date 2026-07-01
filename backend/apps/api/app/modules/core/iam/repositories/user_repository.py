@@ -10,7 +10,8 @@ class UserRepository:
                 cur.execute(
                     """
                     SELECT id::text AS id, org_id::text AS org_id, email, display_name, status,
-                           password_hash, mfa_enabled, phone, last_login_at
+                           password_hash, mfa_enabled, phone, last_login_at,
+                           idp_subject, idp_provider
                     FROM core.users
                     WHERE lower(email) = lower(%s)
                     LIMIT 1
@@ -19,6 +20,58 @@ class UserRepository:
                 )
                 return cur.fetchone()
 
+    def get_login_bundle(self, email: str) -> dict[str, Any] | None:
+        """Single-connection login read: user, roles, permissions, policy rows."""
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text AS id, org_id::text AS org_id, email, display_name, status,
+                           password_hash, mfa_enabled, phone, last_login_at,
+                           idp_subject, idp_provider
+                    FROM core.users
+                    WHERE lower(email) = lower(%s)
+                    LIMIT 1
+                    """,
+                    (email.strip(),),
+                )
+                user = cur.fetchone()
+                if not user:
+                    return None
+                org_id = user["org_id"]
+                user_id = user["id"]
+                cur.execute(
+                    """
+                    SELECT r.id::text AS role_id, r.name AS role_name, r.policy_context,
+                           ur.company_id::text AS company_id, ur.branch_id::text AS branch_id,
+                           ur.department_id::text AS department_id
+                    FROM core.user_roles ur
+                    JOIN core.roles r ON r.id = ur.role_id
+                    WHERE ur.org_id = %s::uuid AND ur.user_id = %s::uuid
+                    """,
+                    (org_id, user_id),
+                )
+                role_rows = list(cur.fetchall())
+                cur.execute(
+                    """
+                    SELECT DISTINCT p.permission_key
+                    FROM core.user_roles ur
+                    JOIN core.role_permissions rp ON rp.role_id = ur.role_id
+                    JOIN core.permissions p ON p.id = rp.permission_id
+                    WHERE ur.org_id = %s::uuid AND ur.user_id = %s::uuid
+                    ORDER BY p.permission_key
+                    """,
+                    (org_id, user_id),
+                )
+                permissions = [str(row["permission_key"]) for row in cur.fetchall() if row.get("permission_key")]
+        roles = [str(row["role_name"]) for row in role_rows if row.get("role_name")]
+        return {
+            "user": user,
+            "roles": roles,
+            "permissions": permissions,
+            "role_rows": role_rows,
+        }
+
     def get_by_id(self, org_id: str, user_id: str) -> dict[str, Any] | None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -26,7 +79,8 @@ class UserRepository:
                 cur.execute(
                     """
                     SELECT id::text AS id, org_id::text AS org_id, email, display_name, status,
-                           mfa_enabled, phone, last_login_at, created_at
+                           mfa_enabled, phone, last_login_at, created_at,
+                           idp_subject, idp_provider
                     FROM core.users
                     WHERE id = %s::uuid AND org_id = %s::uuid
                     """,
@@ -94,6 +148,92 @@ class UserRepository:
                 )
                 return cur.fetchone()
 
+    def get_by_idp_subject(self, idp_provider: str, idp_subject: str) -> dict[str, Any] | None:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text AS id, org_id::text AS org_id, email, display_name, status,
+                           mfa_enabled, phone, idp_subject, idp_provider
+                    FROM core.users
+                    WHERE idp_provider = %s AND idp_subject = %s
+                    LIMIT 1
+                    """,
+                    (idp_provider, idp_subject),
+                )
+                return cur.fetchone()
+
+    def link_idp_subject(self, org_id: str, user_id: str, idp_provider: str, idp_subject: str) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE core.users
+                    SET idp_provider = %s, idp_subject = %s, updated_at = NOW()
+                    WHERE id = %s::uuid AND org_id = %s::uuid
+                    """,
+                    (idp_provider, idp_subject, user_id, org_id),
+                )
+
+    def update_password(self, org_id: str, user_id: str, password_hash: str) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT password_hash FROM core.users WHERE id = %s::uuid AND org_id = %s::uuid",
+                    (user_id, org_id),
+                )
+                row = cur.fetchone()
+                if row and row.get("password_hash"):
+                    cur.execute(
+                        "INSERT INTO core.password_history (user_id, password_hash) VALUES (%s::uuid, %s)",
+                        (user_id, row["password_hash"]),
+                    )
+                cur.execute(
+                    "UPDATE core.users SET password_hash = %s, updated_at = NOW() WHERE id = %s::uuid",
+                    (password_hash, user_id),
+                )
+
+    def password_in_history(self, user_id: str, password_hash: str, limit: int = 5) -> bool:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1 FROM core.password_history
+                    WHERE user_id = %s::uuid AND password_hash = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (user_id, password_hash, limit),
+                )
+                return cur.fetchone() is not None
+
+    def create_reset_token(self, user_id: str, token_hash: str, expires_at) -> None:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO core.password_reset_tokens (user_id, token_hash, expires_at)
+                    VALUES (%s::uuid, %s, %s)
+                    """,
+                    (user_id, token_hash, expires_at),
+                )
+
+    def consume_reset_token(self, token_hash: str) -> dict[str, Any] | None:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE core.password_reset_tokens
+                    SET used_at = NOW()
+                    WHERE token_hash = %s AND used_at IS NULL AND expires_at > NOW()
+                    RETURNING user_id::text AS user_id
+                    """,
+                    (token_hash,),
+                )
+                return cur.fetchone()
+
     def assign_role(
         self,
         org_id: str,
@@ -101,17 +241,19 @@ class UserRepository:
         role_id: str,
         company_id: str | None = None,
         branch_id: str | None = None,
+        department_id: str | None = None,
     ) -> None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO core.user_roles (org_id, user_id, role_id, company_id, branch_id)
-                    VALUES (%s::uuid, %s::uuid, %s::uuid, %s::uuid, %s::uuid)
+                    INSERT INTO core.user_roles (org_id, user_id, role_id, company_id, branch_id, department_id)
+                    VALUES (%s::uuid, %s::uuid, %s::uuid, %s::uuid, %s::uuid, %s::uuid)
                     ON CONFLICT (user_id, role_id) DO UPDATE SET
                         company_id = EXCLUDED.company_id,
-                        branch_id = EXCLUDED.branch_id
+                        branch_id = EXCLUDED.branch_id,
+                        department_id = EXCLUDED.department_id
                     """,
-                    (org_id, user_id, role_id, company_id, branch_id),
+                    (org_id, user_id, role_id, company_id, branch_id, department_id),
                 )
