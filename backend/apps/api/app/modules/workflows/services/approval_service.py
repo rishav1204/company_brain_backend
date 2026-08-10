@@ -182,6 +182,24 @@ class ApprovalService:
             emit_workflow_advance_requested(
                 org_id, instance_id, decided_level=level, approval_id=approval_id, trace_id=trace_id
             )
+            # INT-12: persist approval identity/roles into workflow metadata for execution-time policy checks.
+            try:
+                inst = workflow_repo.get_instance(org_id, instance_id) or instance
+                meta = dict(inst.get("metadata") or {})
+                meta.update(
+                    {
+                        "approved_by": user_id,
+                        "approved_roles": roles,
+                        "approved_at": datetime.now(timezone.utc).isoformat(),
+                        "approved_via": "workflow.approval",
+                        "approval_id": approval_id,
+                        "approval_level": level,
+                    }
+                )
+                with workflow_uow(org_id) as uow:
+                    uow.update_instance(instance_id, metadata=meta)
+            except Exception:
+                pass
             from app.services.event_consumers import _consume_workflow_approval_event
 
             result = _consume_workflow_approval_event(

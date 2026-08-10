@@ -4,7 +4,7 @@ from app.modules.finance_os.invoice_ai.ai.gst_predictor import predict_gst_code
 from app.modules.finance_os.invoice_ai.ai.ledger_predictor import suggest_from_patterns
 from app.modules.finance_os.invoice_ai.repositories.prediction_repository import PredictionRepository
 from app.modules.finance_os.invoice_ai.retrieval.accounting_patterns import get_accounting_patterns
-from app.modules.erp.accounts_payable.repositories.vendor_repository import vendor_repository
+from app.modules.erp.query_services import ap_queries
 from app.services.db import get_db_conn, set_rls_org
 
 prediction_repository = PredictionRepository()
@@ -38,7 +38,7 @@ class LedgerSuggestionService:
         vendor_name = str(extraction.get("vendor_name") or "")
         vendor_id = extraction.get("vendor_id")
         if not vendor_id and extraction.get("vendor_gstin"):
-            v = vendor_repository.find_by_gstin(org_id, gstin=str(extraction["vendor_gstin"]))
+            v = ap_queries.find_vendor_by_gstin(org_id, gstin=str(extraction["vendor_gstin"]))
             vendor_id = v.get("id") if v else None
 
         patterns = get_accounting_patterns(org_id, description=vendor_name, vendor_name=vendor_name)

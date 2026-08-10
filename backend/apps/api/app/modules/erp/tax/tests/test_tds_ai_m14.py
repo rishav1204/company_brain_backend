@@ -1,8 +1,8 @@
-from app.modules.erp.tax.ai.tds_copilot import answer_tds_question
-from app.modules.erp.tax.ai.tds_error_detector import detect_tds_errors
-from app.modules.erp.tax.ai.tds_return_reviewer import review_return_payload
-from app.modules.erp.tax.ai.tds_section_recommender import recommend_section
-from app.modules.erp.tax.ai.tax_risk_engine import assess_tax_risks
+from app.modules.finance_os.domain_intelligence.tax.tax_risk_engine import assess_tax_risks
+from app.modules.finance_os.domain_intelligence.tax.tds_copilot import answer_tds_question
+from app.modules.finance_os.domain_intelligence.tax.tds_error_detector import detect_tds_errors
+from app.modules.finance_os.domain_intelligence.tax.tds_return_reviewer import review_return_payload
+from app.modules.finance_os.domain_intelligence.tax.tds_section_recommender import recommend_section
 from app.modules.erp.tax.engine.form16a_pdf_engine import render_form16a_pdf
 
 

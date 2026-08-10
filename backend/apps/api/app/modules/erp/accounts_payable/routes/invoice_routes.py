@@ -27,6 +27,9 @@ def create_invoice(request: InvoiceCreateRequest, context=Depends(require_ap_adm
         company_id=request.company_id,
     )
     try:
+        from app.modules.erp.security.branch_scope_sql import resolve_branch_id_for_write
+
+        branch_id = resolve_branch_id_for_write(context.attrs, explicit_branch_id=request.branch_id)
         item = invoice_service.create_invoice(
             context.org_id,
             vendor_id=request.vendor_id,
@@ -38,6 +41,7 @@ def create_invoice(request: InvoiceCreateRequest, context=Depends(require_ap_adm
             total_amount=request.total_amount,
             source_document_id=request.source_document_id,
             company_id=request.company_id,
+            branch_id=branch_id,
             created_by=context.user_id,
             expense_account_id=request.expense_account_id,
             lines=[l.model_dump() for l in request.lines],
@@ -55,7 +59,14 @@ def list_invoices(
     status: str | None = Query(default=None),
     vendor_id: str | None = Query(default=None),
 ) -> dict:
-    items = invoice_service.list_invoices(context.org_id, status=status, vendor_id=vendor_id)
+    from app.modules.erp.security.branch_scope_sql import branch_ids_from_attrs
+
+    items = invoice_service.list_invoices(
+        context.org_id,
+        status=status,
+        vendor_id=vendor_id,
+        branch_ids=branch_ids_from_attrs(context.attrs),
+    )
     return {"request_id": context.request_id, "items": items}
 
 

@@ -88,12 +88,21 @@ def password_login(request: PasswordLoginRequest) -> PasswordLoginResponse:
     if not request.email.strip() or not request.password.strip():
         raise HTTPException(status_code=400, detail="Email and password are required")
 
-    if iam_db_enabled():
+    # Legacy route remains a local/dev JWT mint when dev auth routes are on.
+    # Production IAM password login is POST /auth/login (modular IAM schema).
+    # Optional org-scoped IAM path only when org is explicitly non-default.
+    if (
+        iam_db_enabled()
+        and request.org_id
+        and str(request.org_id) != str(DEV_ORG_ID)
+        and request.password != "dev-password"
+    ):
         try:
             result = iam_login(
                 email=request.email,
                 password=request.password,
                 rate_limit_key=f"login:{request.email.lower()}",
+                org_id=request.org_id,
             )
         except AuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -127,17 +136,23 @@ def password_login(request: PasswordLoginRequest) -> PasswordLoginResponse:
     token_payload = {
         settings.jwt_tenant_claim: resolved_org_id,
         settings.jwt_user_claim: request.email,
-        settings.jwt_roles_claim: resolved_roles,
+        settings.jwt_roles_claim: resolved_roles if not request.roles else list(request.roles),
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
         "iat": int(now.timestamp()),
         "exp": int(exp.timestamp()),
+        "session_id": "00000000-0000-4000-8000-0000000000de",
     }
+    if request.org_id and str(request.org_id).strip() and str(request.org_id) != "org-demo":
+        token_payload[settings.jwt_tenant_claim] = str(request.org_id)
+        resolved_org_id = str(request.org_id)
     token = jwt.encode(token_payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
     return PasswordLoginResponse(
         request_id=f"login-{int(now.timestamp())}",
         access_token=token,
         expires_in=3600,
+        user_id=request.email,
+        org_id=resolved_org_id,
         confidence=0.9,
         verification_status="dev_password_exchange",
     )

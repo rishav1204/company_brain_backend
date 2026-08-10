@@ -32,22 +32,60 @@ class GoalRepository:
         plan_metadata: dict,
         created_by: str | None,
         goal_type: str = "user",
+        trigger_config: dict | None = None,
+        status: str = "active",
     ) -> dict:
         gid = str(uuid4())
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO finance_os.goals (
-                      id, org_id, goal_type, title, description, status, trigger_type,
-                      world_state, plan_metadata, created_by
+                try:
+                    cur.execute(
+                        """
+                        INSERT INTO finance_os.goals (
+                          id, org_id, goal_type, title, description, status, trigger_type,
+                          trigger_config, world_state, plan_metadata, created_by
+                        )
+                        VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s)
+                        RETURNING id::text, title, status, created_at::text
+                        """,
+                        (
+                            gid,
+                            org_id,
+                            goal_type,
+                            title,
+                            description,
+                            status,
+                            trigger_type,
+                            Json(trigger_config or {}),
+                            Json(world_state),
+                            Json(plan_metadata),
+                            created_by,
+                        ),
                     )
-                    VALUES (%s::uuid, %s::uuid, %s, %s, %s, 'active', %s, %s::jsonb, %s::jsonb, %s)
-                    RETURNING id::text, title, status, created_at::text
-                    """,
-                    (gid, org_id, goal_type, title, description, trigger_type, Json(world_state), Json(plan_metadata), created_by),
-                )
+                except Exception:
+                    cur.execute(
+                        """
+                        INSERT INTO finance_os.goals (
+                          id, org_id, goal_type, title, description, status, trigger_type,
+                          world_state, plan_metadata, created_by
+                        )
+                        VALUES (%s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
+                        RETURNING id::text, title, status, created_at::text
+                        """,
+                        (
+                            gid,
+                            org_id,
+                            goal_type,
+                            title,
+                            description,
+                            status,
+                            trigger_type,
+                            Json(world_state),
+                            Json(plan_metadata),
+                            created_by,
+                        ),
+                    )
                 return dict(cur.fetchone() or {"id": gid})
 
     def get_goal(self, org_id: str, goal_id: str) -> dict | None:
@@ -57,28 +95,74 @@ class GoalRepository:
                 try:
                     cur.execute(
                         """
-                        SELECT id::text, title, description, status, trigger_type,
-                               world_state, plan_metadata, conversation_state, created_by, created_at::text
+                        SELECT id::text, title, description, status, goal_type, trigger_type,
+                               trigger_config, world_state, plan_metadata, conversation_state,
+                               created_by, created_at::text
                         FROM finance_os.goals WHERE org_id = %s::uuid AND id = %s::uuid
                         """,
                         (org_id, goal_id),
                     )
                 except Exception:
-                    cur.execute(
-                        """
-                        SELECT id::text, title, description, status, trigger_type,
-                               world_state, plan_metadata, created_by, created_at::text
-                        FROM finance_os.goals WHERE org_id = %s::uuid AND id = %s::uuid
-                        """,
-                        (org_id, goal_id),
-                    )
+                    try:
+                        cur.execute(
+                            """
+                            SELECT id::text, title, description, status, trigger_type,
+                                   world_state, plan_metadata, conversation_state, created_by, created_at::text
+                            FROM finance_os.goals WHERE org_id = %s::uuid AND id = %s::uuid
+                            """,
+                            (org_id, goal_id),
+                        )
+                    except Exception:
+                        cur.execute(
+                            """
+                            SELECT id::text, title, description, status, trigger_type,
+                                   world_state, plan_metadata, created_by, created_at::text
+                            FROM finance_os.goals WHERE org_id = %s::uuid AND id = %s::uuid
+                            """,
+                            (org_id, goal_id),
+                        )
                 row = cur.fetchone()
                 if not row:
                     return None
                 data = dict(row)
                 if data.get("conversation_state") is None:
                     data["conversation_state"] = {}
+                if data.get("trigger_config") is None:
+                    data["trigger_config"] = {}
                 return data
+
+    def update_trigger_config(self, org_id: str, goal_id: str, trigger_config: dict) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        """
+                        UPDATE finance_os.goals
+                        SET trigger_config = %s::jsonb, updated_at = NOW()
+                        WHERE org_id = %s::uuid AND id = %s::uuid
+                        """,
+                        (Json(trigger_config), org_id, goal_id),
+                    )
+                except Exception:
+                    pass
+
+    def merge_plan_metadata(self, org_id: str, goal_id: str, patch: dict) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        """
+                        UPDATE finance_os.goals
+                        SET plan_metadata = COALESCE(plan_metadata, '{}'::jsonb) || %s::jsonb,
+                            updated_at = NOW()
+                        WHERE org_id = %s::uuid AND id = %s::uuid
+                        """,
+                        (Json(patch), org_id, goal_id),
+                    )
+                except Exception:
+                    pass
 
     def update_conversation_state(self, org_id: str, goal_id: str, state: dict) -> None:
         with get_db_conn() as conn:
@@ -92,6 +176,22 @@ class GoalRepository:
                         WHERE org_id = %s::uuid AND id = %s::uuid
                         """,
                         (Json(state), org_id, goal_id),
+                    )
+                except Exception:
+                    pass
+
+    def update_world_state(self, org_id: str, goal_id: str, world_state: dict) -> None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        """
+                        UPDATE finance_os.goals
+                        SET world_state = %s::jsonb, updated_at = NOW()
+                        WHERE org_id = %s::uuid AND id = %s::uuid
+                        """,
+                        (Json(world_state), org_id, goal_id),
                     )
                 except Exception:
                     pass
@@ -313,6 +413,43 @@ class GoalRepository:
                         (org_id, limit),
                     )
                 return [dict(r) for r in cur.fetchall()]
+
+    def list_goals_detailed(
+        self,
+        org_id: str,
+        *,
+        status: str | None = None,
+        goal_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Active watchers / operational goals with world_state + trigger_config (Wave 5)."""
+        limit = clamp_limit(limit, default=50, maximum=200)
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                try:
+                    clauses = ["org_id = %s::uuid"]
+                    params: list = [org_id]
+                    if status:
+                        clauses.append("status = %s")
+                        params.append(status)
+                    if goal_type:
+                        clauses.append("goal_type = %s")
+                        params.append(goal_type)
+                    params.append(limit)
+                    cur.execute(
+                        f"""
+                        SELECT id::text, title, status, goal_type, trigger_type, trigger_config,
+                               world_state, plan_metadata, created_at::text
+                        FROM finance_os.goals
+                        WHERE {' AND '.join(clauses)}
+                        ORDER BY created_at DESC LIMIT %s
+                        """,
+                        tuple(params),
+                    )
+                    return [dict(r) for r in cur.fetchall()]
+                except Exception:
+                    return self.list_goals(org_id, status=status, limit=limit)
 
     def get_latest_run(self, org_id: str, goal_id: str) -> dict | None:
         with get_db_conn() as conn:

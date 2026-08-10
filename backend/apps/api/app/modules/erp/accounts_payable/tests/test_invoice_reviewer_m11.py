@@ -1,4 +1,4 @@
-from app.modules.erp.accounts_payable.ai.invoice_reviewer import review_invoice_extraction
+from app.modules.finance_os.invoice_ai.review.invoice_reviewer import review_invoice_extraction
 
 
 def test_suspicious_gst_without_gstin() -> None:

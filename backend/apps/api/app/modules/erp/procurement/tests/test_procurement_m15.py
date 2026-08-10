@@ -79,3 +79,21 @@ def test_approval_chain_over_25l() -> None:
 
 def test_procurement_workflow_unknown() -> None:
     assert _handle_procurement_workflow_approval("org", {"entity_type": "other"}) is False
+
+
+def test_invoice_line_for_po_item_by_id() -> None:
+    from app.modules.erp.procurement.services.matching_service import _invoice_line_for_po_item
+
+    lines = [
+        {"id": "l1", "po_item_id": "po-a", "amount": 100},
+        {"id": "l2", "po_item_id": "po-b", "amount": 200},
+    ]
+    assert _invoice_line_for_po_item(lines, "po-b", 0)["id"] == "l2"
+    assert _invoice_line_for_po_item(lines, "missing", 1) is None
+
+
+def test_po_requires_grn_defaults_true_for_stock() -> None:
+    from app.modules.erp.procurement.services.matching_service import _po_requires_grn
+
+    assert _po_requires_grn({}, [{"quantity": 5}]) is True
+    assert _po_requires_grn({"metadata": {"requires_grn": False}}, [{"quantity": 5}]) is True

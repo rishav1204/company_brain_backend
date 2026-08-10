@@ -1,6 +1,8 @@
 import pytest
 
-from app.modules.erp.treasury.ai.anomaly_detector import detect_payment_anomalies
+from app.modules.finance_os.domain_intelligence.payments.anomaly_detector import (
+    detect_scheduling_anomalies as detect_payment_anomalies,
+)
 from app.modules.erp.treasury.engine.reconciliation_engine import rank_subledger_candidates, score_match
 from app.modules.erp.treasury.services.beneficiary_verification_service import beneficiary_verification_service
 from app.modules.platform.integrations.connectors.banks.stub_bank_connector import StubBankConnector

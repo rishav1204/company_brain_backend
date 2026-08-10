@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from app.modules.erp.treasury.ai.cashflow_forecaster import forecast_cashflow
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 
 class CashflowService:
     def build_forecast(self, org_id: str, *, horizon_days: int = 30) -> dict:
         inflows = self._collect_inflows(org_id)
         outflows = self._collect_outflows(org_id)
-        return forecast_cashflow(inflows=inflows, outflows=outflows, horizon_days=horizon_days)
+        return intelligence_registry.treasury().forecast_cashflow(
+            inflows=inflows,
+            outflows=outflows,
+            horizon_days=horizon_days,
+        )
 
     def _collect_inflows(self, org_id: str) -> list[dict]:
         items: list[dict] = []

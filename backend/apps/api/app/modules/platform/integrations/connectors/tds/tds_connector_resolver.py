@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 
 from app.modules.platform.integrations.services.connector_registry import connector_registry
+from app.core.config import settings
 
 
 @dataclass(frozen=True)
@@ -32,9 +33,15 @@ def load_tds_connector_config() -> TdsConnectorConfig:
 def resolve_tds_filing_connector():
     cfg = load_tds_connector_config()
     if cfg.provider == "stub":
-        return connector_registry.resolve(connector_type="tds", provider_name="stub_tds")
+        conn = connector_registry.resolve(connector_type="tds", provider_name="stub_tds")
+        if settings.app_env.lower() == "prod":
+            raise RuntimeError("Production requires NSDL TDS credentials or TDS_CONNECTOR_PROVIDER=nsdl with NSDL_TDS_BASE_URL configured")
+        return conn
     if cfg.nsdl_configured:
         conn = connector_registry.resolve(connector_type="tds", provider_name="nsdl_production")
         if conn:
             return conn
-    return connector_registry.resolve(connector_type="tds", provider_name="stub_tds")
+    conn = connector_registry.resolve(connector_type="tds", provider_name="stub_tds")
+    if settings.app_env.lower() == "prod":
+        raise RuntimeError("Production TDS filing requires NSDL credentials; stub connector is not allowed")
+    return conn

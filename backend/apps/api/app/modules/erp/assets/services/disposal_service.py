@@ -7,9 +7,9 @@ from app.modules.erp.assets.engine.disposal_engine import build_disposal_lines, 
 from app.modules.erp.assets.events.asset_events import emit_asset_disposed
 from app.modules.erp.assets.repositories.asset_repository import asset_repository, disposal_repository
 from app.modules.erp.assets.validators.capitalization_validator import validate_disposal
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
 
 
 class DisposalService:
@@ -54,35 +54,57 @@ class DisposalService:
             accumulated_depreciation_account_id=asset.get("accumulated_depreciation_account_id"),
             bank_account_id=bank_account_id,
         )
-        journal = journal_service.create_draft(
-            org_id,
-            created_by=actor_id,
-            journal_type="adjustment",
-            posting_date=ddate,
-            description=f"Dispose asset {asset.get('asset_code')}",
-            source_type="asset_disposal",
-            source_id=asset_id,
-            company_id=asset.get("company_id"),
-            lines=lines,
-            idempotency_key=f"asset-disposal:{asset_id}",
-        )
-        jid = str(journal["journal"]["id"])
-        journal_approval_service.approve(org_id, journal_id=jid, approver_id=actor_id, skip_maker_checker=True)
-        if auto_post:
-            posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=actor_id)
 
-        disposal = disposal_repository.create(
-            org_id,
-            asset_id=asset_id,
-            disposal_date=ddate,
-            sale_amount=sale_amount,
-            book_value=book,
-            gain_loss=gain_loss,
-            journal_id=jid,
-            reason=reason,
-            created_by=actor_id,
-        )
-        asset_repository.set_status(org_id, asset_id=asset_id, status="disposed", book_value=0)
+        journal = None
+        post_result = None
+        jid = None
+        disposal = None
+
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal = create_draft_with_conn(
+                conn,
+                org_id,
+                created_by=actor_id,
+                journal_type="adjustment",
+                posting_date=ddate,
+                description=f"Dispose asset {asset.get('asset_code')}",
+                source_type="asset_disposal",
+                source_id=asset_id,
+                company_id=asset.get("company_id"),
+                lines=lines,
+                idempotency_key=f"asset-disposal:{asset_id}",
+            )
+            jid = str(journal["journal"]["id"])
+            approve_with_conn(conn, org_id, journal_id=jid, approver_id=actor_id, skip_maker_checker=True)
+            if auto_post:
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=actor_id, defer_side_effects=True
+                )
+
+            disposal = disposal_repository.create_conn(
+                conn,
+                org_id,
+                asset_id=asset_id,
+                disposal_date=ddate,
+                sale_amount=sale_amount,
+                book_value=book,
+                gain_loss=gain_loss,
+                journal_id=jid,
+                reason=reason,
+                created_by=actor_id,
+            )
+            asset_repository.set_status_conn(conn, org_id, asset_id=asset_id, status="disposed", book_value=0)
+
+        if auto_post and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=actor_id,
+            )
+
         emit_asset_disposed(org_id, asset_id=asset_id, gain_loss=gain_loss)
         return disposal
 

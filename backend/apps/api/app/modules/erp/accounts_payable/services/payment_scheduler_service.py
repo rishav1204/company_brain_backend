@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.modules.erp.accounts_payable.ai.payment_optimizer import rank_invoices_for_payment
 from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 
 class PaymentSchedulerService:
@@ -17,7 +17,7 @@ class PaymentSchedulerService:
     def propose_schedule(self, org_id: str, *, cash_available: float | None = None, as_of_date: str | None = None) -> dict:
         cash_available, cash_inferred = self._resolve_cash_available(org_id, cash_available)
         outstanding = invoice_repository.list_outstanding(org_id)
-        ranked = rank_invoices_for_payment(outstanding)
+        ranked = intelligence_registry.ap_risk().rank_invoices_for_payment(outstanding)
         proposals: list[dict] = []
         remaining = float(cash_available)
         for inv in ranked:

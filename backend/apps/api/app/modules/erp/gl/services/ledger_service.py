@@ -12,6 +12,7 @@ class LedgerService:
         batch_id: str | None = None,
         reference_type: str | None = None,
         reference_id: str | None = None,
+        branch_ids: list[str] | None = None,
         limit: int = 200,
         offset: int = 0,
     ) -> list[dict]:
@@ -21,6 +22,7 @@ class LedgerService:
             batch_id=batch_id,
             reference_type=reference_type,
             reference_id=reference_id,
+            branch_ids=branch_ids,
             limit=limit,
             offset=offset,
         )

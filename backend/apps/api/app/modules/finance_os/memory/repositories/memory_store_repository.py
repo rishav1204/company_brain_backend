@@ -90,7 +90,7 @@ class MemoryStoreRepository:
                 cur.execute(
                     """
                     UPDATE memory_records
-                    SET payload_jsonb = COALESCE(payload_jsonb, '{}'::jsonb) || jsonb_build_object('status', %s)
+                    SET payload_jsonb = COALESCE(payload_jsonb, '{}'::jsonb) || jsonb_build_object('status', %s::text)
                     WHERE org_id = %s::uuid AND id = ANY(%s::uuid[])
                     """,
                     (status, org_id, memory_ids),

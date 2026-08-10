@@ -40,6 +40,12 @@ class ItemService:
     def list(self, org_id: str, *, status: str | None = None) -> list[dict]:
         return item_repository.list(org_id, status=status)
 
+    def deactivate_item(self, org_id: str, *, item_id: str) -> dict:
+        item = item_repository.get(org_id, item_id=item_id)
+        if not item:
+            raise ValueError("Item not found")
+        return item_repository.set_status(org_id, item_id=item_id, status="inactive")
+
 
 class WarehouseService:
     def create(self, org_id: str, *, warehouse_code: str, warehouse_name: str, location: str | None = None) -> dict:

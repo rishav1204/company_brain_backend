@@ -99,12 +99,14 @@ def test_create_intercompany_route(mock_svc: MagicMock, _mock_guard: MagicMock) 
 
 
 def test_m35_doc_exists() -> None:
-    doc = Path(__file__).resolve().parents[7] / "ERP_MODULES" / "M35_consolidation.md"
+    docs = Path(__file__).resolve().parents[8] / "docs"
+    doc = docs / "ERP_MODULES" / "M35_consolidation.md"
+    if not doc.is_file():
+        doc = Path(__file__).resolve().parents[7] / "ERP_MODULES" / "M35_consolidation.md"
     assert doc.exists()
     assert "Golden rule" in doc.read_text(encoding="utf-8")
 
 
-def test_erp_master_map_m35() -> None:
-    text = Path(__file__).resolve().parents[7].joinpath("ERP_MASTER_MODULE_MAP.md").read_text(encoding="utf-8")
-    assert "M35" in text
-    assert "Done" in text
+def test_erp_master_map_m35(erp_master_module_map: str) -> None:
+    assert "M35" in erp_master_module_map
+    assert "Done" in erp_master_module_map

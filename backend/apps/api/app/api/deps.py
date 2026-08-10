@@ -20,7 +20,7 @@ def _trace_from_request(request: Request | None) -> tuple[str | None, str | None
 
 
 def _authorization_from_request(request: Request, authorization: str | None = None) -> str | None:
-    """Resolve bearer auth from header, cookie, or query (SSE/EventSource cannot set headers)."""
+    """Resolve bearer auth from header or HttpOnly cookie. SSE uses X-SSE-Token via separate path."""
     if authorization and authorization.strip():
         return authorization.strip()
     header = request.headers.get("authorization")
@@ -29,10 +29,43 @@ def _authorization_from_request(request: Request, authorization: str | None = No
     cookie_token = request.cookies.get("cb_access_token") or request.cookies.get("access_token")
     if cookie_token and str(cookie_token).strip():
         return f"Bearer {str(cookie_token).strip()}"
-    token = request.query_params.get("access_token") or request.query_params.get("token")
-    if token and str(token).strip():
-        return f"Bearer {str(token).strip()}"
     return None
+
+
+def _is_sse_stream_path(path: str) -> bool:
+    normalized = path.rstrip("/")
+    return "/realtime/" in normalized or normalized.endswith("/events/stream")
+
+
+def _sse_bearer_from_header(request: Request) -> str | None:
+    """SEC-03: short-lived SSE token instead of query-string JWT."""
+    from app.core.sse_token_service import consume_sse_token
+
+    raw = request.headers.get("x-sse-token") or request.headers.get("X-SSE-Token")
+    if not raw or not str(raw).strip():
+        return None
+    info = consume_sse_token(str(raw).strip())
+    if not info:
+        return None
+    from app.modules.core.iam.services.jwt_service import issue_access_token
+    from app.modules.core.iam.repositories import permission_repo, role_repo
+    from app.modules.core.iam.services.rbac_service import list_role_names, merge_policy_context_from_rows
+
+    org_id = info["org_id"]
+    user_id = info["user_id"]
+    roles = list_role_names(org_id, user_id)
+    permissions = permission_repo.list_permissions_for_user(org_id, user_id)
+    role_rows = role_repo.list_user_roles(org_id, user_id)
+    attrs = merge_policy_context_from_rows(role_rows)
+    token = issue_access_token(
+        org_id=org_id,
+        user_id=user_id,
+        roles=roles,
+        permissions=permissions,
+        attrs=attrs,
+        session_id=info.get("session_id"),
+    )
+    return f"Bearer {token}"
 
 
 def build_request_context(
@@ -44,6 +77,8 @@ def build_request_context(
 ) -> RequestContext:
     trace_id, header_request_id, ip_address, user_agent = _trace_from_request(request)
     authorization = _authorization_from_request(request, authorization)
+    if not authorization and _is_sse_stream_path(request.url.path):
+        authorization = _sse_bearer_from_header(request)
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
         if token.startswith("cb_"):

@@ -1,4 +1,4 @@
-from app.modules.erp.tax.ai.mismatch_detector import detect_mismatches
+from app.modules.finance_os.domain_intelligence.tax.mismatch_detector import detect_mismatches
 from app.modules.erp.tax.engine.reconciliation_engine import match_2b_row
 
 

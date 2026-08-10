@@ -14,9 +14,9 @@ from app.modules.erp.assets.events.asset_events import emit_asset_capitalized
 from app.modules.erp.assets.repositories.asset_repository import asset_repository
 from app.modules.erp.assets.repositories.category_repository import category_repository, policy_repository
 from app.modules.erp.assets.validators.capitalization_validator import validate_capitalization
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
 
 
 class CapitalizationService:
@@ -62,33 +62,55 @@ class CapitalizationService:
             fixed_asset_account_id=asset.get("fixed_asset_account_id"),
             credit_account_id=credit_id,
         )
-        journal = journal_service.create_draft(
-            org_id,
-            created_by=approver_id,
-            journal_type="adjustment",
-            posting_date=posting_date,
-            description=f"Capitalize asset {asset.get('asset_code')}",
-            source_type="asset_capitalization",
-            source_id=asset_id,
-            company_id=asset.get("company_id"),
-            lines=lines,
-            idempotency_key=f"asset-cap:{asset_id}",
-        )
-        jid = str(journal["journal"]["id"])
-        journal_approval_service.approve(org_id, journal_id=jid, approver_id=approver_id, skip_maker_checker=True)
-        if auto_post:
-            posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=approver_id)
 
-        updated = asset_repository.set_status(
-            org_id,
-            asset_id=asset_id,
-            status="active",
-            capitalization_journal_id=jid,
-            capitalization_date=posting_date,
-            approved_by=approver_id,
-            book_value=cost,
-            workflow_approved=True,
-        )
+        journal = None
+        post_result = None
+        jid = None
+        updated = None
+
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal = create_draft_with_conn(
+                conn,
+                org_id,
+                created_by=approver_id,
+                journal_type="adjustment",
+                posting_date=posting_date,
+                description=f"Capitalize asset {asset.get('asset_code')}",
+                source_type="asset_capitalization",
+                source_id=asset_id,
+                company_id=asset.get("company_id"),
+                lines=lines,
+                idempotency_key=f"asset-cap:{asset_id}",
+            )
+            jid = str(journal["journal"]["id"])
+            approve_with_conn(conn, org_id, journal_id=jid, approver_id=approver_id, skip_maker_checker=True)
+            if auto_post:
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=approver_id, defer_side_effects=True
+                )
+
+            updated = asset_repository.set_status_conn(
+                conn,
+                org_id,
+                asset_id=asset_id,
+                status="active",
+                capitalization_journal_id=jid,
+                capitalization_date=posting_date,
+                approved_by=approver_id,
+                book_value=cost,
+                workflow_approved=True,
+            )
+
+        if auto_post and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=approver_id,
+            )
+
         emit_asset_capitalized(org_id, asset_id=asset_id, journal_id=jid)
         return updated
 

@@ -1,0 +1,296 @@
+# Platform operator APIs (SaaS owner / company-that-runs-FLORA)
+# =================================================================
+# Audience: YOU as platform owner / ops / SRE / ML platform — NOT:
+#   - end users (CFO, accountant, AP clerk)
+#   - customer-company "tenant_admin" / org.admin of a paying org
+#
+# Contrast with _wave0_api_by_owner.txt:
+#   That file groups by code package owner (module ownership).
+#   This file groups by human operator surface (control plane).
+#
+# Reality check (important):
+#   Cross-tenant staff surface is gated by platform.admin (sections 4A + 5),
+#   held only by the platform_owner role. Hard ops still use
+#   ops.worker.manage / ops.queue.manage. Several observability routes only
+#   require a valid JWT + org (build_request_context) and still scope audit/org
+#   fields to the caller's org. Treat "intent" separately from "hardened".
+#
+# Prefix: paths below are app routes; production mounts under
+# settings.api_prefix (see main.py). OpenAPI remains source of truth.
+#
+# Legend for Guarding column:
+#   OPS_W   = require_permission("ops.worker.manage")
+#   OPS_Q   = require_permission("ops.queue.manage")
+#   PLAT_A  = require_permission("platform.admin")  — no tenant_admin fallback
+#   AUTH    = authenticated request context only
+#   AGENT_R = require_agent_read (AI runtime read; still tenant-scoped)
+#   FLAG    = also gated by settings (e.g. enable_worker_routes)
+#   PUBLIC  = health/ready (no product auth)
+
+================================================================
+## 1) Hard ops control plane (job runners / queues / DLQ)
+# These are the clearest "you-as-operator" APIs.
+
+METHOD  PATH                                              GUARD     SOURCE
+------  ----                                              -----     ------
+POST    /ops/worker/run-once                              OPS_W+FLAG  api/routes/ops.py
+POST    /ops/worker/run-batch                             OPS_W+FLAG  api/routes/ops.py
+POST    /ops/scheduler/run-once                           AUTH+FLAG   api/routes/ops.py
+POST    /queue/enqueue                                    OPS_Q     api/routes/queue.py
+POST    /queue/process-next                               OPS_Q     api/routes/queue.py
+GET     /queue/topology                                   AUTH      api/routes/queue.py
+GET     /queues                                           AUTH      api/routes/platform_events.py
+POST    /queues/{queue_name}/dlq/requeue                  OPS_Q     api/routes/platform_events.py
+POST    /events/replay                                    OPS_Q     api/routes/platform_events.py
+GET     /jobs                                             AUTH      api/routes/platform_events.py
+POST    /ingestion/workers/webhook/consume                OPS_W     api/routes/ingestion.py
+POST    /webhooks/deliveries/process                      AUTH      api/routes/platform_webhooks.py
+
+Count: 12
+
+================================================================
+## 2) Platform observability / infra status
+# Metrics, probe, event lag — SRE / on-call surface.
+
+METHOD  PATH                                              GUARD     SOURCE
+------  ----                                              -----     ------
+GET     /health                                           PUBLIC    main.py
+GET     /ready                                            PUBLIC    main.py
+GET     /observability/status                             AUTH      api/routes/observability.py
+POST    /observability/probe                              AUTH      api/routes/observability.py
+GET     /metrics                                          AUTH      api/routes/observability.py
+GET     /metrics/prometheus                               AUTH      api/routes/observability.py
+GET     /events/recent                                    AUTH      api/routes/observability.py
+GET     /events/catalog                                   AUTH      api/routes/platform_events.py
+GET     /events/registry/{event_type}                     AUTH      api/routes/platform_events.py
+GET     /governance/metrics                               AUTH*     modules/platform/governance/routes/forensics_routes.py
+
+* AUTH* = governance auditor-read dependency (tenant-scoped auditor gate in practice).
+
+Count: 10
+
+# GAP — ERP↔FOS intelligence ports have no operator surface.
+# ERP reaches every migrated AI capability through the typed ports in
+# erp/ports/intelligence_registry.py (14 today: invoice, forecast, ap_risk,
+# journal, expense, ar_collections, reconciliation, banking, treasury, tax,
+# compliance, procurement, inventory, asset). Each is registered with a
+# fallback, so an adapter that fails to register degrades ERP AI responses
+# instead of returning 500 — silently. intelligence_registry.describe()
+# reports live/registered state but is NOT exposed over HTTP.
+# Recommended: GET /ops/intelligence-ports behind ops.worker.manage.
+
+================================================================
+## 3) Event / bus publish (operator tooling — still org-scoped)
+# Useful for platform debugging; NOT multi-tenant admin.
+
+METHOD  PATH                                              GUARD     SOURCE
+------  ----                                              -----     ------
+POST    /events/publish                                   AUTH      api/routes/platform_events.py
+
+Count: 1
+
+================================================================
+## 4) ML / training / model governance (platform AI ops)
+# Gold sets, eval runs, promotion/canary/rollback — product-team
+# control plane for the AI stack. Auth today is AUTH (JWT), not OPS_*.
+
+METHOD  PATH                                              GUARD     SOURCE
+------  ----                                              -----     ------
+POST    /training/qa-gold                                 AUTH      api/routes/training_eval.py
+GET     /training/qa-gold                                 AUTH      api/routes/training_eval.py
+POST    /training/retrieval-judgments                     AUTH      api/routes/training_eval.py
+GET     /training/retrieval-judgments                     AUTH      api/routes/training_eval.py
+POST    /training/safety-events                           AUTH      api/routes/training_eval.py
+POST    /training/feedback                                AUTH      api/routes/training_eval.py
+POST    /training/feedback/triage                         AUTH      api/routes/training_eval.py
+GET     /training/labeling-tasks                          AUTH      api/routes/training_eval.py
+POST    /training/labeling-tasks/{task_id}/approve        AUTH      api/routes/training_eval.py
+POST    /training/governance/cycles/start                 AUTH      api/routes/training_eval.py
+GET     /training/governance/cycles                       AUTH      api/routes/training_eval.py
+POST    /training/governance/cycles/{cycle_id}/shadow-eval              AUTH  api/routes/training_eval.py
+POST    /training/governance/cycles/{cycle_id}/approve-promotion      AUTH  api/routes/training_eval.py
+POST    /training/governance/cycles/{cycle_id}/canary                   AUTH  api/routes/training_eval.py
+POST    /training/governance/cycles/{cycle_id}/rollback                 AUTH  api/routes/training_eval.py
+POST    /training/eval-runs/start                         AUTH      api/routes/training_eval.py
+POST    /training/eval-runs/{run_id}/complete             AUTH      api/routes/training_eval.py
+POST    /retrieval/eval                                   AUTH      api/routes/retrieval_eval.py
+POST    /memory/decay/run                                 AUTH      api/routes/memory_admin.py
+POST    /ingestion/workers/embeddings/ingest              AUTH      api/routes/ingestion.py
+GET     /finance-os/runtime/ai/analytics                  AGENT_R   modules/finance_os/platform_ai_runtime/routes/runtime_routes.py
+GET     /finance-os/runtime/ai/gateway/health             AGENT_R   modules/finance_os/platform_ai_runtime/routes/runtime_routes.py
+
+# Both sit behind the router prefix /finance-os/runtime (routes/router.py), so
+# the full dev path is /api/v1/finance-os/runtime/ai/... — verified 200.
+# .../ai/analytics       — Wave 6 usage snapshot + budget check + last 25 gateway
+#                       calls from DB. Cost/quota surface.
+# .../ai/gateway/health  — gateway enabled flag, llm_provider, model alias map,
+#                       model class routes (no secrets).
+# Both are tenant-scoped (org from JWT), so cross-tenant cost views still
+# require borrowing a customer org — same caveat as section 5.
+
+Count: 22
+
+================================================================
+## 4A) Cross-tenant operator console (REAL platform admin)
+# The only routes in this file that see past a single org. Gated by
+# PLAT_A = require_permission("platform.admin"), which permission_guard gives
+# no tenant_admin fallback, so a customer-company admin gets 403 (verified).
+# Held only by the platform_owner role (migrations 086 + 087).
+
+METHOD  PATH                                              GUARD     SOURCE
+------  ----                                              -----     ------
+GET     /ops/platform/orgs                                PLAT_A    modules/platform/operator/routes/operator_routes.py
+GET     /ops/platform/users                               PLAT_A    modules/platform/operator/routes/operator_routes.py
+GET     /ops/platform/usage                               PLAT_A    modules/platform/operator/routes/operator_routes.py
+POST    /ops/platform/users/{user_id}/status              PLAT_A    modules/platform/operator/routes/operator_routes.py
+POST    /ops/platform/users/{user_id}/sessions/revoke-all PLAT_A    modules/platform/operator/routes/operator_routes.py
+
+# /orgs   — every tenant with plan, status, active/total user counts.
+# /users  — users across all orgs (filters: org_id, status, search), with roles
+#           and live session counts. Backs the "see all users" dashboard.
+# /usage  — per-org rollup over ?days=N: billing.ai_usage (requests/tokens/cost),
+#           platform.api_request_log (api calls), billing.usage_metrics.
+# /status — the block button: active | suspended | deactivated in ANY org.
+#           Suspending also revokes live sessions, so access stops immediately
+#           instead of at token expiry. Refuses to act on the caller (no
+#           self-lockout).
+# /sessions/revoke-all — force logout in any org without changing status.
+#
+# Mutations resolve the target user's org from the DB, then delegate to the
+# ordinary org-scoped IAM repositories, and are audited into the TARGET tenant's
+# audit log with actor_type=platform_operator and cross_org=true.
+#
+# CAVEAT — these cross-org reads issue no set_rls_org, because there is no single
+# org to pin the GUC to. That works only while the app's DB role is not subject
+# to RLS (today the Neon owner has BYPASSRLS, so every CREATE POLICY in the
+# migrations is inert for app traffic — tenant isolation is currently enforced by
+# the WHERE org_id clauses in the repositories, not by Postgres). If the app ever
+# moves to a least-privilege role, these queries go quiet rather than erroring.
+
+Count: 5
+
+================================================================
+## 5) Cross-org commercial control
+# These accept org_id in body for ANY org (assign plan / grant credits /
+# entitlement overrides). Gated by PLAT_A = require_permission("platform.admin")
+# — same hard gate as section 4A, no tenant_admin fallback. A customer-company
+# admin gets 403.
+
+METHOD  PATH                                              GUARD     SOURCE
+------  ----                                              -----     ------
+GET     /admin/billing/plans                              PLAT_A    modules/platform/billing/routes/admin_billing_routes.py
+POST    /admin/billing/subscriptions/assign               PLAT_A    modules/platform/billing/routes/admin_billing_routes.py
+POST    /admin/billing/credits/grant                      PLAT_A    modules/platform/billing/routes/admin_billing_routes.py
+POST    /admin/billing/entitlements/override              PLAT_A    modules/platform/billing/routes/admin_billing_routes.py
+
+Count: 4
+
+================================================================
+## 6) Dev / engineering bootstrap only (non-prod operator tools)
+# Never expose as "product admin" for customers.
+
+METHOD  PATH                                              GUARD     SOURCE
+------  ----                                              -----     ------
+POST    /auth/dev/create-user                             DEV       api/routes/auth.py
+POST    /auth/password/login                              DEV/flag  api/routes/auth.py
+
+Count: 2 (environment-gated; confirm settings / main.py before use)
+
+================================================================
+## TOTALS (control-plane candidate set above)
+# Hard ops:           12
+# Observability:      10
+# Publish tooling:     1
+# ML/governance ops:  22
+# Cross-tenant console: 5  (section 4A — platform.admin)
+# Commercial admin:    4  (section 5 — platform.admin)
+# Dev bootstrap:       2
+# ---------------------
+# Approximate total:  ~56 platform-operator-relevant routes
+# (of ~850+ product routes in the full owner inventory)
+
+================================================================
+## Explicitly NOT platform-owner APIs
+# These look "admin" in the path/name but belong to the *customer's*
+# company admin (tenant), not you as SaaS operator.
+
+- modules/core/iam admin_routes:
+    PATCH /users/{user_id}
+    POST  /admin/users/{user_id}/sessions/revoke-all
+    POST/PATCH roles, role permissions
+    POST  /organizations, PATCH /organizations/current
+    companies / branches / business-units
+    (gated org.admin + allow_tenant_admin — customer admin console)
+
+- modules/platform/billing tenant self-serve:
+    GET /billing/subscription|entitlements|usage|credits|plans
+
+- modules/erp/**, modules/finance_os/** product surface
+    Includes every ERP AI endpoint (/invoices/ai/from-document, module
+    /copilot, /collections/assistant, ...). The intelligence behind them now
+    lives in finance_os and is called through erp/ports, but the paths stay
+    tenant product APIs — moving the brain added no operator route.
+    Also tenant-facing in platform_ai_runtime/routes/runtime_routes.py:
+    /goals*, /copilot/chat, /approvals, /world-state, /objectives, /tools
+    (only /ai/analytics and /ai/gateway/health are operator-shaped).
+- modules/platform/notifications user inbox / preferences
+- modules/platform/api_gateway tenant API keys + webhooks
+- modules/platform/governance policy/SoD/compliance for a tenant org
+- modules/erp/security /erp/admin/company-data-quality*
+    (customer-company data quality, not flora platform)
+
+- OpenAPI partner-facing /gateway/* type integration APIs
+  (tenant integration builder, not your internal staff console)
+
+================================================================
+## Permissions you care about as platform ops
+# Seed / assign these to staff principals (not customer CFOs):
+
+  ops.worker.manage   — run workers, worker webhook consume
+  ops.queue.manage    — enqueue/process, DLQ requeue, event replay
+
+# Both permission keys were absent from core.permissions until migration
+# 086_platform_owner_role.sql, so require_permission() could not pass for any
+# principal. That migration adds them and creates the role:
+#
+#   platform_owner   — every key in core.permissions incl. the two ops.* above.
+#                      Deliberately NOT granted to tenant_admin, which is a
+#                      customer-company admin role.
+#                      Seeded onto a login by backend/scripts/seed_platform_owner.py,
+#                      which also assigns tenant_admin for the role-name gates
+#                      (_require_tenant_admin, require_agent_read).
+#   Section 1 additionally needs ENABLE_WORKER_ROUTES=true.
+
+  platform.admin      — cross-tenant operator console (section 4A) AND commercial
+                        control plane (section 5: plan assign, credit grant,
+                        entitlement override). Added by migration 087, granted
+                        to platform_owner only. Never add it to
+                        _TENANT_ADMIN_ALLOWED in permission_guard.py: that would
+                        hand every customer admin a cross-tenant console.
+
+# Delivered by sections 4A + 5:
+    — cross-org user directory, block/unblock, forced logout
+    — AI cost + API call volume per org (/ops/platform/usage), which was the
+      "AI gateway cost across all orgs" gap; /ai/analytics stays per-org
+    — multi-tenant billing grants (plan/credits/entitlements) on platform.admin
+
+# Still missing (recommended later):
+    — global infra metrics without borrowing a customer org (/metrics is
+      per-org)
+    — training promotion without borrowing a tenant JWT (section 4)
+    — ERP↔FOS intelligence port health (see GAP note in section 2)
+    — a dedicated platform org for operator principals: platform_owner
+      currently lives inside the benchmark tenant, so operator logins appear
+      in that org's user list
+
+================================================================
+## How to use this file
+1. Platform owner dashboard (all tenants, all users, usage) → section 4A.
+2. Commercial control (plans / credits / entitlements for any org) → section 5.
+3. Staff tooling / ops runbooks → sections 1–2.
+4. ML platform team → section 4.
+5. UI for *customer companies* should use the rest of the product API,
+   not this list.
+
+Generated from codebase scan of route permissions + _wave0_api_by_owner.txt.
+Paths are relative app routes; full inventory of all APIs remains in _wave0_api_by_owner.txt.

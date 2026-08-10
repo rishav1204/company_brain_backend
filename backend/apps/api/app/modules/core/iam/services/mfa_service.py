@@ -1,4 +1,3 @@
-import base64
 import secrets
 import uuid
 
@@ -8,6 +7,7 @@ from app.modules.core.iam.repositories import user_repo
 from app.modules.core.iam.repositories.mfa_repository import mfa_repo
 from app.modules.core.iam.services.email_otp_service import verify_email_otp
 from app.modules.core.iam.services.sms_otp_service import verify_sms_otp
+from app.modules.core.iam.services.secrets_crypto import decrypt_secret, encrypt_secret
 from app.modules.core.iam.services.webauthn_service import finish_authentication
 
 
@@ -40,7 +40,7 @@ def _totp_secret(org_id: str, user_id: str) -> str | None:
         meta = row.get("metadata") or {}
         secret = meta.get("secret")
         if secret:
-            return str(secret)
+            return decrypt_secret(str(secret))
     user = user_repo.get_by_id(org_id, user_id)
     if not user:
         return None
@@ -51,12 +51,13 @@ def _totp_secret(org_id: str, user_id: str) -> str | None:
         with conn.cursor() as cur:
             cur.execute("SELECT mfa_secret FROM core.users WHERE id = %s::uuid", (user_id,))
             legacy = cur.fetchone()
-    return (legacy or {}).get("mfa_secret")
+    return decrypt_secret(str((legacy or {}).get("mfa_secret") or "")) or None
 
 
 def enroll_mfa(org_id: str, user_id: str) -> dict:
     secret = generate_totp_secret()
-    mfa_repo.upsert_method(org_id, user_id, "totp", enabled=False, metadata={"secret": secret})
+    encrypted = encrypt_secret(secret)
+    mfa_repo.upsert_method(org_id, user_id, "totp", enabled=False, metadata={"secret": encrypted})
     user = user_repo.get_by_id(org_id, user_id)
     if not user:
         raise ValueError("User not found")
@@ -70,7 +71,7 @@ def confirm_mfa_enrollment(org_id: str, user_id: str, code: str) -> list[str]:
     secret = _totp_secret(org_id, user_id)
     if not secret or not verify_totp(secret, code):
         raise MfaInvalid("Invalid MFA code")
-    mfa_repo.upsert_method(org_id, user_id, "totp", enabled=True, metadata={"secret": secret})
+    mfa_repo.upsert_method(org_id, user_id, "totp", enabled=True, metadata={"secret": encrypt_secret(secret)})
     with __import__("app.services.db", fromlist=["get_db_conn"]).get_db_conn() as conn:
         from app.services.db import set_rls_org
 
@@ -78,7 +79,7 @@ def confirm_mfa_enrollment(org_id: str, user_id: str, code: str) -> list[str]:
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE core.users SET mfa_enabled = TRUE, mfa_secret = %s, updated_at = NOW() WHERE id = %s::uuid",
-                (secret, user_id),
+                (encrypt_secret(secret), user_id),
             )
     batch_id = str(uuid.uuid4())
     plain_codes = mfa_repo.generate_recovery_codes()

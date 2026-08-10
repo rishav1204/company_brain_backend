@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from app.modules.erp.compliance.services.escalation_service import escalation_service
 from app.modules.erp.compliance.services.obligation_service import obligation_service
 from app.modules.erp.compliance.services.penalty_service import penalty_service
-from app.modules.erp.compliance.ai.risk_detector import compute_risk_score
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 
 class ComplianceDashboardService:
@@ -29,7 +29,11 @@ class ComplianceDashboardService:
             "overdue": overdue,
             "escalations_open": escalations,
             "penalty_exposure_total": exposure,
-            "risk_score": compute_risk_score(overdue=overdue, escalations=escalations, exposure=exposure),
+            "risk_score": intelligence_registry.compliance().compute_risk_score(
+                overdue=overdue,
+                escalations=escalations,
+                exposure=exposure,
+            ),
             "by_regulator": by_regulator,
         }
 

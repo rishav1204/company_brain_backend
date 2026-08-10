@@ -4,19 +4,22 @@ from fastapi import HTTPException
 
 from app.modules.core.iam.services.access_control import evaluate_access
 from app.modules.platform.api_gateway.schemas.scope_catalog import scope_to_action
+from app.modules.platform.billing.security.billing_enforce import enforce_billing
 from app.services.object_context import ObjectContext
+
+_FORBIDDEN_KEY_SCOPES = frozenset({"*", "admin"})
 
 
 def _scope_allows(context, required_scopes: list[str]) -> bool:
     if not required_scopes:
         return True
-    key_scopes = set(context.api_key_scopes or context.permissions or [])
-    if "admin" in key_scopes:
-        return True
-    return any(s in key_scopes for s in required_scopes)
-
-
-from app.modules.platform.billing.security.billing_enforce import enforce_billing
+    key_scopes = {str(s).strip() for s in (context.api_key_scopes or context.permissions or []) if str(s).strip()}
+    if key_scopes & _FORBIDDEN_KEY_SCOPES:
+        return False
+    explicit_required = [s for s in required_scopes if s not in _FORBIDDEN_KEY_SCOPES]
+    if not explicit_required:
+        return False
+    return any(s in key_scopes for s in explicit_required)
 
 
 def enforce_gateway_action(
@@ -37,7 +40,7 @@ def enforce_gateway_action(
         if context.api_key_id:
             attrs["api_key_id"] = context.api_key_id
 
-    policy_action = scope_to_action(action) if "." not in action or action in ("admin",) else action
+    policy_action = scope_to_action(action) if "." not in action else action
     decision = evaluate_access(
         org_id=context.org_id,
         user_id=context.user_id,

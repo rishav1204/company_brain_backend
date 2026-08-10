@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
+from app.core.request_context import RequestContext
+
 from app.modules.erp.accounts_payable.engine.aging_engine import aging_bucket, aging_days, bucket_invoice
 from app.modules.erp.reporting.engine.aggregation_engine import (
     BUCKET_MAP,
@@ -220,32 +222,49 @@ def test_report_engine_fetch_forecast(mock_fc) -> None:
 # --- guards ---
 
 
-def test_guard_read_allowed_accountant() -> None:
-    user = MagicMock(roles=["accountant"])
-    require_reporting_read(user)
+def _ctx(*, roles: list[str], permissions: list[str] | None = None) -> RequestContext:
+    return RequestContext(
+        request_id="r1",
+        org_id="org-1",
+        user_id="user-1",
+        roles=roles,
+        permissions=permissions or [],
+    )
 
 
-def test_guard_read_allowed_auditor() -> None:
-    user = MagicMock(roles=["auditor"])
-    require_reporting_read(user)
+@patch("app.modules.erp.reporting.security.reporting_guard.enforce_billing")
+@patch("app.modules.erp.security.access_guard.has_permission", return_value=True)
+def test_guard_read_allowed_accountant(_mock_perm, _mock_billing) -> None:
+    require_reporting_read(_ctx(roles=["accountant"]))
 
 
-def test_guard_read_denied() -> None:
-    user = MagicMock(roles=["guest"])
+@patch("app.modules.erp.reporting.security.reporting_guard.enforce_billing")
+@patch("app.modules.erp.security.access_guard.has_permission", return_value=True)
+def test_guard_read_allowed_auditor(_mock_perm, _mock_billing) -> None:
+    require_reporting_read(_ctx(roles=["auditor"]))
+
+
+@patch("app.modules.erp.reporting.security.reporting_guard.enforce_billing")
+@patch("app.modules.erp.security.access_guard.has_permission", return_value=False)
+@patch("app.modules.erp.security.access_guard.list_role_names", return_value=[])
+def test_guard_read_denied(_mock_roles, _mock_perm, _mock_billing) -> None:
     with pytest.raises(HTTPException) as exc:
-        require_reporting_read(user)
+        require_reporting_read(_ctx(roles=["guest"]))
     assert exc.value.status_code == 403
 
 
-def test_guard_export_allowed_cfo() -> None:
-    user = MagicMock(roles=["cfo"])
-    require_reporting_export(user)
+@patch("app.modules.erp.reporting.security.reporting_guard.enforce_billing")
+@patch("app.modules.erp.security.access_guard.has_permission", return_value=True)
+def test_guard_export_allowed_cfo(_mock_perm, _mock_billing) -> None:
+    require_reporting_export(_ctx(roles=["cfo"]))
 
 
-def test_guard_export_denied_accountant() -> None:
-    user = MagicMock(roles=["accountant"])
+@patch("app.modules.erp.reporting.security.reporting_guard.enforce_billing")
+@patch("app.modules.erp.security.access_guard.has_permission", return_value=False)
+@patch("app.modules.erp.security.access_guard.list_role_names", return_value=["accountant"])
+def test_guard_export_denied_accountant(_mock_roles, _mock_perm, _mock_billing) -> None:
     with pytest.raises(HTTPException):
-        require_reporting_export(user)
+        require_reporting_export(_ctx(roles=["accountant"]))
 
 
 # --- event registry ---
@@ -292,12 +311,41 @@ def test_job_registry_reports_daily() -> None:
 # --- cash flow stub ---
 
 
-def test_cash_flow_phase2_stub() -> None:
+def test_cash_flow_indirect_method() -> None:
+    from unittest.mock import patch
+
     from app.modules.erp.reporting.services.cash_flow_service import cash_flow_service
 
-    item = cash_flow_service.get("org", fiscal_period_id="fp1")
-    assert item["status"] == "phase2"
-    assert item["sections"] == []
+    with patch("app.modules.erp.reporting.services.cash_flow_service.trial_balance_service") as mock_tb, patch(
+        "app.modules.erp.reporting.services.cash_flow_service.account_repository"
+    ) as mock_acc, patch("app.modules.erp.reporting.services.cash_flow_service.mapping_repository") as mock_map:
+        mock_tb.get_from_reporting.return_value = {
+            "lines": [
+                {
+                    "account_id": "cash1",
+                    "debit_total": 500,
+                    "credit_total": 200,
+                    "opening_balance": 100,
+                    "closing_balance": 400,
+                },
+                {
+                    "account_id": "rev1",
+                    "debit_total": 0,
+                    "credit_total": 1000,
+                    "opening_balance": 0,
+                    "closing_balance": -1000,
+                },
+            ]
+        }
+        mock_acc.list.return_value = [
+            {"id": "cash1", "account_type": "cash", "group_name": "cash"},
+            {"id": "rev1", "account_type": "revenue", "group_name": "operating"},
+        ]
+        mock_map.list_financial_mappings.return_value = []
+        item = cash_flow_service.get("org", fiscal_period_id="fp1")
+    assert item["status"] == "ok"
+    assert item["format"] == "schedule_iii_indirect"
+    assert "statutory_summary" in item
 
 
 # --- aggregation statement rollup (mocked) ---

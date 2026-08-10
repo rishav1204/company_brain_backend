@@ -8,7 +8,7 @@ from app.services.llm_provider import llm_provider
 
 class AnswerSynthesizer:
     def synthesize(self, org_id: str, ctx: PlatformContext, question: str) -> dict:
-        with billing_ai_operation(org_id, feature="agents", operation_code="m38_answer"):
+        with billing_ai_operation(org_id, feature="agents", operation_code="m38_answer", skip_credits=True):
             system, user_prompt = prompt_assembler.build_answer_prompt(ctx, question)
             sources = {
                 "retrieval_trace": ctx.retrieval_trace,
@@ -27,6 +27,9 @@ class AnswerSynthesizer:
                     system_prompt=system,
                     user_prompt=user_prompt + '\n\nReturn JSON: {"answer": str, "confidence_band": str}',
                     estimated_tokens=min(2000, max(800, ctx.token_estimate + 400)),
+                    usage_operation_code="m38_answer",
+                    execution_class="answer",
+                    intent=ctx.intent.intent if ctx.intent else "read",
                 )
                 return {
                     "answer": str(out.get("answer") or prompt_assembler.fallback_text(ctx)),

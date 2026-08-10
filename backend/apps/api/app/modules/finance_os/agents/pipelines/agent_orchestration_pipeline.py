@@ -11,6 +11,8 @@ from app.modules.finance_os.agents.services.agent_memory_service import write_ou
 from app.modules.finance_os.agents.services.context_service import build as build_context
 from app.modules.finance_os.agents.services.execution_service import execution_service
 from app.modules.finance_os.agents.services.recommendation_service import recommendation_service
+from app.core.config import settings
+from app.modules.finance_os.platform_ai_runtime.runtime_router import delegate_to_m38_runtime, should_use_m38_runtime
 from app.services.langgraph_runner import run_langgraph_flow
 from app.services.repositories import audit_repo
 from app.modules.platform.billing.billing_hooks import billing_ai_operation
@@ -77,6 +79,24 @@ class AgentOrchestrationPipeline:
         payload = payload or {}
         agent_name = resolve_agent(agent_type, payload)
 
+        if should_use_m38_runtime(payload):
+            delegated = delegate_to_m38_runtime(
+                org_id,
+                agent_name,
+                trigger_type,
+                payload,
+                principal_roles=principal_roles,
+                principal_attrs={**(principal_attrs or {}), "user_id": user_id or "m29-delegate"},
+            )
+            if delegated is not None:
+                return self._format_m38_delegate_response(
+                    org_id,
+                    agent_name,
+                    delegated,
+                    user_id=user_id,
+                    trace_id=trace_id,
+                )
+
         delegated = self._try_m38_delegate(
             org_id,
             agent_name,
@@ -89,6 +109,24 @@ class AgentOrchestrationPipeline:
         )
         if delegated is not None:
             return delegated
+
+        if settings.m38_default_runtime:
+            from app.modules.finance_os.platform_ai_runtime.services.runtime_service import runtime_service
+
+            if runtime_service.schema_ready():
+                return {
+                    "execution_id": None,
+                    "platform_run_id": None,
+                    "status": "failed",
+                    "delegated_to_m38": True,
+                    "error": "m38_runtime_unavailable",
+                    "confidence": 0,
+                    "confidence_band": "manual",
+                    "verification_status": "m38_runtime_failed",
+                    "recommendations": [],
+                    "flow_result": {"mode": "failed"},
+                    "workflow_instance_id": None,
+                }
 
         if agent_name not in FINANCE_OS_AGENTS and agent_name not in {
             "ap_agent",
@@ -236,6 +274,39 @@ class AgentOrchestrationPipeline:
             "workflow_instance_id": workflow_instance_id,
         }
 
+    def _format_m38_delegate_response(
+        self,
+        org_id: str,
+        agent_name: str,
+        delegated: dict,
+        *,
+        user_id: str | None,
+        trace_id: str | None,
+    ) -> dict:
+        m38 = delegated.get("m38") or {}
+        status = str(delegated.get("status") or m38.get("status") or "completed")
+        graph = delegated.get("graph_runtime") or {}
+        return {
+            "execution_id": None,
+            "platform_run_id": graph.get("goal_run_id") or m38.get("goal_run_id"),
+            "status": status,
+            "delegated_to_m38": True,
+            "goal_id": graph.get("goal_id") or m38.get("goal_id"),
+            "m38": m38,
+            "confidence": (m38.get("plan") or {}).get("confidence", 0) if isinstance(m38.get("plan"), dict) else 0,
+            "confidence_band": (m38.get("plan") or {}).get("confidence_band", "manual")
+            if isinstance(m38.get("plan"), dict)
+            else "manual",
+            "verification_status": "m38_runtime",
+            "recommendations": [],
+            "flow_result": {
+                "mode": graph.get("mode") or m38.get("mode"),
+                "progress_percent": graph.get("progress_percent") or m38.get("progress_percent"),
+                "graph_runtime": graph,
+            },
+            "workflow_instance_id": None,
+        }
+
     def _try_m38_delegate(
         self,
         org_id: str,
@@ -248,7 +319,9 @@ class AgentOrchestrationPipeline:
         principal_attrs: dict | None,
         source_event_type: str | None,
     ) -> dict | None:
-        """M38 Phase 7: delegate M29 agent runs to Platform AI Runtime when schema is ready."""
+        """Legacy M38 delegate helper — prefer runtime_router when m38_default_runtime is enabled."""
+        if should_use_m38_runtime(payload):
+            return None
         try:
             from app.modules.finance_os.platform_ai_runtime.services.runtime_service import runtime_service
 

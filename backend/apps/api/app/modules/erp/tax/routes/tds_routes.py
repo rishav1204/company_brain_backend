@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.erp.tax.ai.tds_copilot import answer_tds_question
-from app.modules.erp.tax.ai.tds_error_detector import detect_tds_errors, review_vendor_quarter
-from app.modules.erp.tax.ai.tds_return_reviewer import review_return_payload
-from app.modules.erp.tax.ai.tds_section_recommender import recommend_section
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.tax.schemas.tax_schema import (
     Form16aGenerateRequest,
     Tds26asReconcileRequest,
@@ -196,7 +193,7 @@ def tds_recommend_section(request: TdsRecommendSectionRequest, context=Depends(r
 
         vendor = vendor_repository.get(context.org_id, vendor_id=request.vendor_id) or {}
         vendor_meta = vendor.get("metadata") if isinstance(vendor.get("metadata"), dict) else {}
-    item = recommend_section(
+    item = intelligence_registry.tax().recommend_section(
         payment_type=request.payment_type,
         expense_category=request.expense_category,
         vendor_metadata=vendor_meta,
@@ -212,7 +209,7 @@ def tds_review_vendor(request: TdsReviewRequest, context=Depends(require_tax_rea
 
     vendor = vendor_repository.get(context.org_id, vendor_id=request.vendor_id) or {}
     txs = tds_service.list_transactions(context.org_id)
-    item = review_vendor_quarter(
+    item = intelligence_registry.tax().review_vendor_quarter(
         vendor_id=request.vendor_id,
         quarter=request.quarter,
         financial_year=request.financial_year,
@@ -227,7 +224,10 @@ def tds_review_vendor(request: TdsReviewRequest, context=Depends(require_tax_rea
 def tds_return_review(request: TdsReturnReviewRequest, context=Depends(require_tax_read)) -> dict:
     row = tds_return_service.get_return(context.org_id, return_id=request.return_id)
     payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-    item = review_return_payload(payload=payload, form_type=str(row.get("form_type") or "26Q"))
+    item = intelligence_registry.tax().review_return_payload(
+        payload=payload,
+        form_type=str(row.get("form_type") or "26Q"),
+    )
     return {"request_id": context.request_id, "item": item}
 
 

@@ -1,9 +1,23 @@
 from datetime import datetime
+from ipaddress import ip_address as parse_ip
 from typing import Any
 
 from psycopg.types.json import Json
 
 from app.services.db import get_db_conn, set_rls_org
+
+
+def _safe_inet(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"testclient", "unknown", "localhost"}:
+        return None
+    try:
+        parse_ip(text)
+        return text
+    except ValueError:
+        return None
 
 
 class SessionRepository:
@@ -36,7 +50,7 @@ class SessionRepository:
                         refresh_token_hash,
                         expires_at,
                         Json(device_info or {}),
-                        ip_address,
+                        _safe_inet(ip_address),
                         rotated_from,
                     ),
                 )
@@ -49,9 +63,7 @@ class SessionRepository:
                     """
                     SELECT id::text AS id, user_id::text AS user_id, org_id::text AS org_id,
                            expires_at, revoked, refresh_token_hash
-                    FROM core.sessions
-                    WHERE refresh_token_hash = %s
-                    LIMIT 1
+                    FROM core.get_session_by_refresh_hash(%s)
                     """,
                     (refresh_token_hash,),
                 )
@@ -78,33 +90,18 @@ class SessionRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE core.sessions
-                    SET revoked = TRUE
-                    WHERE refresh_token_hash = %s
-                      AND revoked = FALSE
-                      AND expires_at > NOW()
-                    RETURNING id::text AS id, user_id::text AS user_id, org_id::text AS org_id,
-                              expires_at, revoked, refresh_token_hash
+                    SELECT id::text AS id, user_id::text AS user_id, org_id::text AS org_id,
+                           expires_at, revoked, reuse_detected
+                    FROM core.consume_session_by_refresh_hash(%s)
                     """,
                     (refresh_token_hash,),
                 )
                 row = cur.fetchone()
-                if row:
-                    return row, False
-                cur.execute(
-                    """
-                    SELECT id::text AS id, user_id::text AS user_id, org_id::text AS org_id,
-                           expires_at, revoked, refresh_token_hash
-                    FROM core.sessions
-                    WHERE refresh_token_hash = %s
-                    LIMIT 1
-                    """,
-                    (refresh_token_hash,),
-                )
-                existing = cur.fetchone()
-                if existing and existing.get("revoked"):
+                if not row:
+                    return None, False
+                if row.get("reuse_detected"):
                     return None, True
-                return None, False
+                return row, False
 
     def revoke_all_for_user(self, org_id: str, user_id: str) -> int:
         with get_db_conn() as conn:
@@ -168,6 +165,22 @@ class SessionRepository:
                     (org_id, user_id, max(0, keep)),
                 )
                 return cur.rowcount
+
+    def is_session_active(self, org_id: str, session_id: str) -> bool:
+        """SEC-02: validate access JWT session_id against live session row."""
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1 FROM core.sessions
+                    WHERE id = %s::uuid AND org_id = %s::uuid
+                      AND revoked = FALSE AND expires_at > NOW()
+                    LIMIT 1
+                    """,
+                    (session_id, org_id),
+                )
+                return cur.fetchone() is not None
 
     def list_active_sessions(self, org_id: str, user_id: str) -> list[dict[str, Any]]:
         with get_db_conn() as conn:

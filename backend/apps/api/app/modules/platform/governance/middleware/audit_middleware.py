@@ -73,4 +73,30 @@ class AuditCaptureMiddleware(BaseHTTPMiddleware):
             )
         except Exception as exc:
             log_event("governance.audit_middleware.error", error=str(exc))
+        # Dual-write product activity feed for high-risk methods (esp. DELETE).
+        if request.method in {"DELETE", "POST", "PATCH", "PUT"} and response.status_code < 400:
+            try:
+                from app.modules.platform.control_plane.services.activity_service import (
+                    activity_service,
+                )
+
+                last = path.rstrip("/").split("/")[-1] or "root"
+                action = "delete" if request.method == "DELETE" else "update"
+                if request.method == "POST":
+                    action = "create"
+                activity_service.record(
+                    org_id=org_id,
+                    actor_user_id=user_id,
+                    actor_type="user",
+                    action=action,
+                    entity_type="http.route",
+                    entity_id=last,
+                    summary=f"{request.method} {path}",
+                    request_id=request_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    metadata={"status_code": response.status_code, "path": path},
+                )
+            except Exception as exc:
+                log_event("governance.activity_middleware.error", error=str(exc))
         return response

@@ -1,5 +1,5 @@
-from app.modules.erp.assets.ai.asset_classifier import classify_asset
-from app.modules.erp.assets.ai.useful_life_recommender import recommend_useful_life
+from app.modules.finance_os.domain_intelligence.assets.asset_classifier import classify_asset
+from app.modules.finance_os.domain_intelligence.assets.useful_life_recommender import recommend_useful_life
 from app.modules.erp.assets.engine.asset_lifecycle_engine import (
     ensure_capitalizable,
     ensure_depreciable,

@@ -88,3 +88,19 @@ class PredictionRepository:
                 )
                 row = cur.fetchone()
                 return dict(row) if row else None
+
+    def link_ap_invoice(self, org_id: str, prediction_id: str, *, ap_invoice_id: str) -> dict | None:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE finance_os.invoice_predictions
+                    SET ap_invoice_id = %s::uuid, synced_at = NOW()
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    RETURNING id::text, ap_invoice_id::text, synced_at::text
+                    """,
+                    (ap_invoice_id, org_id, prediction_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None

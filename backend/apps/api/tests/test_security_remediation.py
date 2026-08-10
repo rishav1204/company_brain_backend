@@ -26,9 +26,13 @@ def test_webhook_url_safety_module():
 
 
 def test_agent_policy_gate_evaluates_proposed_actions():
-    text = (APP / "services" / "langgraph_runner.py").read_text(encoding="utf-8")
-    assert "for proposed in state.proposed_actions" in text
-    assert "agent_tool_requires_approval" in text
+    runner = (APP / "services" / "langgraph_runner.py").read_text(encoding="utf-8")
+    gate = (APP / "modules" / "finance_os" / "platform_ai_runtime" / "policy" / "unified_policy_gate.py").read_text(
+        encoding="utf-8"
+    )
+    assert "for proposed in state.proposed_actions" in runner
+    assert "evaluate_tool_invocation" in runner or "agent_tool_requires_approval" in runner + gate
+    assert "agent_tool_requires_approval" in gate or "requires_human_approval" in gate
 
 
 def test_workflow_fail_closed_payment_schedule():

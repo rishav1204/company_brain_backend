@@ -17,13 +17,22 @@ class ConsumerIdempotencyService:
         if not org_id or not event_id:
             return
         scope = f"event_consume:{queue}"
+        from app.core.config import settings
+
+        financial = {
+            settings.queue_workflow_execution,
+            settings.queue_workflow_approvals,
+            settings.queue_integration_bank,
+            settings.queue_integration_gst,
+        }
+        ttl_days = int(settings.consumer_dedup_financial_ttl_days) if queue in financial else int(settings.consumer_dedup_ttl_days)
         platform_idempotency_service.store(
             org_id,
             scope,
             event_id,
             request_payload={"event_id": event_id, "queue": queue},
             response_payload={"status": "processed"},
-            ttl_days=7,
+            ttl_days=ttl_days,
         )
 
 

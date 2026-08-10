@@ -109,14 +109,19 @@ class VendorService:
         return vendor
 
     def get_vendor_risk(self, org_id: str, *, vendor_id: str) -> dict:
-        from app.modules.erp.accounts_payable.ai.vendor_risk import assess_vendor_risk
         from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
         from app.modules.erp.accounts_payable.repositories.payment_repository import payment_repository
+        from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
         invoices = invoice_repository.list(org_id, vendor_id=vendor_id, limit=500)
         payments = payment_repository.list(org_id, limit=500)
         vendor_payments = [p for p in payments if str(p.get("vendor_id")) == vendor_id]
-        return assess_vendor_risk(org_id, vendor_id=vendor_id, invoices=invoices, payments=vendor_payments)
+        return intelligence_registry.ap_risk().assess_vendor_risk(
+            org_id,
+            vendor_id=vendor_id,
+            invoices=invoices,
+            payments=vendor_payments,
+        )
 
     def add_bank_account(
         self,
@@ -127,12 +132,13 @@ class VendorService:
         ifsc_code: str,
         bank_name: str | None = None,
         is_primary: bool = False,
+        actor_id: str | None = None,
     ) -> dict:
         vendor = vendor_repository.get(org_id, vendor_id=vendor_id)
         if not vendor:
             raise ValueError("Vendor not found")
         encrypted = encrypt_field(account_number)
-        return vendor_bank_repository.create(
+        row = vendor_bank_repository.create(
             org_id,
             vendor_id=vendor_id,
             account_number_encrypted=encrypted,
@@ -140,6 +146,62 @@ class VendorService:
             bank_name=bank_name,
             is_primary=is_primary,
         )
+        bank_account_id = str(row.get("id") or "")
+        last4 = account_number[-4:] if len(account_number) >= 4 else "****"
+        self._audit_bank_account(
+            org_id,
+            vendor_id=vendor_id,
+            bank_account_id=bank_account_id,
+            action="vendor.bank_account.added",
+            actor_id=actor_id,
+            payload={
+                "ifsc_code": ifsc_code.upper(),
+                "bank_name": bank_name,
+                "is_primary": is_primary,
+                "account_last4": last4,
+            },
+        )
+        from app.modules.erp.accounts_payable.events.ap_events import emit_vendor_bank_account_changed
+
+        emit_vendor_bank_account_changed(
+            org_id,
+            vendor_id=vendor_id,
+            bank_account_id=bank_account_id,
+            change_type="added",
+            actor_id=actor_id,
+            ifsc_code=ifsc_code.upper(),
+            bank_name=bank_name,
+            is_primary=is_primary,
+            account_last4=last4,
+        )
+        return row
+
+    def _audit_bank_account(
+        self,
+        org_id: str,
+        *,
+        vendor_id: str,
+        bank_account_id: str,
+        action: str,
+        actor_id: str | None,
+        payload: dict,
+    ) -> None:
+        try:
+            from app.modules.platform.governance.services.audit_service import audit_service
+
+            audit_service.record(
+                org_id=org_id,
+                actor_type="user",
+                actor_id=actor_id or "erp.ap",
+                action=action,
+                object_ref=f"erp:vendor:{vendor_id}:bank:{bank_account_id}",
+                entity_type="vendor_bank_account",
+                entity_id=bank_account_id,
+                payload=payload,
+                source_service="erp.ap",
+            )
+        except Exception:
+            pass
 
     def _audit(self, org_id: str, *, vendor_id: str, action: str, actor_id: str | None) -> None:
         try:

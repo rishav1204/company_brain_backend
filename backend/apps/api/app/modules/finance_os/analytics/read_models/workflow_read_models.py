@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from app.modules.erp.query_services import fiscal_queries
+
 
 def load_close(org_id: str, *, fiscal_period_id: str | None = None) -> dict:
-    from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository
     from app.modules.finance_os.workflow_intelligence.services.workflow_pattern_service import workflow_pattern_service
 
     wf = workflow_pattern_service.analytics(org_id, workflow_type="PERIOD_CLOSE", days=90)
     period = None
     if fiscal_period_id:
-        period = fiscal_period_repository.get(org_id, period_id=fiscal_period_id)
+        period = fiscal_queries.get_period_row(org_id, period_id=fiscal_period_id)
     else:
-        periods = fiscal_period_repository.list(org_id, limit=5)
+        periods = fiscal_queries.list_periods(org_id, limit=5)
         for p in periods:
             if str(p.get("status")) == "closed" or p.get("closed_at"):
                 period = p

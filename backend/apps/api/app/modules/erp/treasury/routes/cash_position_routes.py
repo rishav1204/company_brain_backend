@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.erp.treasury.ai.treasury_copilot import answer_treasury_question
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.treasury.schemas.treasury_schema import TreasuryCopilotRequest
 from app.modules.erp.treasury.security.treasury_access import enforce_treasury_action
 from app.modules.erp.treasury.security.treasury_guard import require_treasury_read
@@ -62,5 +62,9 @@ def treasury_copilot(request: TreasuryCopilotRequest, context=Depends(require_tr
     enforce_treasury_action(context, action="treasury.copilot.query", object_type="treasury", object_id="copilot")
     position = cash_position_service.compute_live_position(context.org_id)
     liquidity = liquidity_service.analyze(context.org_id)
-    item = answer_treasury_question(question=request.question, position=position, liquidity=liquidity)
+    item = intelligence_registry.treasury().answer_treasury_question(
+        question=request.question,
+        position=position,
+        liquidity=liquidity,
+    )
     return {"request_id": context.request_id, "item": item}

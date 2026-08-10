@@ -4,7 +4,7 @@ from app.modules.erp.fiscal.exceptions import PeriodClosedError
 from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository
 
 SOFT_POST_ROLES = {"cfo", "controller", "finance_manager", "tenant_admin"}
-SOFT_POST_PERMS = {"fiscal.soft_post", "erp.fiscal.admin", "*"}
+SOFT_POST_PERMS = {"fiscal.soft_post", "erp.fiscal.admin"}
 
 
 class PostingValidationService:

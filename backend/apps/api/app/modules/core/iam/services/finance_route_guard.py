@@ -42,7 +42,7 @@ def enforce_finance_route_access(
         return
     scopes = context.api_key_scopes or context.permissions or []
     primary = required_scope or resolve_required_scope(action=action, object_type=object_type, mode=mode)
-    fallbacks = [primary, f"{object_type}.read", f"{object_type}.write", "workflow.read", "workflow.write", "admin"]
+    fallbacks = [primary, f"{object_type}.read", f"{object_type}.write", "workflow.read", "workflow.write"]
     if any(scope_allows(scopes, candidate) for candidate in fallbacks):
         return
     raise HTTPException(status_code=403, detail=f"API key missing scope (required one of: {', '.join(fallbacks)})")

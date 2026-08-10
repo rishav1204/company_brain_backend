@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from app.modules.erp.assets.ai.asset_classifier import classify_asset
-from app.modules.erp.assets.ai.useful_life_recommender import recommend_useful_life
 from app.modules.erp.assets.events.asset_events import emit_candidate_detected
 from app.modules.erp.assets.repositories.candidate_repository import candidate_repository
 from app.modules.erp.assets.repositories.category_repository import category_repository, policy_repository
 from app.modules.erp.assets.services.asset_service import asset_service
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 
 class CandidateService:
@@ -16,7 +15,8 @@ class CandidateService:
     def create_from_ap_invoice(self, org_id: str, *, invoice_id: str, amount: float, description: str | None = None) -> dict | None:
         if amount < self._threshold(org_id):
             return None
-        hints = classify_asset(description or "")
+        asset_intel = intelligence_registry.asset()
+        hints = asset_intel.classify_asset(description or "")
         cat_id = None
         for cat in category_repository.list_active(org_id):
             if str(cat.get("category_code", "")).lower() == hints.get("category_code", "").lower():
@@ -30,7 +30,7 @@ class CandidateService:
             description=description,
             suggested_category_id=cat_id,
             status="pending_reclass",
-            metadata={"ai": hints, "useful_life_months": recommend_useful_life(hints)},
+            metadata={"ai": hints, "useful_life_months": asset_intel.recommend_useful_life(hints)},
         )
         emit_candidate_detected(org_id, candidate_id=str(candidate["id"]), source_type="ap_invoice", source_id=invoice_id)
         return candidate
@@ -38,7 +38,7 @@ class CandidateService:
     def create_from_expense_claim(self, org_id: str, *, claim_id: str, amount: float, description: str | None = None) -> dict | None:
         if amount < self._threshold(org_id):
             return None
-        hints = classify_asset(description or "")
+        hints = intelligence_registry.asset().classify_asset(description or "")
         candidate = candidate_repository.create(
             org_id,
             source_type="expense_claim",

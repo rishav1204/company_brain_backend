@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.modules.erp.journals.ai.journal_generator import build_draft_lines_from_extraction
 from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 
 class AiJournalService:
@@ -19,7 +19,7 @@ class AiJournalService:
         posting_date: str,
         journal_type: str = "purchase",
     ) -> dict:
-        lines, confidence = build_draft_lines_from_extraction(org_id, extracted_data)
+        lines, confidence = intelligence_registry.journal().build_draft_lines_from_extraction(org_id, extracted_data)
         if confidence.get("requires_review"):
             try:
                 from app.services.metrics import metrics_store

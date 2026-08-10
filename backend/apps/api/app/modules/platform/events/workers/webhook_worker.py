@@ -23,5 +23,5 @@ def process_integration_event(envelope: dict) -> dict:
         except Exception:
             pass
         return {"status": "processed"}
-    log_event("platform.integration.event", org_id=org_id, event_type=event_type)
+    log_event("platform.integration.event", org_id=org_id, consumed_event_type=event_type)
     return {"status": "acknowledged"}

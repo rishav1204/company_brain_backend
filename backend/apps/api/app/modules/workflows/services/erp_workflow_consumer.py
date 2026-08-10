@@ -36,6 +36,19 @@ _ENTITY_WORKFLOW_MAP = {
     "ar_credit_note": "AR_CREDIT_NOTE_APPROVAL",
 }
 
+_ENTITY_POLICY_ACTION = {
+    # Wave 2: provide a deterministic policy action for workflow execution gating.
+    "invoice": "invoice.approve",
+    "payment": "payment.execute",
+    "treasury_payment": "treasury.payment.execute",
+    "gst_return": "gst.return.file",
+    "tds_return": "tds.return.file",
+    "e_invoice": "einvoice.generate",
+    "reconciliation": "bank.reconciliation.approve",
+    "fiscal_period": "fiscal.close",
+    "period_reopen": "fiscal.reopen",
+}
+
 
 def handle_entity_created(*, org_id: str, payload: dict[str, Any], trace_id: str | None = None) -> dict | None:
     if not workflow_service.schema_ready():
@@ -50,6 +63,7 @@ def handle_entity_created(*, org_id: str, payload: dict[str, Any], trace_id: str
     }
     if payload.get("metadata") and isinstance(payload["metadata"], dict):
         metadata.update(payload["metadata"])
+    metadata.setdefault("policy_action", _ENTITY_POLICY_ACTION.get(entity_type))
     return workflow_service.start_workflow(
         org_id=org_id,
         user_id=str(payload.get("started_by") or payload.get("user_id") or ""),

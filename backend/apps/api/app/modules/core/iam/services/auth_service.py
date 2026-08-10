@@ -43,6 +43,8 @@ def login(
     device_info: dict | None = None,
     ip_address: str | None = None,
     mfa_code: str | None = None,
+    org_id: str | None = None,
+    org_slug: str | None = None,
 ) -> dict:
     with trace_span("iam.login", email=email):
         require_core_schema()
@@ -57,7 +59,7 @@ def login(
             metrics_store.incr_iam_login_failure()
             raise AuthError("Too many login attempts")
 
-        return _login_inner(email, password, device_info, ip_address, mfa_code, ip_part)
+        return _login_inner(email, password, device_info, ip_address, mfa_code, ip_part, org_id, org_slug)
 
 
 def _defer_login_side_effects(
@@ -94,8 +96,13 @@ def _login_inner(
     ip_address: str | None,
     mfa_code: str | None,
     ip_part: str | None,
+    org_id_hint: str | None = None,
+    org_slug_hint: str | None = None,
 ) -> dict:
-    bundle = user_repo.get_login_bundle(email)
+    bundle = user_repo.get_login_bundle(email, org_id=org_id_hint, org_slug=org_slug_hint)
+    if bundle and bundle.get("ambiguous"):
+        # Same email in 2+ orgs — the UI must re-submit with org_id or org_slug.
+        raise AuthError("org_id or org_slug is required for login")
     user = bundle["user"] if bundle else None
     if user is None or user.get("status") != "active":
         record_failure(email, ip_part)
@@ -111,6 +118,29 @@ def _login_inner(
 
     org_id = user["org_id"]
     user_id = user["id"]
+    try:
+        from app.modules.platform.control_plane.services.access_config_service import (
+            access_config_service,
+        )
+
+        controls = access_config_service.get_org_controls(str(org_id))
+        if not controls.get("login_allowed", True) or str(
+            controls.get("lifecycle_status") or "active"
+        ) in {"frozen", "suspended", "offboarding"}:
+            metrics_store.incr_iam_login_failure()
+            record_auth_event(
+                event="login",
+                success=False,
+                org_id=org_id,
+                user_id=user_id,
+                reason="org_login_disabled",
+                ip_address=ip_address,
+            )
+            raise AuthError("Organization access is currently disabled")
+    except AuthError:
+        raise
+    except Exception:
+        pass
     roles = bundle.get("roles") or []
     if not roles:
         raise AuthError("No roles assigned")

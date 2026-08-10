@@ -20,22 +20,71 @@ class UserRepository:
                 )
                 return cur.fetchone()
 
-    def get_login_bundle(self, email: str) -> dict[str, Any] | None:
-        """Single-connection login read: user, roles, permissions, policy rows."""
+    def get_login_bundle(
+        self,
+        email: str,
+        *,
+        org_id: str | None = None,
+        org_slug: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Single-connection login read: user, roles, permissions, policy rows.
+
+        Prefer an explicit org scope (id or slug). When neither is provided,
+        resolve by email only if the address maps to exactly one active user
+        (the common UI path that only collects email + password). Duplicate
+        memberships across orgs still require the caller to supply org_id or
+        org_slug (SEC-06).
+        """
         with get_db_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id::text AS id, org_id::text AS org_id, email, display_name, status,
-                           password_hash, mfa_enabled, phone, last_login_at,
-                           idp_subject, idp_provider
-                    FROM core.users
-                    WHERE lower(email) = lower(%s)
-                    LIMIT 1
-                    """,
-                    (email.strip(),),
-                )
-                user = cur.fetchone()
+                if org_id:
+                    cur.execute(
+                        """
+                        SELECT id::text AS id, org_id::text AS org_id, email, display_name, status,
+                               password_hash, mfa_enabled, phone, last_login_at,
+                               idp_subject, idp_provider
+                        FROM core.users
+                        WHERE lower(email) = lower(%s) AND org_id = %s::uuid
+                        LIMIT 1
+                        """,
+                        (email.strip(), org_id),
+                    )
+                    user = cur.fetchone()
+                elif org_slug:
+                    cur.execute(
+                        """
+                        SELECT u.id::text AS id, u.org_id::text AS org_id, u.email, u.display_name, u.status,
+                               u.password_hash, u.mfa_enabled, u.phone, u.last_login_at,
+                               u.idp_subject, u.idp_provider
+                        FROM core.users u
+                        JOIN core.organizations o ON o.id = u.org_id
+                        WHERE lower(u.email) = lower(%s) AND lower(o.slug) = lower(%s)
+                        LIMIT 1
+                        """,
+                        (email.strip(), org_slug.strip()),
+                    )
+                    user = cur.fetchone()
+                else:
+                    # Fetch up to 2 matches so we can distinguish unique vs ambiguous
+                    # without loading every membership for a popular shared address.
+                    cur.execute(
+                        """
+                        SELECT id::text AS id, org_id::text AS org_id, email, display_name, status,
+                               password_hash, mfa_enabled, phone, last_login_at,
+                               idp_subject, idp_provider
+                        FROM core.users
+                        WHERE lower(email) = lower(%s)
+                        ORDER BY created_at ASC
+                        LIMIT 2
+                        """,
+                        (email.strip(),),
+                    )
+                    matches = list(cur.fetchall())
+                    if len(matches) == 0:
+                        return None
+                    if len(matches) > 1:
+                        return {"ambiguous": True, "match_count": len(matches)}
+                    user = matches[0]
                 if not user:
                     return None
                 org_id = user["org_id"]

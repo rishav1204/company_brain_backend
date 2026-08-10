@@ -5,12 +5,16 @@ from app.core.request_context import RequestContext
 
 
 def test_event_bus_publish_sets_envelope_principal(monkeypatch) -> None:
-    monkeypatch.setattr("app.services.event_bus.audit_repo.create_log", lambda **kwargs: None)
-    monkeypatch.setattr("app.services.event_bus.event_queue.publish", lambda envelope: None)
+    monkeypatch.setattr("app.services.repositories.audit_repo.create_log", lambda **kwargs: None)
+    monkeypatch.setattr("app.services.event_queue.event_queue.publish", lambda envelope: None)
+    monkeypatch.setattr(
+        "app.modules.platform.events.services.event_service.platform_event_service.schema_ready",
+        lambda: False,
+    )
     principal = build_principal(user_id="user-a", roles=["controller"], attrs={"dept": "finance"})
     event = event_bus.publish(
         event_type="agent.run.started",
-        org_id="org-demo",
+        org_id="11111111-1111-4111-8111-111111111111",
         source="test",
         trace_id="trace-1",
         payload={"run_id": "run-1"},
@@ -57,22 +61,22 @@ def test_principal_from_request_context() -> None:
 
 def test_agent_run_consumer_uses_envelope_principal(monkeypatch) -> None:
     observed = {"roles": None, "attrs": None}
+    _LEGACY = "app.modules.platform.events.consumers.handlers.legacy_handlers"
 
     def _fake_run_langgraph_flow(**kwargs):
         observed["roles"] = kwargs.get("principal_roles")
         observed["attrs"] = kwargs.get("principal_attrs")
         return {"status": "completed", "proposed_actions": []}
 
-    monkeypatch.setattr(event_consumers, "run_langgraph_flow", _fake_run_langgraph_flow)
+    monkeypatch.setattr(f"{_LEGACY}.run_langgraph_flow", _fake_run_langgraph_flow)
     monkeypatch.setattr(
-        event_consumers.agents_repo,
-        "create_run",
+        f"{_LEGACY}.agents_repo.create_run",
         lambda **kwargs: {"run_id": "run-99", "status": kwargs.get("status", "completed")},
     )
 
     event_consumers._consume_agent_run_event(
         {
-            "org_id": "org-demo",
+            "org_id": "11111111-1111-4111-8111-111111111111",
             "trace_id": "trace-99",
             "principal": build_principal(user_id="user-7", roles=["controller"], attrs={"team": "ap"}),
             "payload": {"agent_type": "workflow_assistant", "trigger_type": "event"},
@@ -89,7 +93,10 @@ def test_publish_child_event_forwards_principal(monkeypatch) -> None:
         captured.update(kwargs)
         return {"event_id": "evt-1", **kwargs}
 
-    monkeypatch.setattr(event_consumers.event_bus, "publish", _fake_publish)
+    monkeypatch.setattr(
+        "app.modules.platform.events.consumers.handlers.legacy_handlers.event_bus.publish",
+        _fake_publish,
+    )
 
     event_consumers._publish_child_event(
         {
@@ -98,7 +105,7 @@ def test_publish_child_event_forwards_principal(monkeypatch) -> None:
             "payload": {},
         },
         event_type="source.sync.completed",
-        org_id="org-demo",
+        org_id="11111111-1111-4111-8111-111111111111",
         source="worker.ingestion",
         payload={"source_id": "src-1"},
     )
@@ -109,17 +116,18 @@ def test_publish_child_event_forwards_principal(monkeypatch) -> None:
 
 def test_agent_action_consumer_uses_actor_id_from_principal(monkeypatch) -> None:
     observed = {"actor_id": None, "roles": None}
+    _LEGACY = "app.modules.platform.events.consumers.handlers.legacy_handlers"
 
     def _fake_execute_action(**kwargs):
         observed["actor_id"] = kwargs.get("actor_id")
         observed["roles"] = kwargs.get("roles")
         return {"status": "completed"}
 
-    monkeypatch.setattr(event_consumers, "execute_action", _fake_execute_action)
+    monkeypatch.setattr(f"{_LEGACY}.execute_action", _fake_execute_action)
 
     event_consumers._consume_agent_action_event(
         {
-            "org_id": "org-demo",
+            "org_id": "11111111-1111-4111-8111-111111111111",
             "principal": build_principal(user_id="user-action", roles=["controller"], attrs={}),
             "payload": {"tool": "slack", "method": "postMessage", "params": {"text": "hello"}},
         }

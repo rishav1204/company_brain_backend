@@ -33,7 +33,8 @@ def resolve_gst_account(org_id: str, *, tax_code: str, company_id: str | None = 
     for mapping in mappings:
         if str(mapping.get("gst_type")) == gst_type:
             return str(mapping.get("account_id"))
-    return resolve_account_by_type(org_id, "gst_input")
+    # INT-05: do not silently fall back to a generic GST account; missing mapping must fail fast.
+    return None
 
 
 def build_gst_lines_from_extraction(

@@ -52,7 +52,7 @@ Customer (`/api/v1/billing/*`):
 - `GET /billing/credits`
 - `GET /billing/plans`
 
-Admin (`/api/v1/admin/billing/*`, `tenant_admin`):
+Admin (`/api/v1/admin/billing/*`, requires `platform.admin` — platform owner only, not customer `tenant_admin`):
 
 - `GET /admin/billing/plans`
 - `POST /admin/billing/subscriptions/assign`

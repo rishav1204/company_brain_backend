@@ -30,12 +30,12 @@ class LedgerRepository:
                     INSERT INTO erp.ledger_entries (
                       id, org_id, batch_id, journal_id, account_id, entry_type,
                       debit_amount, credit_amount, currency_code, exchange_rate,
-                      posting_date, fiscal_period_id, reference_type, reference_id, cost_center_id
+                      posting_date, fiscal_period_id, reference_type, reference_id, cost_center_id, branch_id
                     )
                     VALUES (
                       %s::uuid, %s::uuid, %s::uuid, %s::uuid, %s::uuid, %s,
                       %s::numeric, %s::numeric, %s, %s::numeric,
-                      %s::date, %s::uuid, %s, %s::uuid, %s::uuid
+                      %s::date, %s::uuid, %s, %s::uuid, %s::uuid, %s::uuid
                     )
                     """,
                     (
@@ -54,6 +54,7 @@ class LedgerRepository:
                         l.get("reference_type"),
                         l.get("reference_id"),
                         l.get("cost_center_id"),
+                        l.get("branch_id"),
                     ),
                 )
         return len(lines)
@@ -85,6 +86,55 @@ class LedgerRepository:
                     updated_at = NOW()
                 """,
                 (rid, org_id, account_id, fiscal_period_id, debit_delta, credit_delta, closing_balance),
+            )
+
+    def upsert_balances_batch(
+        self,
+        conn,
+        org_id: str,
+        *,
+        fiscal_period_id: str,
+        rows: list[dict],
+    ) -> None:
+        """Batch balance upsert to reduce hot-row lock churn during posting (DB-21)."""
+        if not rows:
+            return
+        set_rls_org(conn, org_id)
+        account_ids = [str(r["account_id"]) for r in rows]
+        debit_deltas = [float(r.get("debit_delta") or 0) for r in rows]
+        credit_deltas = [float(r.get("credit_delta") or 0) for r in rows]
+        closing_balances = [float(r.get("closing_balance") or 0) for r in rows]
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO erp.account_balances (
+                  id, org_id, account_id, fiscal_period_id, debit_total, credit_total, closing_balance, updated_at
+                )
+                SELECT
+                  gen_random_uuid(),
+                  %s::uuid,
+                  u.account_id::uuid,
+                  %s::uuid,
+                  u.debit_delta,
+                  u.credit_delta,
+                  u.closing_balance,
+                  NOW()
+                FROM UNNEST(%s::uuid[], %s::numeric[], %s::numeric[], %s::numeric[])
+                  AS u(account_id, debit_delta, credit_delta, closing_balance)
+                ON CONFLICT (org_id, account_id, fiscal_period_id) DO UPDATE
+                SET debit_total = erp.account_balances.debit_total + EXCLUDED.debit_total,
+                    credit_total = erp.account_balances.credit_total + EXCLUDED.credit_total,
+                    closing_balance = erp.account_balances.closing_balance + EXCLUDED.closing_balance,
+                    updated_at = NOW()
+                """,
+                (
+                    org_id,
+                    fiscal_period_id,
+                    account_ids,
+                    debit_deltas,
+                    credit_deltas,
+                    closing_balances,
+                ),
             )
 
 

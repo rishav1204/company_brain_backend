@@ -1,0 +1,657 @@
+# ERP-side AI capabilities inventory (migration source of truth)
+# ================================================================
+# STATUS: MIGRATION COMPLETE (Waves 0, A–G).
+#   erp/**/ai/** no longer exists. Every capability below now lives in
+#   finance_os (invoice_ai / forecasting / domain_intelligence/<domain>)
+#   and is reached from ERP only through the typed ports in
+#   erp/ports/intelligence_registry.py, registered by
+#   finance_os/bridges/erp_command_bridge/bootstrap.py.
+#   HTTP paths and response shapes are unchanged.
+#   Enforced by app/modules/architecture_fitness/test_erp_ai_migration_fitness.py.
+#   The rows below are kept as the capability → new-owner map.
+#
+# Purpose (original): plan move of intelligence from ERP → Finance OS without
+# losing functionality. Every row was implemented under
+# modules/erp (except where noted as already FOS-backed).
+#
+# How to use for migration:
+#   1. Treat each "Capability ID" as a moveable unit.
+#   2. Preserve Inputs → Outputs contract (especially API response shapes).
+#   3. Leave ERP only: write side effects (create invoice/claim/journal) via
+#      command bridge; domain validators (GSTIN, fiscal) can stay in ERP.
+#   4. "Stay in ERP?" = likely domain rule, not true FOS brain work
+#      (optional fold later; not priority).
+#
+# Implementation style (realistic):
+#   Most ERP ai/* are rule/heuristic/score engines, NOT LLM services.
+#   FOS already has richer AI (invoice pipeline, agents, runtime).
+#   Move = relocate logic + register port + rewire ERP call sites.
+#   Capability must stay equivalent (same flags, scores, rankings).
+#
+# External deps often used by ERP AI (not FOS):
+#   - platform.documents.ai.ledger_suggester (AP invoice + journals)
+#   - erp match engines / repositories / validators
+#
+# Already FOS-backed (partial dual path — migrate remaining ERP local):
+#   InvoiceIntelligencePort — extraction/dup/anomaly/predictions/confidence
+#   ForecastIntelligencePort — reporting forecast series
+
+COUNT SUMMARY (after migration)
+  AI modules under erp/**/ai/** ........ 0 files (was 59; packages deleted)
+  AI orchestration services ............ 4 — now thin ERP write facades over ports
+    ai_invoice_service, ai_collection_service,
+    ai_expense_service, ai_journal_service
+  AR hook using FOS port ............... ar_invoice_ai_hook
+  Approx. discrete capabilities ........ ~70 functions / surface points, all in FOS
+  Ports registered ..................... invoice, forecast, ap_risk, journal,
+    expense, ar_collections, reconciliation, banking, treasury, tax,
+    compliance, procurement, inventory, asset
+  ACL used by FOS ...................... erp/query_services/intel_acl.py
+    (domain_calc: pure ERP math — aging, discounts, GSTIN, match ranking;
+     intel_reads: allowlisted repository reads)
+
+================================================================
+LEGEND
+  Cap ID     unique migration unit
+  Type       classification | score | predict | suggest | rank |
+             anomaly | copilot | generate | pipeline | rule
+  FOS now?   Y = already calls FOS port; P = partial; N = ERP only
+  Side effect Y = writes ERP records (invoice/vendor/claim/journal)
+  HTTP?      main API surface if any (relative to module mounts)
+  Must move  must-move = product intelligence target
+             keep-domain = can stay ERP as validator/heuristic
+             hybrid = intelligence in FOS, write stays ERP
+
+================================================================
+1) ACCOUNTS PAYABLE
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry / API | Type | FOS? | Side-effect | Must move
+-------|------------|------|-------------|------|------|-------------|----------
+AP-01 | Invoice from document (document_id → FOS pipeline → AP draft path)
+      | accounts_payable/services/ai_invoice_service.py :: create_from_document
+      | POST .../invoices/ai/from-document
+      | pipeline | Y | Y (creates vendor + invoice + submit_for_review) | hybrid
+      | PRESERVE: run_pipeline, confidence_band gate (auto_suggest/review_suggested),
+        block confirmed dup / high severity anomaly, extraction_id path
+
+AP-02 | Invoice from M25 extraction id
+      | ai_invoice_service :: create_from_m25
+      | (internal / from-document)
+      | pipeline | Y | Y | hybrid
+      | PRESERVE: get_extraction, latest_duplicate, list_anomalies,
+        list_suggestions, evaluate_confidence, link fields from predictions
+
+AP-03 | Invoice from extracted_data dict (no FOS call)
+      | ai_invoice_service :: create_from_extraction
+      | POST invoices/ai from extraction body
+      | generate | N (+ platform ledger_suggester) | Y | hybrid
+      | PRESERVE full flow:
+        classify vendor → review flags → ledger suggestions →
+        create vendor if missing → hard duplicate block →
+        resolve expense account + GST lines → create_invoice →
+        submit_for_review → return ai_signals / vendor_classification /
+        ai_review / ledger_suggestions
+
+AP-04 | Vendor classification from extraction
+      | accounts_payable/ai/vendor_classifier.py :: classify_vendor_from_extraction
+      | used by AP-03
+      | classification | N | N | must-move
+      | OUT: vendor_name, gstin, vendor_id, confidence.vendor_confidence,
+        requires_review if conf < 0.85; GSTIN validate raises → conf 0.4
+
+AP-05 | Invoice extraction review flags
+      | ai/invoice_reviewer.py :: review_invoice_extraction
+      | used by AP-03
+      | anomaly | N | N | must-move
+      | FLAGS: unusual_vendor, suspicious_gst (invalid GSTIN or GST w/o GSTIN),
+        amount_anomaly (total < subtotal); requires_review, flag_count
+
+AP-06 | Duplicate signal mapper (domain-ish)
+      | ai/duplicate_detector.py :: detect_duplicate_signals
+      | used by AP-03 after duplicate_invoice_service
+      | rule | N | N | keep-domain (thin) or fold into FOS dup
+      | maps duplicate_invoice_service result → {block, reason, existing_invoice_id}
+
+AP-07 | Vendor risk score
+      | ai/vendor_risk.py :: assess_vendor_risk
+      | GET vendors/{vendor_id}/risk (via vendor_service)
+      | score | N | N | must-move
+      | IN: invoices, payments OUT: risk_score 0–1, level low/med/high,
+        overdue_invoices, disputed, failed/completed payments, total_outstanding
+      | formula: overdue*0.15 + disputed*0.2 + failed*0.1 (cap 1.0)
+
+AP-08 | Payment ranking / optimize who to pay
+      | ai/payment_optimizer.py :: priority_score, rank_invoices_for_payment
+      | GET|POST /payments/recommendations (payment_scheduler_service)
+      | rank | N | N | must-move
+      | score: urgency 0.4 + discount_benefit 0.3 + vendor_criticality 0.3
+        (aging_days, early_payment_discount_* metadata)
+
+AP-09 | AP cash requirement forecast
+      | ai/cashflow_predictor.py :: forecast_cash_requirement
+      | GET /aging/cashflow-forecast
+      | predict | N | N | must-move (align with FOS forecasting)
+      | horizon_days (default 30), expected_cash_requirement, invoices_due
+
+NOTES AP:
+  Ledger suggestions use platform.documents.ai.ledger_suggester —
+  include in migrate plan (platform doc AI vs FOS invoice_ai).
+  Domain stay: account_resolver GST lines, invoice_service create, GSTIN validator.
+
+================================================================
+2) ACCOUNTS RECEIVABLE
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS? | Side-effect | Must move
+AR-01 | Sales document AI pipeline
+      | services/ar_invoice_ai_hook.py :: process_sales_document
+      | (caller / AR flows)
+      | pipeline | Y | N itself (pipeline only) | already FOS; keep port
+      | PRESERVE: invoice_type=sales, module accounts_receivable, customer attach
+
+AR-02 | Collection cash-in forecast
+      | ai/collection_predictor.py :: forecast_collections
+      | GET /collections/forecast via ai_collection_service
+      | predict | N | N | must-move
+      | horizons (7,30,60) + payment delay risk per invoice
+
+AR-03 | Collection assistant ranking
+      | ai/collection_assistant.py :: recommend_collections
+      | GET /collections/assistant
+      | rank | N | N | must-move
+      | prioritizes outstanding via payment risk; limit default 10
+
+AR-04 | Payment delay risk model
+      | ai/payment_risk_model.py :: assess_payment_delay_risk
+      | used by AR-02/03
+      | score | N | N | must-move
+
+AR-05 | Customer score
+      | ai/customer_scoring.py :: score_customer
+      | customer_service
+      | score | N | N | must-move
+      | IN: invoices + receipts history → scoring dict
+
+================================================================
+3) JOURNALS
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+JR-01 | AI draft journal from document extraction
+      | services/ai_journal_service.py :: create_draft_from_extraction
+      | POST /journals/ai/from-document
+      | generate | N | Y (create_draft only, never posts) | hybrid
+      | PRESERVE: never silent post; ai_confidence on draft;
+        metric journal_ai_low_confidence when requires_review
+
+JR-02 | Build balanced lines from extraction
+      | ai/journal_generator.py :: build_draft_lines_from_extraction
+      | JR-01
+      | generate | N (+ platform ledger_suggester) | N | must-move
+      | resolve CoA by account_code (5000 expense / 2100 payable defaults);
+        GST split lines; score confidence
+
+JR-03 | Journal confidence band
+      | ai/confidence_engine.py :: score_journal_confidence, requires_finance_review
+      | JR-02 + journal_validation_service
+      | score | N | N | must-move
+      | combines ledger/gst/vendor confidence; gates finance review
+
+JR-04 | Journal line anomaly check
+      | ai/anomaly_checker.py :: detect_journal_anomalies
+      | tests; may be validation path
+      | anomaly | N | N | must-move
+      | vs historical_avg optional
+
+JR-05 | Ledger account suggest for journal
+      | ai/ledger_suggester.py :: suggest_accounts_for_journal
+      | thin wrap of platform.documents.ai.ledger_suggester
+      | suggest | N (platform) | N | must-move → FOS or platform port
+
+================================================================
+4) EXPENSES
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+EX-01 | Receipt → claim from extraction
+      | services/ai_expense_service.py :: create_from_extraction
+      | POST /receipts/from-document
+      | generate | N | Y (receipt + claim) | hybrid
+      | PRESERVE: classify category, fraud metadata, receipt_hash,
+        duplicate_detection_service block, emit_receipt_extracted
+
+EX-02 | Expense category classifier
+      | ai/expense_classifier.py :: classify_expense
+      | EX-01
+      | classification | N | N | must-move
+      | keyword classes: hotel, travel, meal, fuel, internet/mobile, miscellaneous
+
+EX-03 | Fraud score
+      | ai/expense_classifier.py :: fraud_score
+      | EX-04
+      | score | N | N | must-move
+      | low OCR conf, round numbers ending 999, weekend date → 0–100
+
+EX-04 | Fraud detect wrapper
+      | ai/fraud_detector.py :: detect
+      | EX-01
+      | anomaly | N | N | must-move
+
+EX-05 | Expense classify alias (dup path)
+      | ai/duplicate_detector.py :: classify
+      | (duplicate path util)
+      | classification | N | N | must-move (or merge EX-02)
+
+EX-06 | Expense spend analytics
+      | ai/spend_analyzer.py :: analyze_spend
+      | GET /analytics/spend
+      | predict/summary | N | N | must-move
+      | optional employee_id filter
+
+================================================================
+5) RECONCILIATION
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+RC-01 | Bank–ledger match suggestions
+      | ai/suggestion_engine.py :: suggest_matches
+      | POST /suggest; bank_match_service
+      | suggest | N (uses matching_engine) | N | hybrid
+      | wraps rank_all_candidates; adds ai_suggestion, explanation string
+      | ENGINE core is domain matching_engine — FOS can own ranking text;
+        pure match algorithm may stay ERP engine with FOS explain layer
+
+RC-02 | Match confidence breakdown
+      | ai/confidence_scorer.py :: score_breakdown
+      | rec services/tests
+      | score | N | N | must-move
+
+RC-03 | Narration classifier
+      | ai/transaction_classifier.py :: classify_narration
+      | rec tests/copilot data
+      | classification | N | N | must-move
+
+RC-04 | Rec anomalies (amount vs candidates)
+      | ai/anomaly_detector.py :: detect_anomalies
+      | rec tests
+      | anomaly | N | N | must-move
+
+RC-05 | Reconciliation copilot Q&A
+      | ai/reconciliation_copilot.py :: answer_reconciliation_question
+      | POST /copilot
+      | copilot | N | N | must-move
+      | uses suggestions list in context
+
+RC-06 | Alias: treasury reconciliation_assistant re-exports suggest
+      | treasury/ai/reconciliation_assistant.py
+      | reuse RC-01 | N | N | must-move (dedupe)
+
+================================================================
+6) BANKING
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+BK-01 | Payment execution anomalies (pre-pay gate)
+      | ai/anomaly_detector.py :: detect_payment_anomalies
+      | payment_execution_service
+      | anomaly | N | N (can block_execution) | must-move
+      | large_payment (≥500k), new_beneficiary, unverified_beneficiary critical,
+        abnormal_amount (>3× history avg)
+
+BK-02 | Transaction classification by narration
+      | anomaly_detector / transaction_classifier :: classify_transaction
+      | banking
+      | classification | N | N | must-move
+      | software_expense, payroll, bank_transfer, general
+
+BK-03 | Duplicate payment scan on set
+      | detect_transaction_anomalies
+      | banking tests
+      | anomaly | N | N | must-move
+
+BK-04 | Banking copilot Q&A
+      | ai/banking_copilot.py :: answer_banking_question
+      | POST banking /copilot
+      | copilot | N | N | must-move
+
+BK-05 | Classify narration structured
+      | banking_copilot :: classify_narration
+      | BK-04 helpers
+      | classification | N | N | must-move
+
+================================================================
+7) TREASURY
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+TR-01 | Cashflow forecast (horizon)
+      | ai/cashflow_forecaster.py :: forecast_cashflow
+      | cashflow_service / GET forecast routes
+      | predict | N | N | must-move (→ FOS forecasting)
+      | projected in/out/net over horizon_days
+
+TR-02 | Liquidity forecast
+      | ai/liquidity_predictor.py :: forecast_liquidity
+      | treasury position flows
+      | predict | N | N | must-move
+
+TR-03 | Cash risk flags
+      | ai/cash_risk_detector.py :: detect_cash_risks
+      | dashboard/tests
+      | anomaly | N | N | must-move
+      | uses forecast_balance, coverage_ratio
+
+TR-04 | Surplus cash detect
+      | ai/surplus_cash_detector.py :: detect_surplus_cash
+      | cash_pool_service
+      | anomaly | N | N | must-move
+
+TR-05 | Payment anomalies (treasury twin of BK-01)
+      | ai/anomaly_detector.py
+      | treasury tests — SIMILAR to BK-01 | merge migrate
+
+TR-06 | Treasury advisor recommendations list
+      | ai/treasury_advisor.py :: advise_treasury
+      | used by TR-07
+      | suggest | N | N | must-move
+
+TR-07 | Treasury copilot Q&A
+      | ai/treasury_copilot.py :: answer_treasury_question
+      | POST /copilot (cash_position_routes)
+      | copilot | N | N | must-move
+      | IN: question, position, liquidity; may call advisor
+
+NOTE: ForecastIntelligencePort already for reporting — reconcile TR-01/02 with FOS forecasting module so one brain.
+
+================================================================
+8) TAX (GST / TDS)
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+TX-01 | TDS section recommender
+      | ai/tds_section_recommender.py :: recommend_section
+      | POST /ai/recommend-section
+      | suggest | N | N | must-move
+      | vendor master override 0.95; rule match 0.8–0.85;
+        defaults 194J/C/H/I/Q/A; high value ≥50L → 194Q soft suggest
+
+TX-02 | TDS error detector
+      | ai/tds_error_detector.py :: detect_tds_errors
+      | POST /ai/review
+      | anomaly | N | N | must-move
+      | wrong_rate, missing_pan_escalation, unlinked_challan
+
+TX-03 | Vendor quarter TDS review
+      | tds_error_detector :: review_vendor_quarter
+      | TDS routes
+      | anomaly | N | N | must-move
+
+TX-04 | TDS return payload reviewer
+      | ai/tds_return_reviewer.py :: review_return_payload
+      | POST /ai/return-review
+      | anomaly | N | N | must-move
+
+TX-05 | TDS copilot Q&A
+      | ai/tds_copilot.py :: answer_tds_question
+      | TDS + tax compliance copilot branch
+      | copilot | N | N | must-move
+
+TX-06 | GST 2B mismatch detector
+      | ai/mismatch_detector.py :: detect_mismatches
+      | gst_reconciliation_service
+      | anomaly | N | N | must-move
+      | our_tx vs gstr2b_row
+
+TX-07 | GST copilot
+      | ai/gst_copilot.py :: answer_gst_question
+      | tax /copilot (domain gst)
+      | copilot | N | N | must-move
+      | IN: returns, transactions, itc_summary
+
+TX-08 | Tax risk engine
+      | ai/tax_risk_engine.py :: assess_tax_risks
+      | GET /risk + copilot
+      | score | N | N | must-move
+
+TX-09 | Tax compliance assistant (GST rec context)
+      | ai/compliance_assistant.py :: vendor_mismatch_report, answer_compliance_question
+      | tax routes
+      | copilot | N | N | must-move
+
+TX-10 | Notice analyzer
+      | ai/notice_analyzer.py :: analyze_notice
+      | notice_management_service
+      | classify/analyze | N | N | must-move
+
+================================================================
+9) COMPLIANCE (corporate calendar / obligations — separate from tax/)
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+CM-01 | Obligation risk + flags
+      | ai/risk_detector.py :: compute_risk_score, detect_risks
+      | GET /risk; compliance_dashboard_service
+      | score | N | N | must-move
+
+CM-02 | Notice risk prediction
+      | ai/notice_predictor.py :: predict_notice_risk
+      | risk endpoint enriches flags
+      | predict | N | N | must-move
+
+CM-03 | Filing readiness score
+      | ai/filing_advisor.py :: filing_readiness_score
+      | GET /readiness
+      | score | N | N | must-move
+
+CM-04 | Compliance copilot
+      | ai/compliance_assistant.py :: answer_compliance_question
+      | POST /copilot
+      | copilot | N | N | must-move
+      | IN: obligations, dashboard
+
+================================================================
+10) PROCUREMENT
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+PR-01 | Spend analyzer
+      | ai/spend_analyzer.py :: analyze_spend
+      | analytics routes
+      | summary | N | N | must-move
+
+PR-02 | Procurement anomalies
+      | ai/anomaly_detector.py :: detect_anomalies
+      | GET /analytics/anomalies
+      | anomaly | N | N | must-move
+
+PR-03 | Vendor recommender
+      | ai/vendor_recommender.py :: recommend_vendors
+      | POST /ai/recommend-vendors
+      | rank | N | N | must-move
+      | item_hint, limit
+
+PR-04 | Procurement copilot
+      | ai/procurement_copilot.py :: answer_query
+      | may compose PR-03
+      | copilot | N | N | must-move
+
+================================================================
+11) INVENTORY
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+IN-01 | Demand predict (moving average)
+      | ai/demand_predictor.py :: predict_demand
+      | (services/tests; model moving_average_v1)
+      | predict | N | N | must-move
+      | predicted_quantity, confidence, sample_size, daily_issue_avg
+
+IN-02 | Stock risk / velocity
+      | ai/stock_risk_detector.py :: classify_velocity, detect_stock_risk
+      | inventory tests / analytics
+      | anomaly | N | N | must-move
+      | reorder_days default 14
+
+IN-03 | Dead stock detector
+      | ai/dead_stock_detector.py :: detect_dead_stock
+      | inventory tests
+      | anomaly | N | N | must-move
+      | no movement window days default 90
+
+IN-04 | Inventory analyze Q&A style summary
+      | ai/inventory_analyzer.py :: analyze
+      | POST valuation /ai/analyze
+      | copilot/summary | N | N | must-move
+      | total_skus, total_value, dead_stock candidates list
+
+================================================================
+12) ASSETS
+----------------------------------------------------------------
+Cap ID | Capability | File | Entry | Type | FOS?
+AS-01 | Asset classify from description
+      | ai/asset_classifier.py :: classify_asset
+      | candidate_service, tests
+      | classification | N | N | must-move
+
+AS-02 | Useful life recommender (years)
+      | ai/useful_life_recommender.py :: recommend_useful_life
+      | useful_life_service, candidates
+      | suggest | N | N | must-move
+
+AS-03 | Asset copilot suggest (class + life + amount)
+      | ai/asset_copilot.py :: suggest
+      | POST assets /ai/suggest
+      | copilot | N | N | must-move
+
+AS-04 | Asset register anomalies
+      | ai/anomaly_detector.py :: detect_anomalies
+      | GET /analytics/anomalies
+      | anomaly | N | N | must-move
+
+================================================================
+13) VOUCHERS / REPORTING (AI-adjacent, not under ai/)
+----------------------------------------------------------------
+Cap ID | Capability | File | Notes
+VC-01 | Voucher from invoice intelligence
+      | vouchers/services/voucher_service.py
+      | uses intelligence_registry.invoice() — ALREADY FOS port
+      | keep port contract; no local AI modules
+
+RP-01 | Forecast report series
+      | reporting/services/forecast_report_service.py
+      | intelligence_registry.forecast() — ALREADY FOS port
+      | do not reimplement in ERP AI
+
+================================================================
+14) PLATFORM (not ERP but used by ERP AI paths — include in plan)
+----------------------------------------------------------------
+PL-01 | suggest_ledger_accounts
+      | platform/documents/ai/ledger_suggester.py
+      | used by AP-03, JR-02, JR-05
+      | Move to FOS invoice_ai/ledger or keep single platform port both call
+      | MUST preserve suggestion list shape consumed by AP draft lines
+
+================================================================
+MIGRATION WAVES (all DONE)
+----------------------------------------------------------------
+Wave 0 — DONE. Typed Protocol port per domain + generic PortBinding with
+  timeout/fallback in erp/ports/intelligence_registry.py; finance_os/
+  domain_intelligence package; adapters wired in bootstrap_wave1_boundaries;
+  conftest.py bootstraps ports for the whole test session.
+
+Wave A — DONE. Close dual brain on invoice (no capability loss)
+  Move AP-04, AP-05, invoice confidence gates into FOS invoice_ai;
+  keep AiInvoiceService as thin command orchestrator (create_vendor/create_invoice).
+  PL-01 ownership decision.
+  Acceptance: same /invoices/ai/from-document response fields + tests M11/M25.
+
+Wave B — DONE. Document → draft family
+  EX-01..05, JR-01..05 with FOS ports ExpenseIntelligence / JournalIntelligence.
+  Acceptance: receipts/from-document, journals/ai/from-document parity.
+
+Wave C — DONE. Cash & payments intelligence
+  AP-08, AP-09, AR-02..05, TR-01..07, BK-01..05 (dedupe BK/TR anomalies).
+  Align with existing FOS forecasting + agents.
+  Acceptance: collections/* , payments/recommendations, treasury copilot/forecast.
+
+Wave D — DONE. Match / rec
+  RC-01..06 — matching_engine stayed ERP domain (exposed via domain_calc
+  .rank_all_candidates); FOS owns suggest + explain + copilot.
+
+Wave E — DONE. Tax + compliance copilots
+  TX-01..10, CM-01..04.
+
+Wave F — DONE. Ops domain copilots remaining
+  PR-*, IN-*, AS-*.
+
+Wave G — DONE. Cleanup
+  erp/**/ai/** deleted; ERP only calls ports; architecture fitness tests in
+  app/modules/architecture_fitness/test_erp_ai_migration_fitness.py ban new
+  ERP ai packages and any import of the moved helpers.
+
+================================================================
+PER-CAPABILITY REGRESSION CHECKLIST (use on every move)
+----------------------------------------------------------------
+[ ] Public function signature / response keys preserved (or versioned dual)
+[ ] Route status codes + error strings for blocks (duplicate, low confidence)
+[ ] Side effects still ERP (invoice created, claim created, draft never auto-post)
+[ ] Metrics hooks still fire (e.g. journal_ai_low_confidence)
+[ ] Unit tests under modules/erp/**/tests/* re-pointed or mirrored FOS
+[ ] Port registered in bootstrap_wave1_boundaries (or successor)
+[ ] ERP no longer imports moved logic directly
+
+================================================================
+FILE INDEX — where the old erp/**/ai/** files live now
+----------------------------------------------------------------
+All paths relative to backend/apps/api/app/modules/finance_os/.
+
+accounts_payable/ai/ → invoice_ai/review/ and domain_intelligence/ap/
+  vendor_classifier.py ................ invoice_ai/review/vendor_classifier.py
+  invoice_reviewer.py ................. invoice_ai/review/invoice_reviewer.py
+  duplicate_detector.py ............... invoice_ai/review/duplicate_signals.py
+  vendor_risk.py ...................... domain_intelligence/ap/vendor_risk.py
+  payment_optimizer.py ................ domain_intelligence/ap/payment_optimizer.py
+  cashflow_predictor.py ............... forecasting/engine/ap_cash_requirement.py
+accounts_receivable/ai/ → domain_intelligence/ar/
+  collection_assistant.py, collection_predictor.py,
+  customer_scoring.py, payment_risk_model.py
+assets/ai/ → domain_intelligence/assets/
+  anomaly_detector.py, asset_classifier.py,
+  asset_copilot.py, useful_life_recommender.py
+banking/ai/ → domain_intelligence/banking/ + domain_intelligence/payments/
+  banking_copilot.py .................. domain_intelligence/banking/banking_copilot.py
+  anomaly_detector.py, transaction_classifier.py
+                                        domain_intelligence/payments/anomaly_detector.py
+compliance/ai/ → domain_intelligence/compliance/
+  compliance_assistant.py, filing_advisor.py,
+  notice_predictor.py, risk_detector.py
+expenses/ai/ → domain_intelligence/expenses/
+  duplicate_detector.py, expense_classifier.py,
+  fraud_detector.py, spend_analyzer.py
+inventory/ai/ → domain_intelligence/inventory/
+  dead_stock_detector.py, demand_predictor.py,
+  inventory_analyzer.py, stock_risk_detector.py
+journals/ai/ → domain_intelligence/journals/
+  anomaly_checker.py, confidence_engine.py,
+  journal_generator.py, ledger_suggester.py
+procurement/ai/ → domain_intelligence/procurement/
+  anomaly_detector.py, procurement_copilot.py,
+  spend_analyzer.py, vendor_recommender.py
+reconciliation/ai/ → domain_intelligence/reconciliation/
+  anomaly_detector.py, confidence_scorer.py, reconciliation_copilot.py,
+  suggestion_engine.py, transaction_classifier.py
+tax/ai/ → domain_intelligence/tax/
+  compliance_assistant.py, gst_copilot.py, mismatch_detector.py,
+  notice_analyzer.py, tax_risk_engine.py, tds_copilot.py,
+  tds_error_detector.py, tds_return_reviewer.py, tds_section_recommender.py
+treasury/ai/ → domain_intelligence/treasury/ + domain_intelligence/payments/
+  cashflow_forecaster.py, cash_risk_detector.py, liquidity_predictor.py,
+  surplus_cash_detector.py, treasury_advisor.py, treasury_copilot.py
+  anomaly_detector.py (TR-05) merged with BK-01 into
+                                        domain_intelligence/payments/anomaly_detector.py
+                                        (detect_payment_anomalies for banking execution,
+                                         detect_scheduling_anomalies for treasury)
+  reconciliation_assistant.py (RC-06) dropped; callers use
+                                        domain_intelligence/reconciliation/suggestion_engine.py
+
+PL-01 platform/documents/ai/ledger_suggester.py stays in platform; FOS calls it
+directly (platform is a legal dependency for both ERP and FOS).
+
+ORCHESTRATORS (ERP write facades — kept, now call ports only):
+  accounts_payable/services/ai_invoice_service.py
+  accounts_receivable/services/ai_collection_service.py
+  accounts_receivable/services/ar_invoice_ai_hook.py
+  expenses/services/ai_expense_service.py
+  journals/services/ai_journal_service.py
+
+Update this file when capabilities move between FOS contexts.

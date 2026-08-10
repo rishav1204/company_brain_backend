@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from app.services.neo4j_service import neo4j_service
+from app.services.logger import log_event
+from app.services.metrics import metrics_store
 
 
 def annotate_workflow_bottleneck(org_id: str, *, workflow_id: str, bottleneck_stage: str) -> None:
@@ -22,5 +24,12 @@ def annotate_workflow_bottleneck(org_id: str, *, workflow_id: str, bottleneck_st
             workflow_id,
             {"org_id": org_id, "bottleneck_stage": bottleneck_stage},
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        metrics_store.incr_llm_failure()  # nearest existing counter; prevents silent failures
+        log_event(
+            "graph.neo4j.upsert_failed",
+            org_id=org_id,
+            workflow_id=workflow_id,
+            bottleneck_stage=bottleneck_stage,
+            detail=str(exc),
+        )

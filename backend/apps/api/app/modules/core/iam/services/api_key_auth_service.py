@@ -38,7 +38,7 @@ def authenticate_api_key(raw_key: str) -> dict | None:
 def scope_allows(scopes: list[str], required: str) -> bool:
     if not required:
         return True
-    scope_set = set(scopes)
+    scope_set = {str(s).strip() for s in scopes if str(s).strip()}
     if "*" in scope_set or "admin" in scope_set:
-        return True
+        return False
     return required in scope_set

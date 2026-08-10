@@ -23,16 +23,16 @@ class InvoiceLineRepository:
                         """
                         INSERT INTO erp.ap_invoice_lines (
                           id, org_id, invoice_id, account_id, line_type, description,
-                          amount, tax_code, cost_center_id
+                          amount, tax_code, cost_center_id, po_item_id
                         )
-                        VALUES (%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s,%s::numeric,%s,%s::uuid)
-                        RETURNING id::text, account_id::text, line_type, description, amount, tax_code
+                        VALUES (%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s,%s::numeric,%s,%s::uuid,%s::uuid)
+                        RETURNING id::text, account_id::text, line_type, description, amount, tax_code, po_item_id::text
                         """,
                         (
                             lid, org_id, invoice_id,
                             line.get("account_id"), line.get("line_type", "expense"),
                             line.get("description"), float(line.get("amount") or 0),
-                            line.get("tax_code"), line.get("cost_center_id"),
+                            line.get("tax_code"), line.get("cost_center_id"), line.get("po_item_id"),
                         ),
                     )
                     row = cur.fetchone()
@@ -48,7 +48,7 @@ class InvoiceLineRepository:
                 cur.execute(
                     """
                     SELECT id::text, account_id::text, line_type, description, amount, tax_code,
-                           cost_center_id::text
+                           cost_center_id::text, po_item_id::text
                     FROM erp.ap_invoice_lines
                     WHERE org_id = %s::uuid AND invoice_id = %s::uuid
                     ORDER BY created_at ASC

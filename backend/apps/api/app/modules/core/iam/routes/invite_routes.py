@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import build_request_context
 from app.modules.core.iam.routes.idempotency_helper import check_idempotency, mark_idempotency
+from app.modules.core.iam.middleware.mutation_guard import require_db_mutation
 from app.modules.core.iam.services.api_key_auth_service import scope_allows
 from app.modules.core.iam.services.invite_service import accept_invite, create_invite
-from app.modules.core.iam.services.rbac_service import has_permission
 from pydantic import BaseModel, Field
 
 
@@ -31,10 +31,12 @@ def _require_user_manage(context) -> None:
         if not scope_allows(scopes, "user.manage"):
             raise HTTPException(status_code=403, detail="API key missing scope: user.manage")
         return
-    if "tenant_admin" in {r.lower() for r in context.roles}:
-        return
-    if not has_permission(context.org_id, context.user_id, "user.manage"):
-        raise HTTPException(status_code=403, detail="user.manage permission required")
+    require_db_mutation(
+        context,
+        ["user.manage"],
+        detail="user.manage permission required",
+        allow_tenant_admin=True,
+    )
 
 
 @router.post("/users/invites")

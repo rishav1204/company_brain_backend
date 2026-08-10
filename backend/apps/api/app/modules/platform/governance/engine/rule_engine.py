@@ -8,7 +8,11 @@ def load_rules(org_id: str) -> list[dict]:
     cached = policy_cache_engine.get_cached(org_id, "rules")
     if cached is not None:
         return cached
-    rules = policy_repository.list_active(org_id)
+    try:
+        rules = policy_repository.list_active(org_id)
+    except Exception:
+        # Non-UUID or transient DB errors: no org policies (fail-open on rules only).
+        return []
     policy_cache_engine.set_cached(org_id, "rules", rules)
     return rules
 

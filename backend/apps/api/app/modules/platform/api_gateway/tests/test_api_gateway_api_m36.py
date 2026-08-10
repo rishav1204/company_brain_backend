@@ -4,6 +4,7 @@ from pathlib import Path
 
 _PKG = Path(__file__).resolve().parents[1]
 _BACKEND = Path(__file__).resolve().parents[7]
+_DOCS = Path(__file__).resolve().parents[8] / "docs"
 
 
 def test_api_gateway_router_prefix() -> None:
@@ -42,16 +43,17 @@ def test_integration_health_route_definition() -> None:
 
 
 def test_m36_doc_golden_rule() -> None:
-    doc = _BACKEND / "ERP_MODULES" / "M36_api_platform.md"
+    doc = _DOCS / "ERP_MODULES" / "M36_api_platform.md"
+    if not doc.is_file():
+        doc = _BACKEND / "ERP_MODULES" / "M36_api_platform.md"
     text = doc.read_text(encoding="utf-8")
     assert "Golden rule" in text
     assert "integrations.api_keys" in text
 
 
-def test_erp_master_map_m36_done() -> None:
-    text = (_BACKEND / "ERP_MASTER_MODULE_MAP.md").read_text(encoding="utf-8")
-    assert "M36" in text
-    assert "Done" in text
+def test_erp_master_map_m36_done(erp_master_module_map: str) -> None:
+    assert "M36" in erp_master_module_map
+    assert "Done" in erp_master_module_map
 
 
 def test_subscription_routes_alias() -> None:

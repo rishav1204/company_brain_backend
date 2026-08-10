@@ -138,7 +138,7 @@ def aggregate_tds_summary(org_id: str, *, return_period: str, form_type: str = "
 
 
 def compute_forecast_variance(*, actual: float, forecast: float) -> float | None:
-    from app.modules.finance_os.forecasting.services.forecast_accuracy_service import variance_percent
+    from app.modules.erp.reporting.utils.variance import variance_percent
 
     if forecast == 0 and actual == 0:
         return 0.0

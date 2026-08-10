@@ -6,20 +6,16 @@ from app.modules.finance_os.forecasting.services.forecast_accuracy_service impor
 
 def _actual_proxy(org_id: str, *, forecast_type: str, forecast_val: float) -> float:
     try:
-        if forecast_type == "cash":
-            from app.modules.erp.treasury.services.cash_position_service import cash_position_service
+        from app.modules.erp.query_services import reporting_queries, treasury_queries
 
-            pos = cash_position_service.compute_live_position(org_id)
+        if forecast_type == "cash":
+            pos = treasury_queries.compute_live_position(org_id)
             return float(pos.get("available_cash") or pos.get("net_liquidity") or forecast_val)
         if forecast_type == "collections":
-            from app.modules.erp.reporting.services.aging_report_service import aging_report_service
-
-            ar = aging_report_service.get_ar(org_id, refresh_if_missing=False)
+            ar = reporting_queries.get_ar_aging(org_id, refresh_if_missing=False)
             return float((ar.get("totals") or {}).get("grand_total") or forecast_val)
         if forecast_type == "expenses":
-            from app.modules.erp.reporting.services.aging_report_service import aging_report_service
-
-            ap = aging_report_service.get_ap(org_id, refresh_if_missing=False)
+            ap = reporting_queries.get_ap_aging(org_id, refresh_if_missing=False)
             return float((ap.get("totals") or {}).get("grand_total") or forecast_val)
     except Exception:
         pass

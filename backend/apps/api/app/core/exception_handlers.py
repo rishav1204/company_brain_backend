@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,6 +14,16 @@ logger = logging.getLogger(__name__)
 
 def _request_id(request: Request) -> str | None:
     return getattr(request.state, "request_id", None) or request.headers.get("x-request-id")
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return str(value)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -27,7 +38,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content={
-                "detail": exc.errors(),
+                "detail": _json_safe(exc.errors()),
                 "path": request.url.path,
                 "request_id": _request_id(request),
             },

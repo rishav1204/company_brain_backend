@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
-from app.modules.erp.accounts_payable.services.duplicate_invoice_service import duplicate_invoice_service
+from app.modules.erp.query_services import ap_queries
 from app.modules.finance_os.invoice_ai.ai.duplicate_scorer import classify_duplicate_status, weighted_duplicate_score
 from app.modules.finance_os.invoice_ai.repositories.duplicate_repository import DuplicateRepository
-from app.modules.erp.accounts_payable.repositories.vendor_repository import vendor_repository
 
 duplicate_repository = DuplicateRepository()
 
@@ -15,7 +13,7 @@ class DuplicateService:
     def score(self, org_id: str, *, extraction: dict) -> dict:
         vendor_id = extraction.get("vendor_id")
         if not vendor_id and extraction.get("vendor_gstin"):
-            v = vendor_repository.find_by_gstin(org_id, gstin=str(extraction["vendor_gstin"]))
+            v = ap_queries.find_vendor_by_gstin(org_id, gstin=str(extraction["vendor_gstin"]))
             vendor_id = v.get("id") if v else None
 
         invoice_number = str(extraction.get("invoice_number") or "")
@@ -23,13 +21,9 @@ class DuplicateService:
         invoice_date = str(extraction.get("invoice_date") or "")[:10]
 
         matched_invoice_id = None
-        invoice_number_match = False
-        vendor_match = False
-        amount_delta_pct = 1.0
-        date_delta_days = None
 
         if vendor_id and invoice_number:
-            dup = duplicate_invoice_service.check_duplicate(
+            dup = ap_queries.check_duplicate_invoice(
                 org_id,
                 vendor_id=str(vendor_id),
                 invoice_number=invoice_number,
@@ -39,9 +33,6 @@ class DuplicateService:
             if dup and dup.get("duplicate"):
                 existing = dup.get("existing_invoice") or {}
                 matched_invoice_id = existing.get("id")
-                invoice_number_match = True
-                vendor_match = True
-                amount_delta_pct = 0.0
                 score, breakdown = 100.0, {"checksum_hit": True, "total": 100.0}
                 status = "confirmed"
             else:
@@ -84,7 +75,7 @@ class DuplicateService:
         total: float,
         invoice_date: str,
     ) -> tuple[float, dict]:
-        candidates = invoice_repository.list(org_id, vendor_id=vendor_id, limit=50)
+        candidates = ap_queries.list_invoices(org_id, vendor_id=vendor_id, limit=50)
         best_score = 0.0
         best_breakdown: dict = {}
         for cand in candidates:

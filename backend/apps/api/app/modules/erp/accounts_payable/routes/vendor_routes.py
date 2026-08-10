@@ -99,6 +99,7 @@ def add_bank_account(vendor_id: str, request: VendorBankAccountRequest, context=
             ifsc_code=request.ifsc_code,
             bank_name=request.bank_name,
             is_primary=request.is_primary,
+            actor_id=context.user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

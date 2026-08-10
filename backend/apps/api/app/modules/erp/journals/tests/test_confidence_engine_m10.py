@@ -1,4 +1,4 @@
-from app.modules.erp.journals.ai.confidence_engine import score_journal_confidence
+from app.modules.finance_os.domain_intelligence.journals.confidence_engine import score_journal_confidence
 
 
 def test_confidence_high_no_review() -> None:

@@ -101,7 +101,30 @@ class ReceiptRepository:
                     """,
                     (aid, org_id, receipt_id, invoice_id, amount),
                 )
-                return dict(cur.fetchone() or {"id": aid})
+                return [dict(r) for r in (cur.fetchall() or [])]
+
+    def list_allocations(self, org_id: str, *, receipt_id: str | None = None, limit: int = 500) -> list[dict]:
+        limit = max(1, min(limit, 2000))
+        where = ["org_id = %s::uuid"]
+        params: list = [org_id]
+        if receipt_id:
+            where.append("receipt_id = %s::uuid")
+            params.append(receipt_id)
+        params.append(limit)
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT id::text, receipt_id::text, invoice_id::text, amount
+                    FROM erp.customer_receipt_allocations
+                    WHERE {' AND '.join(where)}
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    tuple(params),
+                )
+                return [dict(r) for r in (cur.fetchall() or [])]
 
     def list(self, org_id: str, *, customer_id: str | None = None, limit: int = 100) -> list[dict]:
         limit = max(1, min(limit, 500))

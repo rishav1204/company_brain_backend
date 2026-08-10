@@ -1,11 +1,17 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from app.core.yaml_config import yaml_get
 
-load_dotenv()
+# Load apps/api/.env with override so cloud REDIS_URL in that file wins over a
+# stale machine/shell REDIS_URL (e.g. leftover redis://localhost:6379).
+_API_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_API_ROOT / ".env", override=True)
+# Optional cwd overlay for ad-hoc exports (does not clobber keys set above).
+load_dotenv(override=False)
 
 # Seeded benchmark tenant used for local dev login and sample data.
 DEV_ORG_ID = "11111111-1111-4111-8111-111111111111"
@@ -82,7 +88,13 @@ class Settings(BaseModel):
     postgres_pool_min: int = int(os.getenv("POSTGRES_POOL_MIN", "5"))
     postgres_pool_max: int = int(os.getenv("POSTGRES_POOL_MAX", "20"))
     redis_stream_maxlen: int = int(os.getenv("REDIS_STREAM_MAXLEN", "100000"))
+    # RQ-01: financial queues require stronger retention guarantees (no approximate trim).
+    redis_stream_financial_maxlen: int = int(os.getenv("REDIS_STREAM_FINANCIAL_MAXLEN", "500000"))
     redis_pool_max_connections: int = int(os.getenv("REDIS_POOL_MAX_CONNECTIONS", "20"))
+    # RQ-16: Connection pool tuning
+    redis_socket_connect_timeout_seconds: float = float(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT_SECONDS", "2.0"))
+    redis_socket_timeout_seconds: float = float(os.getenv("REDIS_SOCKET_TIMEOUT_SECONDS", "5.0"))
+    redis_health_check_interval_seconds: int = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL_SECONDS", "30"))
     erp_require_company_id: bool = os.getenv("ERP_REQUIRE_COMPANY_ID", "true").lower() == "true"
     worker_service_boundary: str = os.getenv("WORKER_SERVICE_BOUNDARY", "")
     legacy_redis_queue_enabled: bool = os.getenv("LEGACY_REDIS_QUEUE_ENABLED", "false").lower() == "true"
@@ -191,11 +203,77 @@ class Settings(BaseModel):
     m38_context_engine_enabled: bool = os.getenv("M38_CONTEXT_ENGINE_ENABLED", "true").lower() == "true"
     m38_read_answer_mode: bool = os.getenv("M38_READ_ANSWER_MODE", "true").lower() == "true"
     m38_working_memory: bool = os.getenv("M38_WORKING_MEMORY", "true").lower() == "true"
-    m38_unified_copilot: bool = os.getenv("M38_UNIFIED_COPILOT", "false").lower() == "true"
+    m38_unified_copilot: bool = os.getenv("M38_UNIFIED_COPILOT", "true").lower() == "true"
+    m38_default_runtime: bool = os.getenv("M38_DEFAULT_RUNTIME", "true").lower() == "true"
+    # Phase 8 Wave 2 — runtime reliability
+    m38_entity_confidence_threshold: float = float(os.getenv("M38_ENTITY_CONFIDENCE_THRESHOLD", "0.75"))
+    m38_entity_min_margin: float = float(os.getenv("M38_ENTITY_MIN_MARGIN", "0.10"))
+    m38_max_runtime_steps: int = int(os.getenv("M38_MAX_RUNTIME_STEPS", "50"))
+    m38_retrieval_max_retries: int = int(os.getenv("M38_RETRIEVAL_MAX_RETRIES", "2"))
+    m38_retrieval_retry_base_ms: int = int(os.getenv("M38_RETRIEVAL_RETRY_BASE_MS", "50"))
+    m38_event_max_retries: int = int(os.getenv("M38_EVENT_MAX_RETRIES", "3"))
+    m38_step_max_auto_retries: int = int(os.getenv("M38_STEP_MAX_AUTO_RETRIES", "2"))
+    # Phase 8 Wave 3 — AI security / abuse protection
+    m38_ai_firewall_enabled: bool = os.getenv("M38_AI_FIREWALL_ENABLED", "true").lower() == "true"
+    m38_ai_firewall_block_on_detection: bool = os.getenv("M38_AI_FIREWALL_BLOCK", "true").lower() == "true"
+    m38_chat_rate_limit_per_minute: int = int(os.getenv("M38_CHAT_RATE_LIMIT_PER_MINUTE", "30"))
+    m38_max_tools_per_run: int = int(os.getenv("M38_MAX_TOOLS_PER_RUN", "40"))
+    m38_max_plan_nodes: int = int(os.getenv("M38_MAX_PLAN_NODES", "25"))
+    m38_max_context_chars: int = int(os.getenv("M38_MAX_CONTEXT_CHARS", "24000"))
+    m38_max_document_instruction_scan: int = int(os.getenv("M38_MAX_DOCUMENT_INSTRUCTION_SCAN", "8000"))
+    # Phase 8 Wave 5 — autonomous finance OS (governed, prep-first)
+    m38_autonomy_enabled: bool = os.getenv("M38_AUTONOMY_ENABLED", "true").lower() == "true"
+    m38_autonomy_start_goals: bool = os.getenv("M38_AUTONOMY_START_GOALS", "true").lower() == "true"
+    m38_default_prep_only: bool = os.getenv("M38_DEFAULT_PREP_ONLY", "false").lower() == "true"
+    m38_context_cache_enabled: bool = os.getenv("M38_CONTEXT_CACHE_ENABLED", "true").lower() == "true"
+    m38_context_cache_ttl_seconds: int = int(os.getenv("M38_CONTEXT_CACHE_TTL_SECONDS", "45"))
+    # Phase 8 Wave 6 — AI Gateway / cost intelligence
+    ai_gateway_enabled: bool = os.getenv("AI_GATEWAY_ENABLED", "true").lower() == "true"
+    ai_model_cheap: str = os.getenv("AI_MODEL_CHEAP", "gpt-4.1-mini")
+    ai_model_strong: str = os.getenv("AI_MODEL_STRONG", "")
+    ai_model_vision: str = os.getenv("AI_MODEL_VISION", "")
+    ai_model_routes_json: str = os.getenv("AI_MODEL_ROUTES_JSON", "")
+    ai_class_routes_json: str = os.getenv("AI_CLASS_ROUTES_JSON", "")
+    ai_model_prices_json: str = os.getenv("AI_MODEL_PRICES_JSON", "")
+    ai_default_context_budget_tokens: int = int(os.getenv("AI_DEFAULT_CONTEXT_BUDGET_TOKENS", "8000"))
+    ai_prompt_cache_enabled: bool = os.getenv("AI_PROMPT_CACHE_ENABLED", "true").lower() == "true"
+    ai_prompt_cache_ttl_seconds: int = int(os.getenv("AI_PROMPT_CACHE_TTL_SECONDS", "120"))
+    ai_entity_cache_ttl_seconds: int = int(os.getenv("AI_ENTITY_CACHE_TTL_SECONDS", "60"))
+    ai_budget_enforcement_enabled: bool = os.getenv("AI_BUDGET_ENFORCEMENT_ENABLED", "true").lower() == "true"
+    ai_monthly_budget_usd: float = float(os.getenv("AI_MONTHLY_BUDGET_USD", "500"))
+    ai_daily_budget_usd: float = float(os.getenv("AI_DAILY_BUDGET_USD", "50"))
+    ai_user_daily_budget_usd: float = float(os.getenv("AI_USER_DAILY_BUDGET_USD", "20"))
+    ai_goal_budget_usd: float = float(os.getenv("AI_GOAL_BUDGET_USD", "10"))
+    ai_budget_soft_ratio: float = float(os.getenv("AI_BUDGET_SOFT_RATIO", "0.8"))
     dev_use_postgres: bool = os.getenv("DEV_USE_POSTGRES", "false").lower() == "true"
     allow_direct_ap_execute: bool = os.getenv("ALLOW_DIRECT_AP_EXECUTE", "false").lower() == "true"
     scheduler_org_ids: str = os.getenv("SCHEDULER_ORG_IDS", DEV_ORG_ID)
     event_queue_inflight_seconds: int = int(os.getenv("EVENT_QUEUE_INFLIGHT_SECONDS", "120"))
+    # RQ-18: outbox publish dedupe guard (prevents duplicate XADD on replay)
+    outbox_publish_dedupe_ttl_seconds: int = int(os.getenv("OUTBOX_PUBLISH_DEDUPE_TTL_SECONDS", str(30 * 24 * 3600)))
+    # Wave 2: dual-write to Redis on request path (false = outbox-only when schema ready)
+    event_outbox_dual_write: bool = os.getenv("EVENT_OUTBOX_DUAL_WRITE", "false").lower() == "true"
+    # Wave 2: max outbox publish attempts before status=dead
+    outbox_max_attempts: int = int(os.getenv("OUTBOX_MAX_ATTEMPTS", "10"))
+    # Wave 2: require registered definition for financial events (blocks unregistered)
+    event_require_registered_financial: bool = os.getenv("EVENT_REQUIRE_REGISTERED_FINANCIAL", "true").lower() == "true"
+    # Wave 2: swallow domain emit failures (legacy); false logs and re-raises for financial emits
+    event_financial_emit_fail_open: bool = os.getenv("EVENT_FINANCIAL_EMIT_FAIL_OPEN", "true").lower() == "true"
+    # Wave 2: outbox rows older than N days → archived by retention job (manual/ops)
+    outbox_archive_after_days: int = int(os.getenv("OUTBOX_ARCHIVE_AFTER_DAYS", "90"))
+    # RQ-06: event deduplication windows
+    consumer_dedup_ttl_days: int = int(os.getenv("CONSUMER_DEDUP_TTL_DAYS", "7"))
+    consumer_dedup_financial_ttl_days: int = int(os.getenv("CONSUMER_DEDUP_FINANCIAL_TTL_DAYS", "30"))
+    # RQ-05: DLQ monitoring thresholds (emit events; alerting is infra-side)
+    dlq_alert_threshold: int = int(os.getenv("DLQ_ALERT_THRESHOLD", "100"))
+    # RQ-19: worker throughput knobs
+    worker_stream_batch_size: int = int(os.getenv("WORKER_STREAM_BATCH_SIZE", "10"))
+    outbox_publish_batch_size: int = int(os.getenv("OUTBOX_PUBLISH_BATCH_SIZE", "200"))
+
+    # Phase 5 / Wave 3: billing resilience for AI operations (INT-21)
+    # When true, unexpected billing subsystem errors will not block AI operations.
+    # Explicit denials (quota/credits/entitlements) still fail closed.
+    billing_fail_open_ai: bool = os.getenv("BILLING_FAIL_OPEN_AI", "false").lower() == "true"
     iam_use_db_auth: bool = os.getenv("IAM_USE_DB_AUTH", "true").lower() == "true"
     iam_access_token_ttl_seconds: int = int(os.getenv("IAM_ACCESS_TOKEN_TTL_SECONDS", "900"))
     iam_refresh_token_ttl_seconds: int = int(os.getenv("IAM_REFRESH_TOKEN_TTL_SECONDS", "604800"))
@@ -236,11 +314,15 @@ class Settings(BaseModel):
     oidc_allowed_redirect_uris: str = os.getenv("OIDC_ALLOWED_REDIRECT_URIS", "")
     oidc_jit_provisioning_enabled: bool = os.getenv("OIDC_JIT_PROVISIONING_ENABLED", "false").lower() == "true"
     oidc_jit_default_role: str = os.getenv("OIDC_JIT_DEFAULT_ROLE", "viewer")
-    allow_password_auth_in_prod: bool = os.getenv("ALLOW_PASSWORD_AUTH_IN_PROD", "true").lower() == "true"
+    allow_password_auth_in_prod: bool = os.getenv("ALLOW_PASSWORD_AUTH_IN_PROD", "false").lower() == "true"
     password_reset_email_enabled: bool = os.getenv("PASSWORD_RESET_EMAIL_ENABLED", "true").lower() == "true"
     app_public_base_url: str = os.getenv("APP_PUBLIC_BASE_URL", "http://localhost:3000")
     webauthn_rp_id: str = os.getenv("WEBAUTHN_RP_ID", "localhost")
     webauthn_rp_name: str = os.getenv("WEBAUTHN_RP_NAME", "FinanceOS")
+    webauthn_origin: str = os.getenv("WEBAUTHN_ORIGIN", "http://localhost:3000")
+    webauthn_enabled: bool = os.getenv("WEBAUTHN_ENABLED", "false").lower() == "true"
+    auth_cookie_secure: bool = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+    sse_token_ttl_seconds: int = int(os.getenv("SSE_TOKEN_TTL_SECONDS", "300"))
     integrations_api_key_rate_limit_per_minute: int = int(os.getenv("INTEGRATIONS_API_KEY_RATE_LIMIT_PER_MINUTE", "120"))
     gstn_base_url: str = os.getenv("GSTN_BASE_URL", "")
     gstn_username: str = os.getenv("GSTN_USERNAME", "")

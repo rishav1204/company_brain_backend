@@ -36,5 +36,17 @@ class AdvanceService:
             advance_repository.adjust(org_id, advance_id=str(adv["id"]), amount=apply_amt)
             remaining -= apply_amt
 
+    def settle_against_claim_conn(self, conn, org_id: str, *, employee_id: str, claim_amount: float) -> None:
+        remaining = claim_amount
+        for adv in advance_repository.list_open(org_id, employee_id=employee_id):
+            if remaining <= 0:
+                break
+            open_amt = float(adv.get("advance_amount") or 0) - float(adv.get("settled_amount") or 0)
+            if open_amt <= 0:
+                continue
+            apply_amt = min(remaining, open_amt)
+            advance_repository.adjust_conn(conn, org_id, advance_id=str(adv["id"]), amount=apply_amt)
+            remaining -= apply_amt
+
 
 advance_service = AdvanceService()

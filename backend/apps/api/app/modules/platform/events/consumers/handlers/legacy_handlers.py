@@ -522,6 +522,15 @@ def _consume_scheduler_event(envelope: dict) -> None:
                 logging.getLogger(__name__).warning("scheduler.tick retention failed org=%s: %s", org_id, exc)
             if org_id:
                 try:
+                    from app.modules.platform.governance.services.retention_service import retention_service
+
+                    retention_service.run_archival(org_id, resource_type="audit_logs")
+                except Exception as exc:
+                    import logging
+
+                    logging.getLogger(__name__).warning("scheduler.tick governance retention failed org=%s: %s", org_id, exc)
+            if org_id:
+                try:
                     from app.modules.erp.journals.services.recurring_journal_service import recurring_journal_service
 
                     recurring_journal_service.run_due(org_id)
@@ -957,15 +966,25 @@ def _consume_agents_trigger(envelope: dict) -> None:
 def _consume_goal_triggers(envelope: dict) -> None:
     """M38: event-driven goals via Platform AI Runtime GoalManager."""
     from app.modules.finance_os.platform_ai_runtime.events.event_listener import consume_goal_trigger
+    from app.services.logger import log_event
 
     try:
         consume_goal_trigger(envelope)
-    except Exception:
-        pass
+    except Exception as exc:
+        log_event(
+            "m38.consumer.goal_trigger_error",
+            org_id=str(envelope.get("org_id") or ""),
+            event_type=str(envelope.get("event_type") or ""),
+            detail=str(exc),
+            correlation_id=str(envelope.get("correlation_id") or envelope.get("trace_id") or ""),
+        )
+        raise
 
 
 def _consume_m38_scheduler(envelope: dict) -> None:
     """M38 Phase 4: proactive goals from scheduler ticks."""
+    from app.services.logger import log_event
+
     event_type = str(envelope.get("event_type", ""))
     if event_type not in {
         "scheduler.collections.daily",
@@ -980,9 +999,11 @@ def _consume_m38_scheduler(envelope: dict) -> None:
         from app.modules.platform.billing.billing_hooks import gate_ai_event
 
         if not gate_ai_event(org_id, feature="agents", operation_code="agent_execution"):
+            log_event("m38.scheduler.billing_blocked", org_id=org_id, event_type=event_type)
             return
-    except Exception:
-        pass
+    except Exception as exc:
+        log_event("m38.scheduler.billing_gate_failed", org_id=org_id, event_type=event_type, detail=str(exc))
+        return
     try:
         from app.modules.finance_os.platform_ai_runtime.goals.goal_manager import GOAL_TRIGGER_MAP, goal_manager
 
@@ -996,8 +1017,16 @@ def _consume_m38_scheduler(envelope: dict) -> None:
             message=message,
             trigger_type="scheduler",
         )
-    except Exception:
-        pass
+        log_event("m38.scheduler.goal_ok", org_id=org_id, event_type=event_type)
+    except Exception as exc:
+        log_event(
+            "m38.scheduler.goal_failed",
+            org_id=org_id,
+            event_type=event_type,
+            detail=str(exc),
+            correlation_id=str(envelope.get("correlation_id") or envelope.get("trace_id") or ""),
+        )
+        raise
 
 
 def _consume_forecasting_refresh(envelope: dict) -> None:
@@ -1304,14 +1333,17 @@ def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
         from app.modules.workflows.repositories import workflow_repo
 
         instance = workflow_repo.get_instance(org_id, instance_id) or {}
-    except Exception:
-        return
+    except Exception as exc:
+        from app.services.logger import log_event
+
+        log_event("workflow.legacy_handler_failed", org_id=org_id, workflow_instance_id=instance_id, error=str(exc))
+        raise
     metadata = instance.get("metadata") if isinstance(instance.get("metadata"), dict) else {}
     journal_id = str(metadata.get("journal_id") or "").strip()
     posted_by = str(instance.get("owner_user_id") or "workflow")
     try:
         if journal_id:
-            from app.modules.erp.journals.ai.confidence_engine import requires_finance_review
+            from app.modules.erp.ports.intelligence_registry import intelligence_registry
             from app.modules.erp.journals.services.approval_service import approval_service
             from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
             from app.modules.erp.journals.repositories.journal_repository import journal_repository
@@ -1326,7 +1358,9 @@ def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
             )
             status = str(journal.get("journal_status") or "")
             approver = str(metadata.get("approver_user_id") or posted_by)
-            if requires_finance_review(journal.get("ai_confidence") if isinstance(journal.get("ai_confidence"), dict) else {}):
+            if intelligence_registry.journal().requires_finance_review(
+                journal.get("ai_confidence") if isinstance(journal.get("ai_confidence"), dict) else {}
+            ):
                 return
             if status in {"draft", "pending_approval"}:
                 approval_service.approve(org_id, journal_id=journal_id, approver_id=approver)
@@ -1352,6 +1386,7 @@ def _consume_workflow_system_task_gl_post(envelope: dict) -> None:
             posting_date=str(gl_req.get("posting_date") or metadata.get("posting_date") or "")[:10],
             company_id=gl_req.get("company_id"),
             lines=gl_req.get("lines") or [],
+            via_orchestrator=True,
         )
         batch_id = ((result.get("batch") or {}).get("id")) if isinstance(result, dict) else None
         if batch_id:
@@ -2385,29 +2420,10 @@ def _consume_tax_events(envelope: dict) -> None:
         return
     payload = envelope.get("payload", {}) if isinstance(envelope.get("payload"), dict) else {}
 
-    if event_type in {"erp.invoice.approved", "invoice.approved"}:
-        invoice_id = str(payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
-        if invoice_id:
-            try:
-                from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
-
-                gst_transaction_service.record_from_ap_invoice(org_id, invoice_id=invoice_id)
-            except Exception as exc:
-                import logging
-
-                logging.getLogger(__name__).warning("Tax AP record failed org=%s invoice=%s: %s", org_id, invoice_id, exc)
-
     if event_type in {"invoice.issued", "sales.invoice.issued"}:
         invoice_id = str(payload.get("invoice_id") or envelope.get("entity_id") or "").strip()
         if invoice_id:
-            try:
-                from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
-
-                gst_transaction_service.record_from_ar_invoice(org_id, invoice_id=invoice_id)
-            except Exception as exc:
-                import logging
-
-                logging.getLogger(__name__).warning("Tax AR record failed org=%s invoice=%s: %s", org_id, invoice_id, exc)
+            # AR GST is recorded on journal.posted (same as AP) — not on invoice.issued.
             try:
                 from app.modules.erp.tax.services.e_invoice_service import e_invoice_service
                 from app.modules.erp.accounts_receivable.repositories.invoice_repository import ar_invoice_repository
@@ -2422,18 +2438,6 @@ def _consume_tax_events(envelope: dict) -> None:
                 import logging
 
                 logging.getLogger(__name__).warning("Tax auto e-invoice/eway failed org=%s invoice=%s: %s", org_id, invoice_id, exc)
-
-    if event_type in {"invoice.received"}:
-        invoice_id = str(payload.get("invoice_id") or payload.get("ap_invoice_id") or envelope.get("entity_id") or "").strip()
-        if invoice_id:
-            try:
-                from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
-
-                gst_transaction_service.record_from_ap_invoice(org_id, invoice_id=invoice_id)
-            except Exception as exc:
-                import logging
-
-                logging.getLogger(__name__).warning("Tax AP record from invoice.received failed org=%s: %s", org_id, exc)
 
     if event_type in {"receipt.received", "customer.payment.received", "payment.received"}:
         receipt_id = str(payload.get("receipt_id") or envelope.get("entity_id") or "").strip()

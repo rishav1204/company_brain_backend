@@ -15,6 +15,7 @@ class CostingService:
         issue_qty: float,
         balance: dict,
         layers: list[dict],
+        standard_unit_cost: float | None = None,
     ) -> tuple[float, float, list[dict]]:
         m = resolve_method(method, None)
         total, unit = compute_issue_cost(
@@ -24,6 +25,7 @@ class CostingService:
             balance_value=float(balance.get("inventory_value") or 0),
             weighted_avg_cost=float(balance.get("weighted_avg_cost") or 0),
             layers=layers,
+            standard_unit_cost=standard_unit_cost,
         )
         consumed: list[dict] = []
         if m == "fifo":

@@ -15,7 +15,11 @@ def test_dev_user_login_and_me() -> None:
     client = TestClient(app)
     login = client.post(
         "/api/v1/auth/login",
-        json={"email": "dev@example.com", "password": "dev-password"},
+        json={
+            "email": "dev@example.com",
+            "password": "dev-password",
+            "org_id": "11111111-1111-4111-8111-111111111111",
+        },
     )
     if login.status_code == 503:
         pytest.skip("IAM DB auth not enabled")

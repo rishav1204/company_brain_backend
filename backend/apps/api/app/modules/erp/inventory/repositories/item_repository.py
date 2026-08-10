@@ -112,6 +112,22 @@ class ItemRepository:
                 )
                 return [dict(r) for r in cur.fetchall()]
 
+    def set_status(self, org_id: str, *, item_id: str, status: str) -> dict:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE erp.inventory_items
+                    SET status = %s, updated_at = NOW()
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    RETURNING id::text, item_code, status
+                    """,
+                    (status, org_id, item_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else {}
+
 
 class WarehouseRepository:
     def create(

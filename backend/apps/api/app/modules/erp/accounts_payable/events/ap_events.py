@@ -19,6 +19,42 @@ def emit_invoice_due(org_id: str, *, invoice_id: str, due_date: str) -> None:
         pass
 
 
+def emit_vendor_bank_account_changed(
+    org_id: str,
+    *,
+    vendor_id: str,
+    bank_account_id: str,
+    change_type: str,
+    actor_id: str | None = None,
+    ifsc_code: str | None = None,
+    bank_name: str | None = None,
+    is_primary: bool = False,
+    account_last4: str | None = None,
+) -> None:
+    try:
+        from app.modules.platform.events.services.event_service import platform_event_service
+
+        platform_event_service.publish(
+            event_type="vendor.bank_account.changed",
+            org_id=org_id,
+            source="erp.ap",
+            entity_type="vendor_bank_account",
+            entity_id=bank_account_id,
+            payload={
+                "vendor_id": vendor_id,
+                "bank_account_id": bank_account_id,
+                "change_type": change_type,
+                "actor_id": actor_id,
+                "ifsc_code": ifsc_code,
+                "bank_name": bank_name,
+                "is_primary": is_primary,
+                "account_last4": account_last4,
+            },
+        )
+    except Exception:
+        pass
+
+
 def emit_payment_scheduled(
     org_id: str,
     *,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation, enforce_maker_checker
-from app.modules.erp.accounts_receivable.ai.customer_scoring import score_customer
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.accounts_receivable.repositories.customer_address_repository import customer_address_repository
 from app.modules.erp.accounts_receivable.repositories.customer_repository import customer_repository
 from app.modules.erp.accounts_receivable.repositories.invoice_repository import ar_invoice_repository
@@ -202,7 +202,7 @@ class CustomerService:
     def get_customer_risk(self, org_id: str, *, customer_id: str) -> dict:
         invoices = ar_invoice_repository.list(org_id, customer_id=customer_id, limit=500)
         receipts = receipt_repository.list(org_id, customer_id=customer_id, limit=500)
-        return score_customer(invoices=invoices, receipts=receipts)
+        return intelligence_registry.ar_collections().score_customer(invoices=invoices, receipts=receipts)
 
     def _audit(self, org_id: str, *, customer_id: str, action: str, actor_id: str | None) -> None:
         try:

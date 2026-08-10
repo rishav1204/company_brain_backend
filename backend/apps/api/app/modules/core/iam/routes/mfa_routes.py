@@ -14,6 +14,7 @@ from app.modules.core.iam.services.mfa_service import (
 )
 from app.modules.core.iam.services.sms_otp_service import send_sms_otp
 from app.modules.core.iam.services.webauthn_service import (
+    WebAuthnNotEnabled,
     begin_authentication,
     begin_registration,
     finish_authentication,
@@ -97,7 +98,10 @@ def webauthn_register_begin(context=Depends(build_request_context)) -> dict:
     user = user_repo.get_by_id(context.org_id, context.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return begin_registration(context.org_id, context.user_id, user["email"])
+    try:
+        return begin_registration(context.org_id, context.user_id, user["email"])
+    except WebAuthnNotEnabled as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/users/me/mfa/webauthn/register/finish")
@@ -137,7 +141,7 @@ def trust_device(body: TrustDeviceBody, context=Depends(build_request_context)) 
     if not body.trust_device:
         return {"request_id": context.request_id, "status": "skipped"}
     ua = context.user_agent or ""
-    fingerprint = device_fingerprint_from_request(user_agent=ua)
+    fingerprint = device_fingerprint_from_request(user_agent=ua, ip_address=context.ip_address)
     trust_device_for_user(context.org_id, context.user_id, fingerprint, {"user_agent": ua})
     return {"request_id": context.request_id, "status": "device_trusted"}
 

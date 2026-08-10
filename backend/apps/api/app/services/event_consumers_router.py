@@ -134,4 +134,4 @@ def consume_event(queue: str, envelope: dict) -> None:
             notification_service.handle_event_envelope(envelope)
     except Exception:
         pass
-    log_event("event.consumer.processed", queue=queue, event_type=envelope.get("event_type", ""))
+    log_event("event.consumer.processed", queue=queue, consumed_event_type=envelope.get("event_type", ""))

@@ -48,29 +48,46 @@ class GstTransactionRepository:
         tid = str(uuid4())
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO erp.gst_transactions (
-                      id, org_id, source_type, source_id, gst_type, taxable_value,
-                      cgst_amount, sgst_amount, igst_amount, cess_amount, gst_rate,
-                      invoice_date, party_gstin, place_of_supply, hsn_sac, return_period, metadata
-                    ) VALUES (%s::uuid,%s::uuid,%s,%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s::date,%s,%s,%s,%s,%s::jsonb)
-                    ON CONFLICT (org_id, source_type, source_id, gst_type) DO UPDATE SET
-                      taxable_value=EXCLUDED.taxable_value, cgst_amount=EXCLUDED.cgst_amount,
-                      sgst_amount=EXCLUDED.sgst_amount, igst_amount=EXCLUDED.igst_amount,
-                      return_period=EXCLUDED.return_period, metadata=EXCLUDED.metadata, invoice_date=EXCLUDED.invoice_date
-                    RETURNING id::text, source_type, source_id, gst_type
-                    """,
-                    (
-                        tid, org_id, fields["source_type"], fields["source_id"], fields["gst_type"],
-                        fields.get("taxable_value", 0), fields.get("cgst_amount", 0), fields.get("sgst_amount", 0),
-                        fields.get("igst_amount", 0), fields.get("cess_amount", 0), fields.get("gst_rate"),
-                        fields["invoice_date"], fields.get("party_gstin"), fields.get("place_of_supply"),
-                        fields.get("hsn_sac"), fields.get("return_period"), Json(fields.get("metadata") or {}),
-                    ),
-                )
-                return dict(cur.fetchone() or {"id": tid})
+            return self.create_conn(conn, org_id, **fields)
+
+    def create_conn(self, conn, org_id: str, **fields) -> dict:
+        tid = str(uuid4())
+        set_rls_org(conn, org_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO erp.gst_transactions (
+                  id, org_id, source_type, source_id, gst_type, taxable_value,
+                  cgst_amount, sgst_amount, igst_amount, cess_amount, gst_rate,
+                  invoice_date, party_gstin, place_of_supply, hsn_sac, return_period, metadata
+                ) VALUES (%s::uuid,%s::uuid,%s,%s::uuid,%s,%s,%s,%s,%s,%s,%s,%s::date,%s,%s,%s,%s,%s::jsonb)
+                ON CONFLICT (org_id, source_type, source_id, gst_type) DO UPDATE SET
+                  taxable_value=EXCLUDED.taxable_value, cgst_amount=EXCLUDED.cgst_amount,
+                  sgst_amount=EXCLUDED.sgst_amount, igst_amount=EXCLUDED.igst_amount,
+                  return_period=EXCLUDED.return_period, metadata=EXCLUDED.metadata, invoice_date=EXCLUDED.invoice_date
+                RETURNING id::text, source_type, source_id, gst_type
+                """,
+                (
+                    tid,
+                    org_id,
+                    fields["source_type"],
+                    fields["source_id"],
+                    fields["gst_type"],
+                    fields.get("taxable_value", 0),
+                    fields.get("cgst_amount", 0),
+                    fields.get("sgst_amount", 0),
+                    fields.get("igst_amount", 0),
+                    fields.get("cess_amount", 0),
+                    fields.get("gst_rate"),
+                    fields["invoice_date"],
+                    fields.get("party_gstin"),
+                    fields.get("place_of_supply"),
+                    fields.get("hsn_sac"),
+                    fields.get("return_period"),
+                    Json(fields.get("metadata") or {}),
+                ),
+            )
+            return dict(cur.fetchone() or {"id": tid})
 
     def list(self, org_id: str, *, return_period: str | None = None, gst_type: str | None = None, limit: int = 500) -> list[dict]:
         where = ["org_id = %s::uuid"]

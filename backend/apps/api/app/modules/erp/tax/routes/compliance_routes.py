@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.modules.erp.tax.ai.compliance_assistant import answer_compliance_question
-from app.modules.erp.tax.ai.gst_copilot import answer_gst_question
-from app.modules.erp.tax.ai.tds_copilot import answer_tds_question
-from app.modules.erp.tax.ai.tax_risk_engine import assess_tax_risks
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.tax.schemas.tax_schema import ComplianceCopilotRequest, TaxNoticeCreate
 from app.modules.erp.tax.security.tax_access import enforce_tax_action
 from app.modules.erp.tax.security.tax_guard import require_tax_admin, require_tax_read
@@ -67,7 +64,7 @@ def tax_risk(context=Depends(require_tax_read)) -> dict:
     returns = gst_return_service.list_returns(context.org_id)
     calendar = compliance_calendar_service.list_obligations(context.org_id)
     transactions = gst_service.list_transactions(context.org_id)
-    item = assess_tax_risks(
+    item = intelligence_registry.tax().assess_tax_risks(
         reconciliations=reconciliations,
         returns=returns,
         calendar=calendar,
@@ -84,8 +81,9 @@ def tax_risk(context=Depends(require_tax_read)) -> dict:
 def compliance_copilot(request: ComplianceCopilotRequest, context=Depends(require_tax_read)) -> dict:
     enforce_tax_action(context, action="tax.read", object_type="tax_copilot", object_id="copilot")
     q = request.question.lower()
+    tax_intel = intelligence_registry.tax()
     if any(k in q for k in ("tds", "challan", "26q", "form 16", "form16", "194")):
-        item = answer_tds_question(
+        item = tax_intel.answer_tds_question(
             question=request.question,
             liability=tds_service.liability_summary(context.org_id),
             transactions=tds_service.list_transactions(context.org_id),
@@ -94,10 +92,10 @@ def compliance_copilot(request: ComplianceCopilotRequest, context=Depends(requir
         )
     elif "vendor" in q or "mismatch" in q:
         reconciliations = gst_reconciliation_service.list_reconciliations(context.org_id, match_status="mismatch")
-        item = answer_compliance_question(question=request.question, reconciliations=reconciliations)
+        item = tax_intel.answer_compliance_question(question=request.question, reconciliations=reconciliations)
     else:
         returns = gst_return_service.list_returns(context.org_id)
         transactions = gst_service.list_transactions(context.org_id)
         itc_summary = itc_service.summary(context.org_id)
-        item = answer_gst_question(question=request.question, returns=returns, transactions=transactions, itc_summary=itc_summary)
+        item = tax_intel.answer_gst_question(question=request.question, returns=returns, transactions=transactions, itc_summary=itc_summary)
     return {"request_id": context.request_id, "item": item}

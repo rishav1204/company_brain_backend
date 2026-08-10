@@ -83,6 +83,18 @@ def decode_bearer_token(token: str) -> JwtPrincipal:
     if not org_id or not user_id:
         raise InvalidTokenError("Required claims missing")
 
+    if settings.iam_use_db_auth:
+        if session_id_str:
+            from app.modules.core.iam.repositories.session_repository import SessionRepository
+
+            repo = SessionRepository()
+            if not repo.is_session_active(str(org_id), session_id_str):
+                raise InvalidTokenError("Session revoked or expired")
+            repo.touch_last_active(str(org_id), session_id_str)
+        elif settings.app_env.lower() == "prod":
+            # Production requires session binding; non-prod allows synthetic test JWTs.
+            raise InvalidTokenError("session_id claim required")
+
     return JwtPrincipal(
         user_id=str(user_id),
         org_id=str(org_id),

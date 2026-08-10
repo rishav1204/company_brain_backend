@@ -11,7 +11,10 @@ router = APIRouter()
 
 @router.post("/vouchers")
 def create_voucher(request: VoucherCreateRequest, context=Depends(require_voucher_admin)) -> dict:
+    from app.modules.erp.security.branch_scope_sql import resolve_branch_id_for_write
+
     try:
+        branch_id = resolve_branch_id_for_write(context.attrs, explicit_branch_id=request.branch_id)
         item = voucher_service.create(
             context.org_id,
             voucher_type=request.voucher_type,
@@ -19,7 +22,7 @@ def create_voucher(request: VoucherCreateRequest, context=Depends(require_vouche
             lines=[line.model_dump() for line in request.lines],
             narration=request.narration,
             company_id=request.company_id,
-            branch_id=request.branch_id,
+            branch_id=branch_id,
             reference_type=request.reference_type,
             reference_id=request.reference_id,
             created_by=context.user_id,
@@ -39,12 +42,15 @@ def list_vouchers(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
+    from app.modules.erp.security.branch_scope_sql import branch_ids_from_attrs
+
     items = voucher_service.list(
         context.org_id,
         voucher_type=voucher_type,
         status=status,
         limit=limit,
         offset=offset,
+        branch_ids=branch_ids_from_attrs(context.attrs),
     )
     return {"request_id": context.request_id, "items": items}
 

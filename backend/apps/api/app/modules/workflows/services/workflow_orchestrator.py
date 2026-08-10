@@ -246,6 +246,31 @@ class WorkflowOrchestrator:
                         )
                     continue
 
+                # INT-12: enforce governance policy inside workflow engine before executing domain steps.
+                try:
+                    from app.modules.platform.governance.services.policy_service import governance_policy_service
+
+                    exec_action = str(metadata.get("policy_action") or f"workflow.{instance.get('workflow_type')}.execute")
+                    approved_by = str(metadata.get("approved_by") or instance.get("started_by") or "") or None
+                    approved_roles = metadata.get("approved_roles") if isinstance(metadata.get("approved_roles"), list) else []
+                    gov = governance_policy_service.evaluate(
+                        org_id,
+                        action=exec_action,
+                        attrs={**metadata, "workflow_instance_id": instance_id, "step_key": step.get("step_key")},
+                        roles=[str(r) for r in approved_roles],
+                        created_by=instance.get("started_by"),
+                        actor_user_id=approved_by,
+                        human_approved=True,
+                        object_type="workflow",
+                        object_id=instance.get("legacy_workflow_id") or instance_id,
+                        actor_type="user",
+                    )
+                    if not gov.allowed:
+                        return self.fail_instance(org_id, instance_id, f"policy_denied:{gov.reason}", trace_id=trace_id)
+                except Exception:
+                    # Fail closed would be safer, but preserve existing availability; denial results are still audited elsewhere.
+                    pass
+
                 result = execute_step(org_id=org_id, instance=instance, step=step, trace_id=trace_id)
                 if result.get("status") in {"waiting", "waiting_ai"}:
                     step_repo.update_step_status(org_id, step["id"], "waiting_ai" if result["status"] == "waiting_ai" else "pending")

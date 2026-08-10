@@ -22,7 +22,7 @@ def test_api_key_scope_denied() -> None:
     assert exc.value.status_code == 403
 
 
-def test_api_key_scope_allowed_with_wildcard() -> None:
+def test_api_key_scope_denied_for_wildcard() -> None:
     ctx = RequestContext(
         request_id="r1",
         org_id="org",
@@ -31,4 +31,6 @@ def test_api_key_scope_allowed_with_wildcard() -> None:
         auth_method="api_key",
         api_key_scopes=["*"],
     )
-    enforce_finance_route_access(ctx, action="approve_payment", object_type="workflow", mode="write")
+    with pytest.raises(HTTPException) as exc:
+        enforce_finance_route_access(ctx, action="approve_payment", object_type="workflow", mode="write")
+    assert exc.value.status_code == 403

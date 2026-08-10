@@ -104,6 +104,43 @@ Or chat with `goal_id` and message `"continue"`.
 
 Returns items with `source`: `m38` or `m29`.
 
+### 7. World state publish (Wave 4 UI bridge)
+
+Keep platform context current **without** waiting for chat.
+
+`POST /api/v1/finance-os/runtime/world-state`
+
+```json
+{
+  "goal_id": "optional-active-goal",
+  "world_state": {
+    "screen": {
+      "module": "M11_AP",
+      "route": "/finance/ap/invoices/inv-123",
+      "entity_type": "invoice",
+      "entity_id": "inv-123",
+      "tab": "lines",
+      "panel": "detail",
+      "modal": null,
+      "current_action": "review"
+    },
+    "org": { "company_id": "...", "branch_id": "...", "fiscal_period_id": "..." },
+    "selection": { "invoice_id": "inv-123", "vendor_id": "v-9" },
+    "filters": { "status": "blocked" },
+    "search": { "q": "" },
+    "sort": { "field": "due_date", "dir": "asc" },
+    "selected_records": [],
+    "active_workflows": [],
+    "pending_approvals": [],
+    "roles": ["ap.analyst"]
+  }
+}
+```
+
+`GET /api/v1/finance-os/runtime/world-state?goal_id=...` reads the latest persisted session state.
+
+Publish on: route change, selection change, filter change, modal open/close, workflow step change. Chat may still send `world_state` every turn for redundancy.
+
 ---
 
 ## UI states

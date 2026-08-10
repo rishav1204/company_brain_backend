@@ -2,14 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.modules.finance_os.invoice_ai.services.anomaly_service import anomaly_service
-from app.modules.finance_os.invoice_ai.services.confidence_service import confidence_service
-from app.modules.finance_os.invoice_ai.services.duplicate_service import duplicate_service
-from app.modules.finance_os.invoice_ai.services.extraction_service import extraction_service
-from app.modules.finance_os.invoice_ai.services.prediction_service import prediction_service
-from app.modules.erp.accounts_payable.ai.duplicate_detector import detect_duplicate_signals
-from app.modules.erp.accounts_payable.ai.invoice_reviewer import review_invoice_extraction
-from app.modules.erp.accounts_payable.ai.vendor_classifier import classify_vendor_from_extraction
 from app.modules.erp.accounts_payable.engine.account_resolver import (
     build_gst_lines_from_extraction,
     resolve_expense_account,
@@ -18,7 +10,7 @@ from app.modules.erp.accounts_payable.repositories.vendor_repository import vend
 from app.modules.erp.accounts_payable.services.duplicate_invoice_service import duplicate_invoice_service
 from app.modules.erp.accounts_payable.services.invoice_service import invoice_service
 from app.modules.erp.accounts_payable.services.vendor_service import vendor_service
-from app.modules.platform.documents.ai.ledger_suggester import suggest_ledger_accounts
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 _AUTO_DRAFT_BANDS = {"auto_suggest", "review_suggested"}
 
@@ -33,9 +25,9 @@ class AiInvoiceService:
         company_id: str | None = None,
         invoice_type: str = "purchase",
     ) -> dict:
-        from app.modules.finance_os.invoice_ai.pipelines.invoice_pipeline import invoice_pipeline
-
-        pipeline_result = invoice_pipeline.run(org_id, document_id=document_id, invoice_type=invoice_type)
+        pipeline_result = intelligence_registry.invoice().run_pipeline(
+            org_id, document_id=document_id, invoice_type=invoice_type
+        )
         return self.create_from_m25(
             org_id,
             extraction_id=pipeline_result["extraction_id"],
@@ -55,19 +47,20 @@ class AiInvoiceService:
         company_id: str | None = None,
         pipeline_result: dict | None = None,
     ) -> dict:
-        extraction = extraction_service.get(org_id, extraction_id)
+        intel = intelligence_registry.invoice()
+        extraction = intel.get_extraction(org_id, extraction_id)
         if not extraction:
             raise ValueError("M25 extraction not found")
 
-        dup = duplicate_service.latest(org_id, extraction_id) or {}
-        anomalies = anomaly_service.list_for_extraction(org_id, extraction_id)
-        predictions = prediction_service.list_suggestions(org_id, extraction_id=extraction_id)
+        dup = intel.latest_duplicate(org_id, extraction_id) or {}
+        anomalies = intel.list_anomalies(org_id, extraction_id)
+        predictions = intel.list_suggestions(org_id, extraction_id=extraction_id)
 
         if pipeline_result:
             band = str(pipeline_result.get("confidence_band") or extraction.get("confidence_band") or "manual_review")
             auto_eligible = bool(pipeline_result.get("auto_draft_eligible"))
         else:
-            conf = confidence_service.evaluate(
+            conf = intel.evaluate_confidence(
                 extraction=extraction,
                 predictions=predictions,
                 duplicate_status=str(dup.get("status") or "clean"),
@@ -125,11 +118,12 @@ class AiInvoiceService:
         created_by: str | None = None,
         company_id: str | None = None,
     ) -> dict:
-        vendor_info = classify_vendor_from_extraction(extracted_data)
+        ap_intel = intelligence_registry.ap_risk()
+        vendor_info = ap_intel.classify_vendor_from_extraction(extracted_data)
         vendor_name = str(vendor_info.get("vendor_name") or extracted_data.get("vendor") or "Unknown Vendor")
         gstin = vendor_info.get("gstin") or extracted_data.get("gstin")
-        ai_review = review_invoice_extraction(extracted_data, vendor_gstin=gstin)
-        ledger_suggestions = suggest_ledger_accounts(extracted_data, org_id=org_id)
+        ai_review = ap_intel.review_invoice_extraction(extracted_data, vendor_gstin=gstin)
+        ledger_suggestions = ap_intel.suggest_ledger_accounts(extracted_data, org_id=org_id)
 
         vendor_id = vendor_info.get("vendor_id")
         vendor_row: dict | None = None
@@ -167,7 +161,7 @@ class AiInvoiceService:
             total_amount=total,
             invoice_date=invoice_date,
         )
-        signals = detect_duplicate_signals(dup_check or {})
+        signals = ap_intel.duplicate_signals(dup_check or {})
         if signals.get("block"):
             raise ValueError(f"Duplicate invoice blocked: {signals.get('reason')}")
 

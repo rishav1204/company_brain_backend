@@ -45,3 +45,56 @@ def test_credit_catalog() -> None:
 
 def test_default_plan_key() -> None:
     assert DEFAULT_PLAN_KEY in PLAN_FEATURES
+
+
+def test_admin_billing_routes_require_platform_admin() -> None:
+    """Assigning plans / granting credits targets any org_id in the body.
+    That must never fall back to tenant_admin — otherwise any customer-org
+    admin can escalate to full commercial control of every tenant.
+    """
+    from app.modules.core.iam.middleware.permission_guard import _TENANT_ADMIN_ALLOWED
+    from app.modules.platform.billing.routes import admin_billing_routes
+
+    assert "platform.admin" not in _TENANT_ADMIN_ALLOWED
+    assert not hasattr(admin_billing_routes, "_require_tenant_admin")
+
+    paths = {route.path for route in admin_billing_routes.router.routes}
+    required = {
+        "/admin/billing/plans",
+        "/admin/billing/plans/{plan_key}",
+        "/admin/billing/plans/{plan_key}/features",
+        "/admin/billing/plans/{plan_key}/limits",
+        "/admin/billing/subscriptions/assign",
+        "/admin/billing/credits/grant",
+        "/admin/billing/entitlements/override",
+        "/admin/billing/orgs/{org_id}/disable-ai",
+    }
+    assert required.issubset(paths)
+
+    expected = admin_billing_routes._PLATFORM_ADMIN
+    for route in admin_billing_routes.router.routes:
+        dep_calls = [dep.call for dep in route.dependant.dependencies]
+        assert expected in dep_calls, f"{route.path} is not gated by platform.admin"
+
+
+def test_plan_ceiling_requires_break_glass() -> None:
+    from unittest.mock import patch
+
+    with (
+        patch(
+            "app.modules.platform.billing.services.entitlement_service.subscription_service.get_plan_key",
+            return_value="finance_starter",
+        ),
+        patch(
+            "app.modules.platform.billing.services.entitlement_service.plan_service.get_plan_features",
+            return_value={"ap", "ar", "coa"},
+        ),
+    ):
+        with pytest.raises(ValueError, match="break_glass"):
+            entitlement_service.set_override(ORG, "agents", enabled=True, break_glass=False)
+
+
+def test_disable_ai_codes() -> None:
+    assert "agents" in __import__(
+        "app.modules.platform.billing.services.entitlement_service", fromlist=["AI_FEATURE_CODES"]
+    ).AI_FEATURE_CODES

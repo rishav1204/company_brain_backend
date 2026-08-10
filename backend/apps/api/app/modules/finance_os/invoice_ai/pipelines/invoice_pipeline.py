@@ -99,9 +99,13 @@ class InvoicePipeline:
         }
         if conf.get("auto_draft_eligible"):
             try:
-                from app.modules.erp.vouchers.services.voucher_service import voucher_service
+                from app.modules.finance_os.bridges.erp_command_bridge.services.command_service import (
+                    erp_command_service,
+                )
 
-                draft = voucher_service.create_from_extraction(org_id, extraction_id=extraction["id"])
+                draft = erp_command_service.create_voucher_from_extraction(
+                    org_id, extraction_id=extraction["id"]
+                )
                 result["draft_voucher_id"] = str((draft.get("voucher") or {}).get("id") or "")
             except Exception:
                 pass

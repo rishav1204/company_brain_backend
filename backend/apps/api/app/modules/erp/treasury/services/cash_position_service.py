@@ -15,7 +15,7 @@ class CashPositionService:
         acct_list = bank_account_repository.list(org_id, active_only=True)
         account_ids = [str(acct["id"]) for acct in acct_list]
         sums_by_account = bank_transaction_repository.sum_by_accounts(
-            org_id, bank_account_ids=account_ids, reconciled_only=True
+            org_id, bank_account_ids=account_ids, reconciled_only=False
         )
         accounts = []
         restricted = 0.0
@@ -52,7 +52,9 @@ class CashPositionService:
             raise ValueError("Bank account not found")
         prev = cash_position_repository.latest_closing(org_id, bank_account_id=bank_account_id, before_date=pos_date)
         opening = prev if prev is not None else float(acct.get("opening_balance") or 0)
-        daily = bank_transaction_repository.sum_for_date(org_id, bank_account_id=bank_account_id, position_date=pos_date, reconciled_only=True)
+        daily = bank_transaction_repository.sum_for_date(
+            org_id, bank_account_id=bank_account_id, position_date=pos_date, reconciled_only=False
+        )
         inflows = float(daily.get("credits") or 0)
         outflows = float(daily.get("debits") or 0)
         closing = opening + inflows - outflows

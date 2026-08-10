@@ -8,9 +8,9 @@ from app.modules.erp.assets.engine.disposal_engine import build_depreciation_lin
 from app.modules.erp.assets.events.asset_events import emit_asset_depreciated
 from app.modules.erp.assets.repositories.asset_repository import asset_repository
 from app.modules.erp.assets.repositories.depreciation_repository import depreciation_repository
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
 
 
 class DepreciationService:
@@ -57,44 +57,66 @@ class DepreciationService:
             depreciation_expense_account_id=asset.get("depreciation_expense_account_id"),
             accumulated_depreciation_account_id=asset.get("accumulated_depreciation_account_id"),
         )
-        journal = journal_service.create_draft(
-            org_id,
-            created_by=actor_id,
-            journal_type="depreciation",
-            posting_date=dep_date,
-            description=f"Depreciation {asset.get('asset_code')} {period_key}",
-            source_type="asset_depreciation",
-            source_id=asset_id,
-            company_id=asset.get("company_id"),
-            lines=lines,
-            idempotency_key=f"asset-depr:{asset_id}:{period_key}",
-        )
-        jid = str(journal["journal"]["id"])
-        journal_approval_service.approve(org_id, journal_id=jid, approver_id=actor_id, skip_maker_checker=True)
-        if auto_post:
-            posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=actor_id)
 
         closing = round(book - amount, 2)
         new_accum = round(accum + amount, 2)
         new_status = next_status_after_depreciation(book_value=closing, salvage_value=salvage) or str(asset.get("status"))
 
-        depreciation_repository.create(
-            org_id,
-            asset_id=asset_id,
-            depreciation_date=dep_date,
-            period_key=period_key,
-            opening_book_value=book,
-            depreciation_amount=amount,
-            closing_book_value=closing,
-            journal_id=jid,
-        )
-        asset_repository.set_status(
-            org_id,
-            asset_id=asset_id,
-            status=new_status,
-            book_value=closing,
-            accumulated_depreciation=new_accum,
-        )
+        journal = None
+        post_result = None
+        jid = None
+
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal = create_draft_with_conn(
+                conn,
+                org_id,
+                created_by=actor_id,
+                journal_type="depreciation",
+                posting_date=dep_date,
+                description=f"Depreciation {asset.get('asset_code')} {period_key}",
+                source_type="asset_depreciation",
+                source_id=asset_id,
+                company_id=asset.get("company_id"),
+                lines=lines,
+                idempotency_key=f"asset-depr:{asset_id}:{period_key}",
+            )
+            jid = str(journal["journal"]["id"])
+            approve_with_conn(conn, org_id, journal_id=jid, approver_id=actor_id, skip_maker_checker=True)
+            if auto_post:
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=actor_id, defer_side_effects=True
+                )
+
+            depreciation_repository.create_conn(
+                conn,
+                org_id,
+                asset_id=asset_id,
+                depreciation_date=dep_date,
+                period_key=period_key,
+                opening_book_value=book,
+                depreciation_amount=amount,
+                closing_book_value=closing,
+                journal_id=jid,
+            )
+            asset_repository.set_status_conn(
+                conn,
+                org_id,
+                asset_id=asset_id,
+                status=new_status,
+                book_value=closing,
+                accumulated_depreciation=new_accum,
+            )
+
+        if auto_post and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=actor_id,
+            )
+
         emit_asset_depreciated(org_id, asset_id=asset_id, amount=amount, period_key=period_key)
         return {"asset_id": asset_id, "depreciation_amount": amount, "journal_id": jid, "period_key": period_key}
 

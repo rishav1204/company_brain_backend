@@ -22,6 +22,7 @@ class ArInvoiceRepository:
         gst_amount: float,
         total_amount: float,
         company_id: str | None = None,
+        branch_id: str | None = None,
         created_by: str | None = None,
         metadata: dict | None = None,
         revenue_recognition: dict | None = None,
@@ -33,15 +34,15 @@ class ArInvoiceRepository:
                 cur.execute(
                     """
                     INSERT INTO erp.ar_invoices (
-                      id, org_id, company_id, customer_id, invoice_number, invoice_date, due_date,
+                      id, org_id, company_id, branch_id, customer_id, invoice_number, invoice_date, due_date,
                       subtotal, gst_amount, total_amount, created_by, metadata, revenue_recognition
                     )
-                    VALUES (%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::date,
+                    VALUES (%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::date,
                             %s::numeric,%s::numeric,%s::numeric,%s::uuid,%s::jsonb,%s::jsonb)
                     RETURNING id::text, invoice_number, status, total_amount, due_date::text
                     """,
                     (
-                        iid, org_id, company_id, customer_id, invoice_number,
+                        iid, org_id, company_id, branch_id, customer_id, invoice_number,
                         invoice_date, due_date, subtotal, gst_amount, total_amount,
                         created_by, Json(metadata or {}), Json(revenue_recognition or {}),
                     ),
@@ -70,20 +71,23 @@ class ArInvoiceRepository:
     def update_metadata(self, org_id: str, *, invoice_id: str, metadata: dict) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.ar_invoices
-                    SET metadata = %s::jsonb, updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, metadata, status
-                    """,
-                    (Json(metadata), org_id, invoice_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Invoice not found")
-                return dict(row)
+            return self.update_metadata_conn(conn, org_id, invoice_id=invoice_id, metadata=metadata)
+
+    def update_metadata_conn(self, conn, org_id: str, *, invoice_id: str, metadata: dict) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.ar_invoices
+                SET metadata = %s::jsonb, updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, metadata, status
+                """,
+                (Json(metadata), org_id, invoice_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invoice not found")
+            return dict(row)
 
     def set_status(
         self,
@@ -96,23 +100,42 @@ class ArInvoiceRepository:
     ) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.ar_invoices
-                    SET status = %s,
-                        issued_by = COALESCE(%s::uuid, issued_by),
-                        journal_id = COALESCE(%s::uuid, journal_id),
-                        updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, status, journal_id::text
-                    """,
-                    (status, issued_by, journal_id, org_id, invoice_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Invoice not found")
-                return dict(row)
+            return self.set_status_conn(
+                conn,
+                org_id,
+                invoice_id=invoice_id,
+                status=status,
+                issued_by=issued_by,
+                journal_id=journal_id,
+            )
+
+    def set_status_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        invoice_id: str,
+        status: str,
+        issued_by: str | None = None,
+        journal_id: str | None = None,
+    ) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.ar_invoices
+                SET status = %s,
+                    issued_by = COALESCE(%s::uuid, issued_by),
+                    journal_id = COALESCE(%s::uuid, journal_id),
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, status, journal_id::text
+                """,
+                (status, issued_by, journal_id, org_id, invoice_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invoice not found")
+            return dict(row)
 
     def record_receipt(self, org_id: str, *, invoice_id: str, amount: float) -> dict:
         with get_db_conn() as conn:
@@ -147,6 +170,7 @@ class ArInvoiceRepository:
         *,
         status: str | None = None,
         customer_id: str | None = None,
+        branch_ids: list[str] | None = None,
         limit: int = 100,
     ) -> list[dict]:
         limit = max(1, min(limit, 500))
@@ -158,6 +182,9 @@ class ArInvoiceRepository:
         if customer_id:
             where.append("customer_id = %s::uuid")
             params.append(customer_id)
+        if branch_ids:
+            where.append("(branch_id IS NULL OR branch_id::text = ANY(%s))")
+            params.append([str(b) for b in branch_ids])
         params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)

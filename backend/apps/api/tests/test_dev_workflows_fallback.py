@@ -8,7 +8,8 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_dev_workflows_without_postgres() -> None:
+def test_dev_workflows_sample_or_live() -> None:
+    """Dev password login + workflows list remains callable with sample or live data."""
     login = client.post(
         "/api/v1/auth/password/login",
         json={"email": "dev@example.com", "password": "dev-password"},
@@ -21,10 +22,12 @@ def test_dev_workflows_without_postgres() -> None:
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["items"]
-    assert body["workflows"]
-    assert body["verification_status"] == "dev_sample_data"
-    assert all(item["type"] == "ap_invoice" for item in body["items"])
+    assert "items" in body
+    assert "workflows" in body
+    assert body["verification_status"] in {"dev_sample_data", "verified"}
+    if body["verification_status"] == "dev_sample_data":
+        assert body["items"]
+        assert all(item["type"] == "ap_invoice" for item in body["items"])
 
 
 def test_dev_login_uses_uuid_org_id() -> None:

@@ -15,8 +15,9 @@ def process_ai_event(envelope: dict) -> dict:
         log_event("platform.ai.reconciliation", org_id=org_id, payload=payload)
         if event_type == "ai.reconciliation.suggested":
             try:
-                from app.modules.erp.treasury.ai.reconciliation_assistant import suggest_reconciliation_matches
+                from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
+                intelligence_registry.reconciliation()
                 log_event(
                     "platform.ai.reconciliation.enrichment",
                     org_id=org_id,
@@ -36,5 +37,5 @@ def process_ai_event(envelope: dict) -> dict:
             principal=envelope.get("principal"),
         )
         return {"status": "forwarded"}
-    log_event("platform.ai.generic", org_id=org_id, event_type=event_type)
+    log_event("platform.ai.generic", org_id=org_id, consumed_event_type=event_type)
     return {"status": "completed"}

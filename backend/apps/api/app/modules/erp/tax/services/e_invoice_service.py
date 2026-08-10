@@ -74,6 +74,22 @@ class EInvoiceService:
 
             raise ValueError("AR invoice not found")
 
+        # INT-07: IRN generation must require a posted invoice (journal posted).
+        jid = str(inv.get("journal_id") or "").strip()
+        if not jid:
+            raise ValueError("E-invoice requires AR invoice to be issued and posted (missing journal_id)")
+        try:
+            from app.modules.erp.journals.repositories.journal_repository import journal_repository
+
+            j = journal_repository.get(org_id, journal_id=jid) or {}
+            if str(j.get("journal_status")) != "posted":
+                raise ValueError("E-invoice requires AR invoice journal to be posted")
+        except ValueError:
+            raise
+        except Exception:
+            # Fail closed: do not generate if we cannot verify posting state.
+            raise ValueError("E-invoice requires posted AR invoice (unable to verify journal status)")
+
         settings = self._registration_settings(org_id)
 
         if settings["require_workflow"] and not skip_workflow:

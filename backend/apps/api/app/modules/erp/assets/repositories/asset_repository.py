@@ -154,6 +154,37 @@ class AssetRepository:
         accumulated_depreciation: float | None = None,
         impairment_amount: float | None = None,
     ) -> dict:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            return self.set_status_conn(
+                conn,
+                org_id,
+                asset_id=asset_id,
+                status=status,
+                workflow_approved=workflow_approved,
+                capitalization_journal_id=capitalization_journal_id,
+                capitalization_date=capitalization_date,
+                approved_by=approved_by,
+                book_value=book_value,
+                accumulated_depreciation=accumulated_depreciation,
+                impairment_amount=impairment_amount,
+            )
+
+    def set_status_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        asset_id: str,
+        status: str,
+        workflow_approved: bool | None = None,
+        capitalization_journal_id: str | None = None,
+        capitalization_date: str | None = None,
+        approved_by: str | None = None,
+        book_value: float | None = None,
+        accumulated_depreciation: float | None = None,
+        impairment_amount: float | None = None,
+    ) -> dict:
         sets = ["status = %s", "updated_at = NOW()"]
         params: list = [status]
         if workflow_approved is not None:
@@ -178,19 +209,17 @@ class AssetRepository:
             sets.append("impairment_amount = %s::numeric")
             params.append(impairment_amount)
         params.extend([org_id, asset_id])
-        with get_db_conn() as conn:
-            set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    UPDATE erp.assets SET {', '.join(sets)}
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, status, book_value
-                    """,
-                    tuple(params),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else {}
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                UPDATE erp.assets SET {', '.join(sets)}
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, status, book_value
+                """,
+                tuple(params),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else {}
 
     def update_operational(
         self,
@@ -273,25 +302,52 @@ class ImpairmentRepository:
         reason: str | None,
         created_by: str | None,
     ) -> dict:
-        iid = str(uuid4())
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO erp.asset_impairments (
-                      id, org_id, asset_id, impairment_date, impairment_amount,
-                      book_value_before, book_value_after, journal_id, reason, created_by
-                    )
-                    VALUES (%s::uuid,%s::uuid,%s::uuid,%s::date,%s::numeric,%s::numeric,%s::numeric,%s::uuid,%s,%s::uuid)
-                    RETURNING id::text
-                    """,
-                    (
-                        iid, org_id, asset_id, impairment_date, impairment_amount,
-                        book_value_before, book_value_after, journal_id, reason, created_by,
-                    ),
+            return self.create_conn(
+                conn,
+                org_id,
+                asset_id=asset_id,
+                impairment_date=impairment_date,
+                impairment_amount=impairment_amount,
+                book_value_before=book_value_before,
+                book_value_after=book_value_after,
+                journal_id=journal_id,
+                reason=reason,
+                created_by=created_by,
+            )
+
+    def create_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        asset_id: str,
+        impairment_date: str,
+        impairment_amount: float,
+        book_value_before: float,
+        book_value_after: float,
+        journal_id: str | None,
+        reason: str | None,
+        created_by: str | None,
+    ) -> dict:
+        iid = str(uuid4())
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO erp.asset_impairments (
+                  id, org_id, asset_id, impairment_date, impairment_amount,
+                  book_value_before, book_value_after, journal_id, reason, created_by
                 )
-                return dict(cur.fetchone() or {"id": iid})
+                VALUES (%s::uuid,%s::uuid,%s::uuid,%s::date,%s::numeric,%s::numeric,%s::numeric,%s::uuid,%s,%s::uuid)
+                RETURNING id::text
+                """,
+                (
+                    iid, org_id, asset_id, impairment_date, impairment_amount,
+                    book_value_before, book_value_after, journal_id, reason, created_by,
+                ),
+            )
+            return dict(cur.fetchone() or {"id": iid})
 
 
 class DisposalRepository:
@@ -308,25 +364,52 @@ class DisposalRepository:
         reason: str | None,
         created_by: str | None,
     ) -> dict:
-        did = str(uuid4())
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO erp.asset_disposals (
-                      id, org_id, asset_id, disposal_date, sale_amount, book_value,
-                      gain_loss, journal_id, reason, created_by
-                    )
-                    VALUES (%s::uuid,%s::uuid,%s::uuid,%s::date,%s::numeric,%s::numeric,%s::numeric,%s::uuid,%s,%s::uuid)
-                    RETURNING id::text, gain_loss
-                    """,
-                    (
-                        did, org_id, asset_id, disposal_date, sale_amount, book_value,
-                        gain_loss, journal_id, reason, created_by,
-                    ),
+            return self.create_conn(
+                conn,
+                org_id,
+                asset_id=asset_id,
+                disposal_date=disposal_date,
+                sale_amount=sale_amount,
+                book_value=book_value,
+                gain_loss=gain_loss,
+                journal_id=journal_id,
+                reason=reason,
+                created_by=created_by,
+            )
+
+    def create_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        asset_id: str,
+        disposal_date: str,
+        sale_amount: float,
+        book_value: float,
+        gain_loss: float,
+        journal_id: str | None,
+        reason: str | None,
+        created_by: str | None,
+    ) -> dict:
+        did = str(uuid4())
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO erp.asset_disposals (
+                  id, org_id, asset_id, disposal_date, sale_amount, book_value,
+                  gain_loss, journal_id, reason, created_by
                 )
-                return dict(cur.fetchone() or {"id": did})
+                VALUES (%s::uuid,%s::uuid,%s::uuid,%s::date,%s::numeric,%s::numeric,%s::numeric,%s::uuid,%s,%s::uuid)
+                RETURNING id::text, gain_loss
+                """,
+                (
+                    did, org_id, asset_id, disposal_date, sale_amount, book_value,
+                    gain_loss, journal_id, reason, created_by,
+                ),
+            )
+            return dict(cur.fetchone() or {"id": did})
 
 
 asset_repository = AssetRepository()

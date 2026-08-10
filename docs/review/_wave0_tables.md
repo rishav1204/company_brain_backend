@@ -1,0 +1,316 @@
+### schema _unqualified (37)
+- agent_actions — migrations: 001_init.sql
+- agent_runs — migrations: 001_init.sql
+- approvals — migrations: 001_init.sql
+- audit_logs — migrations: 001_init.sql
+- citations — migrations: 001_init.sql
+- connector_processed_records — migrations: 003_connector_sync.sql
+- connector_sync_states — migrations: 003_connector_sync.sql
+- contracts — migrations: 007_canonical_finance_model.sql
+- customers — migrations: 001_init.sql
+- data_sources — migrations: 001_init.sql
+- decisions — migrations: 001_init.sql
+- document_chunks — migrations: 001_init.sql
+- documents — migrations: 001_init.sql
+- eval_runs — migrations: 002_training_eval.sql
+- feedback_events — migrations: 002_training_eval.sql
+- finance_entities — migrations: 001_init.sql
+- identity_aliases — migrations: 001_init.sql
+- identity_profiles — migrations: 001_init.sql
+- incidents — migrations: 001_init.sql
+- ingestion_runs — migrations: 001_init.sql
+- invoices — migrations: 001_init.sql
+- journal_entries — migrations: 001_init.sql
+- learning_governance_cycles — migrations: 008_learning_governance.sql
+- learning_labeling_tasks — migrations: 008_learning_governance.sql
+- memory_records — migrations: 001_init.sql
+- organizations — migrations: 001_init.sql
+- payments — migrations: 007_canonical_finance_model.sql
+- purchase_orders — migrations: 007_canonical_finance_model.sql
+- qa_gold_examples — migrations: 002_training_eval.sql
+- retrieval_judgments — migrations: 002_training_eval.sql
+- roles — migrations: 001_init.sql
+- safety_events — migrations: 002_training_eval.sql
+- user_roles — migrations: 001_init.sql
+- users — migrations: 001_init.sql
+- vendors — migrations: 001_init.sql
+- workflow_steps — migrations: 001_init.sql
+- workflows — migrations: 001_init.sql
+
+### schema audit (4)
+- audit.ai_reasoning_traces — migrations: 016_governance_core.sql
+- audit.audit_logs — migrations: 017_audit_physical_table.sql
+- audit.audit_logs_archive — migrations: 078_database_phase6_hardening.sql
+- audit.evidence_links — migrations: 016_governance_core.sql
+
+### schema billing (10)
+- billing.ai_usage — migrations: 065_billing_engine.sql
+- billing.credit_transactions — migrations: 065_billing_engine.sql
+- billing.org_credit_wallets — migrations: 065_billing_engine.sql
+- billing.org_entitlements — migrations: 065_billing_engine.sql
+- billing.org_subscriptions — migrations: 065_billing_engine.sql
+- billing.plan_features — migrations: 065_billing_engine.sql
+- billing.plan_limits — migrations: 065_billing_engine.sql
+- billing.plans — migrations: 065_billing_engine.sql
+- billing.usage_events — migrations: 065_billing_engine.sql
+- billing.usage_metrics — migrations: 065_billing_engine.sql
+
+### schema compliance (1)
+- compliance.compliance_events — migrations: 016_governance_core.sql
+
+### schema core (18)
+- core.api_keys — migrations: 009_core_iam.sql
+- core.auth_audit_log — migrations: 072_iam_auth_audit.sql
+- core.branches — migrations: 009_core_iam.sql
+- core.business_units — migrations: 011_core_iam_hardening.sql
+- core.companies — migrations: 009_core_iam.sql
+- core.departments — migrations: 074_iam_departments.sql
+- core.fiscal_periods — migrations: 011_core_iam_hardening.sql
+- core.org_security_policy — migrations: 073_iam_mfa_devices.sql
+- core.password_history — migrations: 072_iam_auth_audit.sql
+- core.password_reset_tokens — migrations: 072_iam_auth_audit.sql
+- core.permissions — migrations: 009_core_iam.sql
+- core.recovery_codes — migrations: 073_iam_mfa_devices.sql
+- core.role_permissions — migrations: 009_core_iam.sql
+- core.sessions — migrations: 009_core_iam.sql
+- core.trusted_devices — migrations: 073_iam_mfa_devices.sql
+- core.user_devices — migrations: 073_iam_mfa_devices.sql
+- core.user_invites — migrations: 010_core_iam_extensions.sql
+- core.user_mfa_methods — migrations: 073_iam_mfa_devices.sql
+
+### schema documents (8)
+- documents.classifications — migrations: 021_documents_dms.sql
+- documents.document_versions — migrations: 021_documents_dms.sql
+- documents.documents — migrations: 021_documents_dms.sql
+- documents.duplicate_candidates — migrations: 021_documents_dms.sql
+- documents.evidence_links — migrations: 021_documents_dms.sql
+- documents.extractions — migrations: 021_documents_dms.sql
+- documents.semantic_chunks — migrations: 026_documents_semantic_chunks.sql
+- documents.semantic_embeddings — migrations: 021_documents_dms.sql
+
+### schema erp (129)
+- erp.account_balances — migrations: 030_erp_gl_engine.sql
+- erp.account_groups — migrations: 028_erp_coa_foundation.sql
+- erp.account_usage — migrations: 029_erp_coa_usage_guards.sql
+- erp.accrual_entries — migrations: 031_erp_journal_engine.sql
+- erp.ap_invoice_lines — migrations: 033_erp_ap_engine.sql
+- erp.ap_invoices — migrations: 033_erp_ap_engine.sql
+- erp.ap_payment_allocations — migrations: 033_erp_ap_engine.sql
+- erp.ap_payments — migrations: 033_erp_ap_engine.sql
+- erp.ar_invoice_lines — migrations: 034_erp_ar_engine.sql
+- erp.ar_invoices — migrations: 034_erp_ar_engine.sql
+- erp.asset_capitalization_candidates — migrations: 042_erp_assets_engine.sql
+- erp.asset_categories — migrations: 042_erp_assets_engine.sql
+- erp.asset_depreciation — migrations: 042_erp_assets_engine.sql
+- erp.asset_disposals — migrations: 042_erp_assets_engine.sql
+- erp.asset_impairments — migrations: 042_erp_assets_engine.sql
+- erp.asset_policies — migrations: 042_erp_assets_engine.sql
+- erp.asset_transfers — migrations: 042_erp_assets_engine.sql
+- erp.assets — migrations: 042_erp_assets_engine.sql
+- erp.bank_accounts — migrations: 035_erp_treasury_engine.sql
+- erp.bank_beneficiaries — migrations: 047_erp_banking_engine.sql
+- erp.bank_reconciliations — migrations: 035_erp_treasury_engine.sql
+- erp.bank_statement_imports — migrations: 047_erp_banking_engine.sql
+- erp.bank_transactions — migrations: 035_erp_treasury_engine.sql
+- erp.bills_of_entry — migrations: 080_audit_completion_hardening.sql
+- erp.budget_envelopes — migrations: 040_erp_procurement_engine.sql
+- erp.cash_forecasts — migrations: 049_erp_treasury_m24_engine.sql
+- erp.cash_positions — migrations: 049_erp_treasury_m24_engine.sql
+- erp.chart_of_accounts — migrations: 028_erp_coa_foundation.sql
+- erp.closing_entries — migrations: 030_erp_gl_engine.sql
+- erp.coa_versions — migrations: 077_erp_phase2_hardening.sql
+- erp.company_id_data_quality — migrations: 078_database_phase6_hardening.sql
+- erp.compliance_calendar — migrations: 037_erp_tax_compliance.sql
+- erp.compliance_escalations — migrations: 046_erp_compliance_engine.sql
+- erp.compliance_obligations — migrations: 046_erp_compliance_engine.sql
+- erp.compliance_penalties — migrations: 046_erp_compliance_engine.sql
+- erp.compliance_reminders — migrations: 046_erp_compliance_engine.sql
+- erp.compliance_rules — migrations: 046_erp_compliance_engine.sql
+- erp.compliance_types — migrations: 046_erp_compliance_engine.sql
+- erp.consolidation_runs — migrations: 060_multi_entity_consolidation.sql
+- erp.corporate_card_transactions — migrations: 041_erp_expense_engine.sql
+- erp.cost_centers — migrations: 028_erp_coa_foundation.sql
+- erp.customer_addresses — migrations: 034_erp_ar_engine.sql
+- erp.customer_balances — migrations: 034_erp_ar_engine.sql
+- erp.customer_receipt_allocations — migrations: 034_erp_ar_engine.sql
+- erp.customer_receipts — migrations: 034_erp_ar_engine.sql
+- erp.customers — migrations: 034_erp_ar_engine.sql
+- erp.e_invoices — migrations: 037_erp_tax_compliance.sql
+- erp.elimination_entries — migrations: 060_multi_entity_consolidation.sql
+- erp.employee_advances — migrations: 041_erp_expense_engine.sql
+- erp.employee_bank_accounts — migrations: 041_erp_expense_engine.sql
+- erp.entity_hierarchy — migrations: 060_multi_entity_consolidation.sql
+- erp.eway_bills — migrations: 037_erp_tax_compliance.sql
+- erp.exchange_rates — migrations: 080_audit_completion_hardening.sql
+- erp.expense_claim_items — migrations: 041_erp_expense_engine.sql
+- erp.expense_claims — migrations: 041_erp_expense_engine.sql
+- erp.expense_policies — migrations: 041_erp_expense_engine.sql
+- erp.expense_policy_violations — migrations: 041_erp_expense_engine.sql
+- erp.expense_receipts — migrations: 041_erp_expense_engine.sql
+- erp.financial_statement_mappings — migrations: 028_erp_coa_foundation.sql
+- erp.fiscal_periods — migrations: 030_erp_gl_engine.sql
+- erp.fiscal_years — migrations: 039_erp_fiscal_engine.sql
+- erp.fx_revaluation_runs — migrations: 080_audit_completion_hardening.sql
+- erp.goods_receipt_items — migrations: 040_erp_procurement_engine.sql
+- erp.goods_receipts — migrations: 040_erp_procurement_engine.sql
+- erp.grn_inventory_links — migrations: 043_erp_inventory_engine.sql
+- erp.gst_account_mappings — migrations: 028_erp_coa_foundation.sql
+- erp.gst_reconciliations — migrations: 036_erp_tax_engine.sql
+- erp.gst_registrations — migrations: 036_erp_tax_engine.sql
+- erp.gst_returns — migrations: 036_erp_tax_engine.sql
+- erp.gst_transactions — migrations: 036_erp_tax_engine.sql
+- erp.gstr2b_imports — migrations: 036_erp_tax_engine.sql
+- erp.inter_account_transfers — migrations: 049_erp_treasury_m24_engine.sql
+- erp.intercompany_account_mappings — migrations: 060_multi_entity_consolidation.sql
+- erp.intercompany_balances — migrations: 060_multi_entity_consolidation.sql
+- erp.intercompany_transactions — migrations: 060_multi_entity_consolidation.sql
+- erp.inventory_adjustments — migrations: 043_erp_inventory_engine.sql
+- erp.inventory_balances — migrations: 043_erp_inventory_engine.sql
+- erp.inventory_cost_layers — migrations: 043_erp_inventory_engine.sql
+- erp.inventory_items — migrations: 043_erp_inventory_engine.sql
+- erp.inventory_movements — migrations: 043_erp_inventory_engine.sql
+- erp.inventory_policies — migrations: 043_erp_inventory_engine.sql
+- erp.inventory_valuations — migrations: 043_erp_inventory_engine.sql
+- erp.itc_blocked_rules — migrations: 036_erp_tax_engine.sql
+- erp.itc_ledger — migrations: 036_erp_tax_engine.sql
+- erp.journal_lines — migrations: 031_erp_journal_engine.sql
+- erp.journal_reversals — migrations: 031_erp_journal_engine.sql
+- erp.journals — migrations: 031_erp_journal_engine.sql
+- erp.ledger_batches — migrations: 030_erp_gl_engine.sql
+- erp.ledger_entries — migrations: 030_erp_gl_engine.sql
+- erp.ledger_entries_archive — migrations: 078_database_phase6_hardening.sql
+- erp.liquidity_alerts — migrations: 049_erp_treasury_m24_engine.sql
+- erp.ownership_snapshots — migrations: 060_multi_entity_consolidation.sql
+- erp.parallel_ledger_entries — migrations: 080_audit_completion_hardening.sql
+- erp.parallel_ledgers — migrations: 080_audit_completion_hardening.sql
+- erp.payment_requests — migrations: 035_erp_treasury_engine.sql
+- erp.payroll_employees — migrations: 080_audit_completion_hardening.sql
+- erp.payroll_salary_runs — migrations: 080_audit_completion_hardening.sql
+- erp.period_close_checklists — migrations: 039_erp_fiscal_engine.sql
+- erp.period_reopen_requests — migrations: 039_erp_fiscal_engine.sql
+- erp.procurement_matches — migrations: 040_erp_procurement_engine.sql
+- erp.procurement_policies — migrations: 040_erp_procurement_engine.sql
+- erp.purchase_order_items — migrations: 040_erp_procurement_engine.sql
+- erp.purchase_orders — migrations: 040_erp_procurement_engine.sql
+- erp.purchase_requisition_items — migrations: 040_erp_procurement_engine.sql
+- erp.purchase_requisitions — migrations: 040_erp_procurement_engine.sql
+- erp.reconciliation_adjustments — migrations: 048_erp_reconciliation_engine.sql
+- erp.reconciliation_exceptions — migrations: 048_erp_reconciliation_engine.sql
+- erp.reconciliation_match_lines — migrations: 048_erp_reconciliation_engine.sql
+- erp.reconciliation_rules — migrations: 048_erp_reconciliation_engine.sql
+- erp.recurring_journals — migrations: 031_erp_journal_engine.sql
+- erp.subledger_gl_reconciliation_runs — migrations: 078_database_phase6_hardening.sql
+- erp.tax_notices — migrations: 037_erp_tax_compliance.sql
+- erp.tax_rate_master — migrations: 038_erp_tax_gap_closure.sql
+- erp.tcs_transactions — migrations: 044_erp_tds_gap_closure.sql
+- erp.tds_certificates — migrations: 045_erp_tds_production.sql
+- erp.tds_challans — migrations: 044_erp_tds_gap_closure.sql
+- erp.tds_reconciliations — migrations: 044_erp_tds_gap_closure.sql
+- erp.tds_returns — migrations: 038_erp_tax_gap_closure.sql
+- erp.tds_rules — migrations: 044_erp_tds_gap_closure.sql
+- erp.tds_sections — migrations: 037_erp_tax_compliance.sql
+- erp.tds_transactions — migrations: 037_erp_tax_compliance.sql
+- erp.vendor_balances — migrations: 033_erp_ap_engine.sql
+- erp.vendor_bank_accounts — migrations: 033_erp_ap_engine.sql
+- erp.vendors — migrations: 033_erp_ap_engine.sql
+- erp.voucher_lines — migrations: 062_erp_voucher_engine.sql
+- erp.voucher_sequences — migrations: 062_erp_voucher_engine.sql
+- erp.vouchers — migrations: 062_erp_voucher_engine.sql
+- erp.warehouses — migrations: 043_erp_inventory_engine.sql
+- erp.year_end_runs — migrations: 039_erp_fiscal_engine.sql
+
+### schema erp_reporting (10)
+- erp_reporting.ap_aging_mv — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.ar_aging_mv — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.balance_sheet_mv — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.consolidated_trial_balance_mv — migrations: 060_multi_entity_consolidation.sql
+- erp_reporting.gst_summary_mv — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.pnl_mv — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.report_runs — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.report_snapshots — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.tds_summary_mv — migrations: 056_erp_reporting_engine.sql
+- erp_reporting.trial_balance_mv — migrations: 056_erp_reporting_engine.sql
+
+### schema finance_analytics (5)
+- finance_analytics.anomaly_flags — migrations: 057_finance_analytics_engine.sql
+- finance_analytics.dashboard_snapshots — migrations: 057_finance_analytics_engine.sql
+- finance_analytics.executive_insights — migrations: 057_finance_analytics_engine.sql
+- finance_analytics.kpi_snapshots — migrations: 057_finance_analytics_engine.sql
+- finance_analytics.kpi_trends — migrations: 057_finance_analytics_engine.sql
+
+### schema finance_audit (3)
+- finance_audit.ai_decision_trails — migrations: 058_finance_audit_explorer.sql
+- finance_audit.audit_evidence — migrations: 058_finance_audit_explorer.sql
+- finance_audit.audit_timelines — migrations: 058_finance_audit_explorer.sql
+
+### schema finance_os (22)
+- finance_os.agent_executions — migrations: 054_finance_os_agent_orchestration.sql
+- finance_os.agent_recommendations — migrations: 054_finance_os_agent_orchestration.sql
+- finance_os.execution_graphs — migrations: 069_finance_os_platform_ai_runtime.sql
+- finance_os.forecast_accuracy — migrations: 055_finance_os_forecasting_engine.sql
+- finance_os.forecast_explanations — migrations: 055_finance_os_forecasting_engine.sql
+- finance_os.forecasts — migrations: 055_finance_os_forecasting_engine.sql
+- finance_os.goal_runs — migrations: 069_finance_os_platform_ai_runtime.sql
+- finance_os.goals — migrations: 069_finance_os_platform_ai_runtime.sql
+- finance_os.graph_sync_events — migrations: 053_finance_os_graph_audit.sql
+- finance_os.graph_sync_outbox — migrations: 080_audit_completion_hardening.sql
+- finance_os.invoice_anomalies — migrations: 050_finance_os_invoice_ai.sql
+- finance_os.invoice_duplicate_scores — migrations: 050_finance_os_invoice_ai.sql
+- finance_os.invoice_extractions — migrations: 050_finance_os_invoice_ai.sql
+- finance_os.invoice_predictions — migrations: 050_finance_os_invoice_ai.sql
+- finance_os.memory_embeddings — migrations: 052_finance_os_memory_system.sql
+- finance_os.memory_entries — migrations: 052_finance_os_memory_system.sql
+- finance_os.memory_references — migrations: 052_finance_os_memory_system.sql
+- finance_os.runtime_observations — migrations: 069_finance_os_platform_ai_runtime.sql
+- finance_os.workflow_predictions — migrations: 051_finance_os_workflow_intelligence.sql
+- finance_os.workflow_recommendations — migrations: 051_finance_os_workflow_intelligence.sql
+- finance_os.workflow_snapshots — migrations: 051_finance_os_workflow_intelligence.sql
+- finance_os.workflow_stage_metrics — migrations: 051_finance_os_workflow_intelligence.sql
+
+### schema governance (8)
+- governance.approval_matrix — migrations: 059_policy_engine.sql
+- governance.policies — migrations: 059_policy_engine.sql
+- governance.policy_decisions — migrations: 059_policy_engine.sql
+- governance.policy_exceptions — migrations: 059_policy_engine.sql
+- governance.policy_rules — migrations: 016_governance_core.sql
+- governance.retention_policies — migrations: 016_governance_core.sql
+- governance.sod_conflicts — migrations: 075_governance_sod_matrix.sql
+- governance.violations — migrations: 016_governance_core.sql
+
+### schema integrations (6)
+- integrations.api_keys — migrations: 027_integrations_platform.sql
+- integrations.connectors — migrations: 027_integrations_platform.sql
+- integrations.ingestion_records — migrations: 027_integrations_platform.sql
+- integrations.sync_jobs — migrations: 027_integrations_platform.sql
+- integrations.webhook_deliveries — migrations: 027_integrations_platform.sql
+- integrations.webhook_subscriptions — migrations: 027_integrations_platform.sql
+
+### schema notifications (6)
+- notifications.delivery_logs — migrations: 018_notifications.sql
+- notifications.digest_queue — migrations: 018_notifications.sql
+- notifications.notifications — migrations: 018_notifications.sql
+- notifications.preferences — migrations: 018_notifications.sql
+- notifications.subscriptions — migrations: 018_notifications.sql
+- notifications.templates — migrations: 018_notifications.sql
+
+### schema platform (8)
+- platform.api_request_log — migrations: 061_api_gateway_platform.sql
+- platform.event_outbox — migrations: 084_transactional_outbox.sql
+- platform.event_store — migrations: 015_platform_event_bus.sql
+- platform.event_stream_adapters — migrations: 061_api_gateway_platform.sql
+- platform.idempotency_keys — migrations: 015_platform_event_bus.sql
+- platform.queue_jobs — migrations: 015_platform_event_bus.sql
+- platform.webhook_deliveries — migrations: 015_platform_event_bus.sql
+- platform.webhook_subscriptions — migrations: 015_platform_event_bus.sql
+
+### schema workflow (10)
+- workflow.approvals — migrations: 012_workflow_engine.sql
+- workflow.escalations — migrations: 012_workflow_engine.sql
+- workflow.latency_samples — migrations: 014_workflow_engine_v3.sql
+- workflow.org_holidays — migrations: 013_workflow_engine_extensions.sql
+- workflow.scheduled_workflows — migrations: 014_workflow_engine_v3.sql
+- workflow.step_failures — migrations: 014_workflow_engine_v3.sql
+- workflow.workflow_definitions — migrations: 012_workflow_engine.sql
+- workflow.workflow_instances — migrations: 012_workflow_engine.sql
+- workflow.workflow_steps — migrations: 012_workflow_engine.sql
+- workflow.workflow_tasks — migrations: 012_workflow_engine.sql

@@ -24,14 +24,14 @@ def test_projection_hooks_wired() -> None:
 
 def test_journal_generation_is_sole_m10_bridge() -> None:
     jgs = (ROOT / "modules" / "erp" / "vouchers" / "services" / "journal_generation_service.py").read_text(encoding="utf-8")
-    assert "journal_service.create_draft" in jgs
+    assert "create_draft_with_conn" in jgs
     assert "posting_orchestrator" not in jgs
     assert "ledger_entries" not in jgs
 
 
 def test_m25_pipeline_draft_hook() -> None:
     pipe = (ROOT / "modules" / "finance_os" / "invoice_ai" / "pipelines" / "invoice_pipeline.py").read_text(encoding="utf-8")
-    assert "create_from_extraction" in pipe
+    assert "create_voucher_from_extraction" in pipe or "create_from_extraction" in pipe
 
 
 def test_ap_ar_note_routes() -> None:

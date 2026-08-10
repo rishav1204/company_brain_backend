@@ -12,6 +12,13 @@ from app.services.db import get_db_conn, set_rls_org
 from app.services.metrics import metrics_store
 
 
+class _InternalPostingCaller:
+    """Opaque token for authorized GL posting callers only (SEC-37)."""
+
+
+POSTING_INTERNAL = _InternalPostingCaller()
+
+
 class PostingService:
     def _validate_posting(self, org_id: str, *, posting_date: str, lines: list[dict], company_id: str | None = None) -> tuple[float, float, str, dict[str, dict]]:
         if not lines:
@@ -59,6 +66,7 @@ class PostingService:
             lines=lines,
         )
         totals: dict[str, tuple[float, float]] = {}
+        balance_rows: list[dict] = []
         for l in lines:
             aid = str(l["account_id"])
             d = float(l.get("debit_amount") or 0)
@@ -70,15 +78,18 @@ class PostingService:
             g = group_cache.get(str(acc.get("group_id") or ""), {}) or {}
             nature = str(g.get("nature") or "debit").lower()
             closing = (d - c) if nature == "debit" else (c - d)
-            ledger_repository.upsert_balance(
-                conn,
-                org_id,
-                account_id=aid,
-                fiscal_period_id=fiscal_period_id,
-                debit_delta=d,
-                credit_delta=c,
-                closing_balance=closing,
-            )
+            balance_rows.append({
+                "account_id": aid,
+                "debit_delta": d,
+                "credit_delta": c,
+                "closing_balance": closing,
+            })
+        ledger_repository.upsert_balances_batch(
+            conn,
+            org_id,
+            fiscal_period_id=fiscal_period_id,
+            rows=balance_rows,
+        )
         return batch, batch_id, batch_number
 
     def post_with_conn(
@@ -90,8 +101,11 @@ class PostingService:
         posting_date: str,
         lines: list[dict],
         company_id: str | None = None,
+        _posting_caller: _InternalPostingCaller | None = None,
     ) -> dict:
         """Write GL batch+entries+balances using caller's open transaction."""
+        if _posting_caller is not POSTING_INTERNAL:
+            raise ValueError("post_with_conn is internal; use journals.posting_orchestrator or reversal_service")
         total_debit, total_credit, fiscal_period_id, group_cache = self._validate_posting(
             org_id, posting_date=posting_date, lines=lines, company_id=company_id
         )
@@ -112,7 +126,18 @@ class PostingService:
             "fiscal_period_id": fiscal_period_id,
         }
 
-    def post(self, org_id: str, *, posted_by: str | None, posting_date: str, lines: list[dict], company_id: str | None = None) -> dict:
+    def post(
+        self,
+        org_id: str,
+        *,
+        posted_by: str | None,
+        posting_date: str,
+        lines: list[dict],
+        company_id: str | None = None,
+        via_orchestrator: bool = False,
+    ) -> dict:
+        if not via_orchestrator:
+            raise ValueError("Direct GL post() is disabled; use journals.posting_orchestrator")
         started = time.time()
         if not lines:
             raise ValueError("No posting lines")

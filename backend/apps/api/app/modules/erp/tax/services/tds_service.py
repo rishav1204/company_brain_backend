@@ -11,6 +11,7 @@ from app.modules.erp.tax.services.tds_posting_service import (
     build_payment_journal_lines_no_tds,
     resolve_tds_payable_account,
 )
+from app.services.db import get_db_conn, set_rls_org
 
 
 class TdsService:
@@ -113,6 +114,74 @@ class TdsService:
             pan_present=pan_present,
         )
         return {"vendor_id": vendor_id, **calc}
+
+    def deduct_for_ap_invoice_with_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        invoice_id: str,
+        vendor_id: str,
+        invoice_date: str,
+        gross_amount: float,
+        section_code: str | None = None,
+        expense_category: str | None = None,
+        payment_type: str | None = None,
+    ) -> dict:
+        """
+        INT-08: Optional invoice-level TDS support (only when explicitly enabled by caller).
+        Persists a TDS transaction row for `source_type='ap_invoice'` inside the caller transaction.
+        """
+        from app.modules.erp.accounts_payable.repositories.vendor_repository import vendor_repository
+
+        vendor = vendor_repository.get(org_id, vendor_id=vendor_id) or {}
+        vendor_meta = vendor.get("metadata") if isinstance(vendor.get("metadata"), dict) else {}
+        section = section_code
+        if not section:
+            if payment_type:
+                rule = tds_rule_repository.resolve(org_id, payment_type=payment_type, applicable_entity="vendor")
+                section = rule["section_code"] if rule else None
+            if not section and expense_category:
+                rule = tds_rule_repository.resolve(org_id, expense_category=expense_category, applicable_entity="vendor")
+                section = rule["section_code"] if rule else None
+            if not section and vendor_meta.get("tds_section"):
+                section = str(vendor_meta["tds_section"])
+        if not section:
+            section = self._resolve_section(org_id, vendor=vendor, payment={"metadata": {}})
+
+        pan_present = bool(vendor.get("pan"))
+        fy = financial_year_from_date(invoice_date) if invoice_date else financial_year_from_date(str(date.today()))
+        quarter = quarter_from_date(invoice_date) if invoice_date else quarter_from_date(str(date.today()))
+        prior_ytd = self._prior_ytd(org_id, vendor_id=vendor_id, section_code=section, financial_year=fy)
+        calc = self.calculate(
+            org_id,
+            section_code=section,
+            gross_amount=gross_amount,
+            prior_ytd=prior_ytd,
+            pan_present=pan_present,
+        )
+
+        if not calc.get("applicable"):
+            return {"applicable": False, "section_code": section, "tds_amount": 0.0, "net_amount": gross_amount}
+
+        row = tds_transaction_repository.create_conn(
+            conn,
+            org_id,
+            source_type="ap_invoice",
+            source_id=invoice_id,
+            section_code=section,
+            gross_amount=gross_amount,
+            tds_amount=calc["tds_amount"],
+            net_amount=calc["net_amount"],
+            return_period=invoice_date[:7] if invoice_date else None,
+            vendor_id=vendor_id,
+            invoice_id=invoice_id,
+            financial_year=fy,
+            quarter=quarter,
+            deduction_date=invoice_date or None,
+            metadata={"vendor_id": vendor_id, "rate": calc.get("rate"), "deducted_at": "invoice"},
+        )
+        return {**calc, "section_code": section, "tds_transaction_id": row.get("id"), "deducted_at": "invoice"}
 
     def deduct(
         self,
@@ -248,6 +317,129 @@ class TdsService:
         except Exception:
             pass
         return result
+
+    def deduct_with_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        payment_id: str,
+        section_code: str | None = None,
+        payable_account_id: str | None = None,
+        bank_account_id: str | None = None,
+        tds_payable_account_id: str | None = None,
+    ) -> dict:
+        """Same as deduct() but persists TDS row inside caller's transaction."""
+        from app.modules.erp.accounts_payable.repositories.payment_repository import payment_repository
+        from app.modules.erp.accounts_payable.repositories.vendor_repository import vendor_repository
+
+        existing = tds_transaction_repository.get_by_source(org_id, source_type="ap_payment", source_id=payment_id)
+        payment = payment_repository.get(org_id, payment_id=payment_id)
+        if not payment:
+            raise ValueError("Payment not found")
+
+        vendor = vendor_repository.get(org_id, vendor_id=str(payment.get("vendor_id") or "")) or {}
+        gross = float(payment.get("amount") or 0)
+        payment_date = str(payment.get("payment_date") or "")[:10]
+        fy = financial_year_from_date(payment_date) if payment_date else financial_year_from_date(str(date.today()))
+        quarter = quarter_from_date(payment_date) if payment_date else quarter_from_date(str(date.today()))
+        section = section_code or self._resolve_section(org_id, vendor=vendor, payment=payment)
+        pan_present = bool(vendor.get("pan"))
+        prior_ytd = self._prior_ytd(
+            org_id,
+            vendor_id=str(payment.get("vendor_id") or ""),
+            section_code=section,
+            financial_year=fy,
+        )
+        calc = self.calculate(
+            org_id,
+            section_code=section,
+            gross_amount=gross,
+            prior_ytd=prior_ytd,
+            pan_present=pan_present,
+        )
+
+        from app.modules.erp.tax.services.tax_account_setup_service import tax_account_setup_service
+
+        if calc.get("applicable") or existing:
+            tax_account_setup_service.require_tds_payable(org_id)
+
+        meta = payment.get("metadata") if isinstance(payment.get("metadata"), dict) else {}
+        invoice_id = None
+        allocations = meta.get("allocations") or []
+        if allocations:
+            invoice_id = str(allocations[0].get("invoice_id") or "") or None
+
+        row = None
+        if existing:
+            tds_amount = float(existing.get("tds_amount") or 0)
+            net_amount = float(existing.get("net_amount") or gross)
+        elif calc.get("applicable"):
+            row = tds_transaction_repository.create_conn(
+                conn,
+                org_id,
+                source_type="ap_payment",
+                source_id=payment_id,
+                section_code=section,
+                gross_amount=gross,
+                tds_amount=calc["tds_amount"],
+                net_amount=calc["net_amount"],
+                return_period=payment_date[:7] if payment_date else None,
+                vendor_id=str(payment.get("vendor_id") or "") or None,
+                invoice_id=invoice_id,
+                payment_id=payment_id,
+                financial_year=fy,
+                quarter=quarter,
+                deduction_date=payment_date or None,
+                metadata={"vendor_id": str(payment.get("vendor_id") or ""), "rate": calc.get("rate")},
+            )
+            tds_amount = calc["tds_amount"]
+            net_amount = calc["net_amount"]
+        else:
+            tds_amount = 0.0
+            net_amount = gross
+
+        tds_payable_id = tds_payable_account_id or resolve_tds_payable_account(org_id)
+        if tds_amount > 0 and payable_account_id and bank_account_id:
+            journal_lines = build_payment_journal_lines(
+                payable_account_id=payable_account_id,
+                bank_account_id=bank_account_id,
+                tds_payable_account_id=tds_payable_id,
+                gross_amount=gross,
+                tds_amount=tds_amount,
+                net_amount=net_amount,
+            )
+        elif payable_account_id and bank_account_id:
+            journal_lines = build_payment_journal_lines_no_tds(
+                payable_account_id=payable_account_id,
+                bank_account_id=bank_account_id,
+                amount=gross,
+            )
+        else:
+            journal_lines = []
+
+        return {
+            **calc,
+            "section_code": section,
+            "tds_transaction_id": existing.get("id") if existing else (row.get("id") if row else None),
+            "journal_lines": journal_lines,
+            "gross_amount": gross,
+            "net_amount": net_amount,
+            "tds_amount": tds_amount,
+        }
+
+    def reverse_for_payment(self, org_id: str, *, payment_id: str, conn=None) -> dict:
+        if conn is not None:
+            count = tds_transaction_repository.reverse_by_source_conn(
+                conn, org_id, source_type="ap_payment", source_id=payment_id
+            )
+            return {"reversed_tds_rows": count}
+        with get_db_conn() as db_conn:
+            set_rls_org(db_conn, org_id)
+            count = tds_transaction_repository.reverse_by_source_conn(
+                db_conn, org_id, source_type="ap_payment", source_id=payment_id
+            )
+        return {"reversed_tds_rows": count}
 
     def calculate_for_payment(self, org_id: str, *, payment_id: str, section_code: str | None = None) -> dict | None:
         """Idempotent post-payment hook — skips if deduct() already recorded."""

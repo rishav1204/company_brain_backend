@@ -2,9 +2,16 @@ from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
+    """Password login. Org is optional when the email uniquely identifies a user.
+
+    When the same email exists in multiple orgs, pass ``org_id`` or ``org_slug``.
+    """
+
     email: str
     password: str
     mfa_code: str | None = None
+    org_id: str | None = None
+    org_slug: str | None = None
 
 
 class LoginResponse(BaseModel):

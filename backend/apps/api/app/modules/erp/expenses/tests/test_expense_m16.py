@@ -1,5 +1,5 @@
-from app.modules.erp.expenses.ai.expense_classifier import classify_expense, fraud_score
-from app.modules.erp.expenses.ai.fraud_detector import detect as detect_fraud
+from app.modules.finance_os.domain_intelligence.expenses.expense_classifier import classify_expense, fraud_score
+from app.modules.finance_os.domain_intelligence.expenses.fraud_detector import detect as detect_fraud
 from app.modules.erp.expenses.validators.claim_validator import (
     ensure_approvable,
     ensure_cancellable,

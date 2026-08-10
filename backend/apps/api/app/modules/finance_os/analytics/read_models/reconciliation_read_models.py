@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from app.modules.erp.query_services import reconciliation_queries
+
 
 def load_reconciliation(org_id: str) -> dict:
-    from app.modules.erp.reconciliation.jobs.reconciliation_scan_job import run_reconciliation_scan
-
-    scan = run_reconciliation_scan(org_id)
+    scan = reconciliation_queries.run_scan(org_id)
     unreconciled = int(scan.get("unreconciled_count") or 0)
     open_exc = int(scan.get("open_exceptions") or 0)
     total = max(unreconciled + open_exc, unreconciled, 1)

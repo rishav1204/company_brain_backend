@@ -2,28 +2,23 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.modules.erp.query_services import fiscal_queries, reporting_queries
+
 
 def load_finance(org_id: str, *, fiscal_period_id: str | None = None) -> dict:
-    """Batch read from M31 reporting services."""
-    from app.modules.erp.reporting.repositories.schema_repository import reporting_schema_repository
-
-    if not reporting_schema_repository.schema_ready():
+    """Batch read from ERP reporting via query facades (Wave 1 ACL)."""
+    if not reporting_queries.schema_ready():
         return {"ready": False}
     fp = fiscal_period_id
     if not fp:
-        from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository
-
-        periods = fiscal_period_repository.list(org_id, limit=1)
+        periods = fiscal_queries.list_periods(org_id, limit=1)
         if not periods:
             return {"ready": False}
         fp = str(periods[0].get("id"))
 
-    from app.modules.erp.reporting.services.pnl_service import pnl_service
-    from app.modules.erp.reporting.services.aging_report_service import aging_report_service
-
-    pnl = pnl_service.get(org_id, fiscal_period_id=fp, refresh_if_missing=True)
-    ar = aging_report_service.get_ar(org_id, refresh_if_missing=True)
-    ap = aging_report_service.get_ap(org_id, refresh_if_missing=True)
+    pnl = reporting_queries.get_pnl(org_id, fiscal_period_id=fp, refresh_if_missing=True)
+    ar = reporting_queries.get_ar_aging(org_id, refresh_if_missing=True)
+    ap = reporting_queries.get_ap_aging(org_id, refresh_if_missing=True)
     meta = pnl.get("meta") or {}
     ar_totals = ar.get("totals") or {}
     ap_totals = ap.get("totals") or {}
@@ -43,9 +38,7 @@ def load_finance(org_id: str, *, fiscal_period_id: str | None = None) -> dict:
 
 
 def days_in_period(org_id: str, *, fiscal_period_id: str) -> int:
-    from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository
-
-    period = fiscal_period_repository.get(org_id, period_id=fiscal_period_id)
+    period = fiscal_queries.get_period_row(org_id, period_id=fiscal_period_id)
     if not period:
         return 30
     try:

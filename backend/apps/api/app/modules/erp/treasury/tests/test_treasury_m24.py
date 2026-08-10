@@ -100,25 +100,25 @@ def test_bucket_cashflows() -> None:
 
 
 def test_surplus_detector() -> None:
-    from app.modules.erp.treasury.ai.surplus_cash_detector import detect_surplus_cash
+    from app.modules.finance_os.domain_intelligence.treasury.surplus_cash_detector import detect_surplus_cash
     r = detect_surplus_cash(accounts=[{"bank_account_id": "1", "account_name": "X", "available": 500000}], avg_daily_outflow=1000)
     assert len(r) >= 1
 
 
 def test_treasury_advisor() -> None:
-    from app.modules.erp.treasury.ai.treasury_advisor import advise_treasury
+    from app.modules.finance_os.domain_intelligence.treasury.treasury_advisor import advise_treasury
     s = advise_treasury(liquidity={"health_band": "risk"}, position={"available_cash": 1000, "upcoming_payments": 5000})
     assert len(s) >= 1
 
 
 def test_copilot_run_out() -> None:
-    from app.modules.erp.treasury.ai.treasury_copilot import answer_treasury_question
+    from app.modules.finance_os.domain_intelligence.treasury.treasury_copilot import answer_treasury_question
     ans = answer_treasury_question(question="will we run out of cash", position={"net_liquidity": 0, "available_cash": 0, "upcoming_payments": 0}, liquidity={"risk_level": "high", "health_band": "risk", "shortage_buckets": ["7d"], "forecast_30d": {}, "risks": []})
     assert ans["advisory_only"] is True
 
 
 def test_cash_risk_detector() -> None:
-    from app.modules.erp.treasury.ai.cash_risk_detector import detect_cash_risks
+    from app.modules.finance_os.domain_intelligence.treasury.cash_risk_detector import detect_cash_risks
     assert detect_cash_risks(forecast_balance=-1, coverage_ratio=0.5)
 
 
@@ -167,7 +167,7 @@ def test_risk_payroll() -> None:
 
 
 def test_liquidity_predictor_import() -> None:
-    from app.modules.erp.treasury.ai.liquidity_predictor import forecast_liquidity
+    from app.modules.finance_os.domain_intelligence.treasury.liquidity_predictor import forecast_liquidity
     r = forecast_liquidity(inflows=[{"date": "2025-06-01", "amount": 100}], outflows=[])
     assert "risk_level" in r
 
@@ -250,7 +250,7 @@ def test_schema_transfer() -> None:
 
 
 def test_copilot_pressure() -> None:
-    from app.modules.erp.treasury.ai.treasury_copilot import answer_treasury_question
+    from app.modules.finance_os.domain_intelligence.treasury.treasury_copilot import answer_treasury_question
     ans = answer_treasury_question(question="what is causing liquidity pressure", position={"available_cash": 0, "upcoming_payments": 0, "net_liquidity": 0}, liquidity={"health_band": "risk", "risks": [{"message": "AP due"}], "liquidity_coverage": 0.8})
     assert "pressure" in ans["answer"].lower() or "causes" in ans["answer"].lower()
 

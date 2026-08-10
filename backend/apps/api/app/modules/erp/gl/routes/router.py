@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.modules.erp.gl.routes import balance_routes
 from app.modules.erp.gl.routes import ledger_routes
+from app.modules.erp.gl.routes import parallel_ledger_routes
 from app.modules.erp.gl.routes import posting_routes
 from app.modules.erp.gl.routes import reversal_routes
 from app.modules.erp.gl.routes import trial_balance_routes
@@ -12,4 +13,5 @@ erp_gl_router.include_router(balance_routes.router)
 erp_gl_router.include_router(trial_balance_routes.router)
 erp_gl_router.include_router(ledger_routes.router)
 erp_gl_router.include_router(reversal_routes.router)
+erp_gl_router.include_router(parallel_ledger_routes.router)
 

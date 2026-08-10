@@ -4,8 +4,12 @@ from app.modules.erp.banking.engine.statement_engine import parse_csv_statement,
 from app.modules.erp.banking.engine.bank_feed_engine import normalize_batch, normalize_transaction
 from app.modules.erp.banking.engine.payment_engine import build_generic_payment_lines, build_internal_transfer_lines
 from app.modules.erp.banking.engine.payment_policy_engine import evaluate_payment_policy
-from app.modules.erp.banking.ai.anomaly_detector import classify_transaction, detect_payment_anomalies, detect_transaction_anomalies
-from app.modules.erp.banking.ai.banking_copilot import answer_banking_question, classify_narration
+from app.modules.finance_os.domain_intelligence.banking.banking_copilot import answer_banking_question, classify_narration
+from app.modules.finance_os.domain_intelligence.payments.anomaly_detector import (
+    classify_transaction,
+    detect_payment_anomalies,
+    detect_transaction_anomalies,
+)
 
 
 def test_csv_parse() -> None:

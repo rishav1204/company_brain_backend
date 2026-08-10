@@ -12,6 +12,7 @@ class LedgerQueryRepository:
         batch_id: str | None = None,
         reference_type: str | None = None,
         reference_id: str | None = None,
+        branch_ids: list[str] | None = None,
         limit: int = 200,
         offset: int = 0,
     ) -> list[dict]:
@@ -31,12 +32,15 @@ class LedgerQueryRepository:
         if reference_id:
             where.append("reference_id = %s::uuid")
             params.append(reference_id)
+        if branch_ids:
+            where.append("(branch_id IS NULL OR branch_id::text = ANY(%s))")
+            params.append([str(b) for b in branch_ids])
         sql = f"""
             SELECT id::text, batch_id::text, account_id::text, entry_type,
                    debit_amount, credit_amount, currency_code, exchange_rate,
                    posting_date::text, fiscal_period_id::text,
                    reference_type, reference_id::text, cost_center_id::text,
-                   created_at::text
+                   branch_id::text, created_at::text
             FROM erp.ledger_entries
             WHERE {' AND '.join(where)}
             ORDER BY posting_date DESC, created_at DESC

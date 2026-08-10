@@ -17,11 +17,28 @@ class VendorBalanceService:
             )
 
         invoices = invoice_repository.list(org_id, vendor_id=vendor_id, limit=500)
-        unposted = sum(
-            max(0.0, float(i.get("total_amount") or 0) - float(i.get("paid_amount") or 0))
-            for i in invoices
-            if str(i.get("status")) in {"approved", "partially_paid"} and not i.get("journal_id")
-        )
+        # INT-01: include approved invoices whose journals are not yet posted (journal_id present but not posted).
+        unposted = 0.0
+        try:
+            from app.modules.erp.journals.repositories.journal_repository import journal_repository
+
+            for i in invoices:
+                if str(i.get("status")) not in {"approved", "partially_paid"}:
+                    continue
+                outstanding = max(0.0, float(i.get("total_amount") or 0) - float(i.get("paid_amount") or 0))
+                jid = str(i.get("journal_id") or "").strip()
+                if not jid:
+                    unposted += outstanding
+                    continue
+                j = journal_repository.get(org_id, journal_id=jid) or {}
+                if str(j.get("journal_status")) != "posted":
+                    unposted += outstanding
+        except Exception:
+            unposted = sum(
+                max(0.0, float(i.get("total_amount") or 0) - float(i.get("paid_amount") or 0))
+                for i in invoices
+                if str(i.get("status")) in {"approved", "partially_paid"}
+            )
         outstanding = max(gl_outstanding, 0.0) + unposted
         if outstanding <= 0:
             outstanding = sum(

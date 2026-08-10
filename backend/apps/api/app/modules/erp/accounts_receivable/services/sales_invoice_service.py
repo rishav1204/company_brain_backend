@@ -17,8 +17,6 @@ from app.modules.erp.accounts_receivable.services.credit_limit_service import cr
 from app.modules.erp.accounts_receivable.services.customer_balance_service import customer_balance_service
 from app.modules.erp.accounts_receivable.services.revenue_recognition_service import revenue_recognition_service
 from app.modules.erp.accounts_receivable.validators.invoice_validator import invoice_validator
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
 
 
@@ -44,10 +42,18 @@ class SalesInvoiceService:
         igst: float = 0,
         gst_rate: float | None = None,
         export_zero_rated: bool = False,
+        branch_id: str | None = None,
     ) -> dict:
+        from app.core.config import settings
+        from app.modules.erp.security.company_resolution_service import company_resolution_service
+
         customer = customer_repository.get(org_id, customer_id=customer_id)
         if not customer:
             raise ValueError("Customer not found")
+        if settings.erp_require_company_id:
+            company_id = company_resolution_service.resolve_for_write(
+                org_id, company_id=company_id, operation="ar.invoice.create"
+            )
         invoice_validator.validate_amounts(subtotal=subtotal, gst_amount=gst_amount, total_amount=total_amount)
         self._validate_gst_amounts(
             subtotal=subtotal,
@@ -61,6 +67,15 @@ class SalesInvoiceService:
         if not due_date:
             terms = int(customer.get("payment_terms_days") or 30)
             due_date = (date.fromisoformat(invoice_date[:10]) + timedelta(days=terms)).isoformat()
+
+        credit = credit_limit_service.check_before_issue(
+            org_id, customer_id=customer_id, invoice_amount=total_amount
+        )
+        if credit.get("block"):
+            raise ValueError("Credit limit exceeded — invoice creation blocked")
+        pending_credit_approval = False
+        if credit.get("requires_approval"):
+            pending_credit_approval = True
 
         revenue_recognition = {}
         if contract_months and contract_months > 1:
@@ -80,11 +95,26 @@ class SalesInvoiceService:
             gst_amount=gst_amount,
             total_amount=total_amount,
             company_id=company_id,
+            branch_id=branch_id,
             created_by=created_by,
             metadata=metadata or {},
             revenue_recognition=revenue_recognition,
         )
         iid = str(invoice["id"])
+        if pending_credit_approval:
+            from app.modules.workflows.services.erp_workflow_consumer import handle_entity_created
+
+            handle_entity_created(
+                org_id=org_id,
+                payload={
+                    "entity_type": "sales_invoice",
+                    "entity_id": iid,
+                    "workflow_key": "AR_INVOICE_APPROVAL",
+                    "amount": total_amount,
+                    "started_by": created_by,
+                    "metadata": {"ar_invoice_id": iid, "customer_id": customer_id, "credit_check": credit, "stage": "create"},
+                },
+            )
         if lines:
             ar_invoice_line_repository.replace_lines(org_id, invoice_id=iid, lines=lines)
         else:
@@ -115,8 +145,15 @@ class SalesInvoiceService:
         lines = ar_invoice_line_repository.list_by_invoice(org_id, invoice_id=invoice_id)
         return {"invoice": invoice, "lines": lines}
 
-    def list_invoices(self, org_id: str, *, status: str | None = None, customer_id: str | None = None) -> list[dict]:
-        return ar_invoice_repository.list(org_id, status=status, customer_id=customer_id)
+    def list_invoices(
+        self,
+        org_id: str,
+        *,
+        status: str | None = None,
+        customer_id: str | None = None,
+        branch_ids: list[str] | None = None,
+    ) -> list[dict]:
+        return ar_invoice_repository.list(org_id, status=status, customer_id=customer_id, branch_ids=branch_ids)
 
     def issue_invoice(
         self,
@@ -224,30 +261,58 @@ class SalesInvoiceService:
                 gst_lines=gst_lines or None,
                 company_id=invoice.get("company_id"),
             )
-        journal = journal_service.create_draft(
-            org_id,
-            created_by=None,
-            journal_type="sales",
-            posting_date=str(invoice.get("invoice_date")),
-            description=f"AR Invoice {invoice.get('invoice_number')}",
-            source_type="ar_invoice",
-            source_id=invoice_id,
-            company_id=invoice.get("company_id"),
-            lines=journal_lines,
-            idempotency_key=f"ar-invoice:{invoice_id}",
-        )
-        jid = str(journal["journal"]["id"])
-        journal_approval_service.approve(org_id, journal_id=jid, approver_id=issued_by, skip_maker_checker=True)
+        from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
+        from app.services.db import get_db_conn, set_rls_org
 
-        ar_invoice_repository.set_status(org_id, invoice_id=invoice_id, status="issued", issued_by=issued_by, journal_id=jid)
+        post_result = None
+        jid = None
+        journal = None
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal = create_draft_with_conn(
+                conn,
+                org_id,
+                created_by=None,
+                journal_type="sales",
+                posting_date=str(invoice.get("invoice_date")),
+                description=f"AR Invoice {invoice.get('invoice_number')}",
+                source_type="ar_invoice",
+                source_id=invoice_id,
+                company_id=invoice.get("company_id"),
+                lines=journal_lines,
+                idempotency_key=f"ar-invoice:{invoice_id}",
+            )
+            jid = str(journal["journal"]["id"])
+            approve_with_conn(
+                conn, org_id, journal_id=jid, approver_id=issued_by, skip_maker_checker=True
+            )
+            ar_invoice_repository.set_status_conn(
+                conn,
+                org_id,
+                invoice_id=invoice_id,
+                status="issued",
+                issued_by=issued_by,
+                journal_id=jid,
+            )
+            if auto_post:
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=issued_by, defer_side_effects=True
+                )
+            conn.commit()
+
+        if auto_post and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=issued_by,
+            )
         customer_balance_service.refresh_customer(org_id, customer_id=str(invoice["customer_id"]))
+
         emit_invoice_issued(org_id, invoice_id=invoice_id, amount=float(invoice.get("total_amount") or 0), customer_id=str(invoice["customer_id"]))
         ar_realtime_service.push_invoice_issued(org_id, invoice_id=invoice_id, amount=float(invoice.get("total_amount") or 0))
         self._audit(org_id, invoice_id=invoice_id, action="ar.invoice.issued", actor_id=issued_by)
-
-        post_result = None
-        if auto_post:
-            post_result = posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=issued_by)
 
         try:
             from app.modules.erp.vouchers.services.voucher_projection_service import voucher_projection_service
@@ -412,30 +477,54 @@ class SalesInvoiceService:
             bad_debt_account_id=str(debt_account),
             amount=amount,
         )
-        journal = journal_service.create_draft(
-            org_id,
-            created_by=None,
-            journal_type="adjustment",
-            posting_date=date.today().isoformat(),
-            description=f"Write-off {invoice.get('invoice_number')}",
-            source_type="ar_writeoff",
-            source_id=invoice_id,
-            company_id=invoice.get("company_id"),
-            lines=journal_lines,
-            idempotency_key=f"ar-writeoff:{invoice_id}",
-        )
-        jid = str(journal["journal"]["id"])
-        journal_approval_service.approve(org_id, journal_id=jid, approver_id=approver_id, skip_maker_checker=True)
-        ar_invoice_repository.set_status(org_id, invoice_id=invoice_id, status="written_off", journal_id=jid)
-        meta.pop("writeoff_pending", None)
-        meta["writeoff_workflow_approved"] = True
-        meta["writeoff_executed_by"] = approver_id
-        ar_invoice_repository.update_metadata(org_id, invoice_id=invoice_id, metadata=meta)
+        from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
+        from app.services.db import get_db_conn, set_rls_org
+
+        post_result = None
+        jid = None
+        journal = None
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal = create_draft_with_conn(
+                conn,
+                org_id,
+                created_by=None,
+                journal_type="adjustment",
+                posting_date=date.today().isoformat(),
+                description=f"Write-off {invoice.get('invoice_number')}",
+                source_type="ar_writeoff",
+                source_id=invoice_id,
+                company_id=invoice.get("company_id"),
+                lines=journal_lines,
+                idempotency_key=f"ar-writeoff:{invoice_id}",
+            )
+            jid = str(journal["journal"]["id"])
+            approve_with_conn(
+                conn, org_id, journal_id=jid, approver_id=approver_id, skip_maker_checker=True
+            )
+            ar_invoice_repository.set_status_conn(
+                conn, org_id, invoice_id=invoice_id, status="written_off", journal_id=jid
+            )
+            meta.pop("writeoff_pending", None)
+            meta["writeoff_workflow_approved"] = True
+            meta["writeoff_executed_by"] = approver_id
+            ar_invoice_repository.update_metadata_conn(conn, org_id, invoice_id=invoice_id, metadata=meta)
+            if post_flag:
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=approver_id, defer_side_effects=True
+                )
+            conn.commit()
+
+        if post_flag and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=approver_id,
+            )
         customer_balance_service.refresh_customer(org_id, customer_id=str(invoice["customer_id"]))
         self._audit(org_id, invoice_id=invoice_id, action="ar.invoice.written_off", actor_id=approver_id)
-        post_result = None
-        if post_flag:
-            post_result = posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=approver_id)
         return {"invoice_id": invoice_id, "status": "written_off", "journal_id": jid, "post_result": post_result}
 
     def _validate_gst_amounts(

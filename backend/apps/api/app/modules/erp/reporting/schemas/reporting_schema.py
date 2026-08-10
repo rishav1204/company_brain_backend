@@ -33,7 +33,7 @@ class AgingReportResponse(BaseModel):
 
 
 class CashFlowResponse(BaseModel):
-    status: str = "phase2"
+    status: str = "completed"
     sections: list = Field(default_factory=list)
 
 

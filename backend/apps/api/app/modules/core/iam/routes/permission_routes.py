@@ -5,17 +5,19 @@ from app.api.deps import build_request_context
 from app.modules.core.iam.repositories import permission_repo
 from app.modules.core.iam.routes.idempotency_helper import check_idempotency, mark_idempotency
 from app.modules.core.iam.schemas.permission_schema import PermissionListResponse, PermissionResponse
-from app.modules.core.iam.services.rbac_service import has_permission
+from app.modules.core.iam.middleware.mutation_guard import require_db_mutation
 from app.modules.core.iam.validators.permission_validator import validate_permission_key
 
 router = APIRouter(tags=["iam-permissions"])
 
 
 def _require_permission_admin(context) -> None:
-    if "tenant_admin" in {r.lower() for r in context.roles}:
-        return
-    if not has_permission(context.org_id, context.user_id, "org.admin"):
-        raise HTTPException(status_code=403, detail="org.admin permission required")
+    require_db_mutation(
+        context,
+        ["org.admin"],
+        detail="org.admin permission required",
+        allow_tenant_admin=True,
+    )
 
 
 class CreatePermissionRequest(BaseModel):

@@ -146,10 +146,6 @@ def extract_relationships_for_org(org_id: str) -> dict:
         )
         extracted += 1
 
-    for journal in graph_data_repo.list_journal_entries(org_id=org_id):
-        upsert_graph_event(org_id=org_id, node_type="KPI", node_id=f"gl-{journal['account_code']}")
-        extracted += 1
-
     for invoice in graph_data_repo.list_erp_ap_invoices_with_vendor(org_id=org_id):
         invoice_id = invoice["invoice_id"]
         upsert_graph_event(org_id=org_id, node_type="Invoice", node_id=invoice_id)

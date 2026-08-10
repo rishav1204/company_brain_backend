@@ -1,5 +1,8 @@
-from app.modules.erp.inventory.ai.dead_stock_detector import detect_dead_stock
-from app.modules.erp.inventory.ai.stock_risk_detector import classify_velocity, detect_stock_risk
+from app.modules.finance_os.domain_intelligence.inventory.dead_stock_detector import detect_dead_stock
+from app.modules.finance_os.domain_intelligence.inventory.stock_risk_detector import (
+    classify_velocity,
+    detect_stock_risk,
+)
 from app.modules.erp.inventory.engine.costing_engine import consume_fifo_layers, weighted_average_cost
 from app.modules.erp.inventory.engine.cogs_engine import (
     build_adjustment_journal_lines,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 
-from app.modules.erp.tax.ai.notice_analyzer import analyze_notice
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 from app.modules.erp.tax.repositories.compliance_repository import tax_notice_repository
 
@@ -44,7 +44,7 @@ class NoticeManagementService:
 
         meta = {**(fields.get("metadata") or {}), **doc_context}
 
-        analysis = analyze_notice(notice_type=fields["notice_type"], metadata=meta)
+        analysis = intelligence_registry.tax().analyze_notice(notice_type=fields["notice_type"], metadata=meta)
 
         if doc_context.get("document_text"):
 

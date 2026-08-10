@@ -9,9 +9,9 @@ from app.modules.erp.inventory.repositories.item_repository import item_reposito
 from app.modules.erp.inventory.repositories.movement_repository import adjustment_repository, balance_repository, movement_repository
 from app.modules.erp.inventory.validators.adjustment_validator import validate_adjustment_amount
 from app.modules.erp.inventory.validators.stock_validator import validate_adjustment
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
 
 
 class AdjustmentService:
@@ -123,73 +123,106 @@ class AdjustmentService:
             "weighted_avg_cost": 0,
         }
         journal_id = None
-        if abs(value_variance) > 0.0001:
-            lines = build_adjustment_journal_lines(
+        journal = None
+        post_result = None
+        movement = None
+        adj = None
+
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            if abs(value_variance) > 0.0001:
+                lines = build_adjustment_journal_lines(
+                    org_id,
+                    value_variance=value_variance,
+                    inventory_account_id=item.get("inventory_account_id"),
+                )
+                journal = create_draft_with_conn(
+                    conn,
+                    org_id,
+                    created_by=actor_id,
+                    journal_type="adjustment",
+                    posting_date=adjustment_date,
+                    description=f"Inventory adjustment {item.get('item_code')}",
+                    source_type="inventory_adjustment",
+                    source_id=None,
+                    company_id=item.get("company_id"),
+                    lines=lines,
+                    idempotency_key=f"inv-adj:{item_id}:{warehouse_id}:{adjustment_date}:{quantity_variance}",
+                )
+                journal_id = str(journal["journal"]["id"])
+                approve_with_conn(
+                    conn,
+                    org_id,
+                    journal_id=journal_id,
+                    approver_id=actor_id or "system",
+                    skip_maker_checker=True,
+                )
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn,
+                    org_id,
+                    journal_id=journal_id,
+                    posted_by=actor_id or "system",
+                    defer_side_effects=True,
+                )
+
+            movement = movement_repository.create_conn(
+                conn,
                 org_id,
-                value_variance=value_variance,
-                inventory_account_id=item.get("inventory_account_id"),
-            )
-            journal = journal_service.create_draft(
-                org_id,
+                item_id=item_id,
+                warehouse_id=warehouse_id,
+                movement_type="adjustment",
+                quantity=quantity_variance,
+                unit_cost=float(balance.get("weighted_avg_cost") or 0),
+                total_cost=abs(value_variance),
+                movement_date=adjustment_date,
+                reference_type="adjustment",
+                reference_id=None,
+                journal_id=journal_id,
                 created_by=actor_id,
-                journal_type="adjustment",
-                posting_date=adjustment_date,
-                description=f"Inventory adjustment {item.get('item_code')}",
-                source_type="inventory_adjustment",
-                source_id=None,
-                company_id=item.get("company_id"),
-                lines=lines,
-                idempotency_key=f"inv-adj:{item_id}:{warehouse_id}:{adjustment_date}:{quantity_variance}",
             )
-            journal_id = str(journal["journal"]["id"])
-            journal_approval_service.approve(org_id, journal_id=journal_id, approver_id=actor_id or "system", skip_maker_checker=True)
-            posting_orchestrator.post_journal(org_id, journal_id=journal_id, posted_by=actor_id or "system")
 
-        movement = movement_repository.create(
-            org_id,
-            item_id=item_id,
-            warehouse_id=warehouse_id,
-            movement_type="adjustment",
-            quantity=quantity_variance,
-            unit_cost=float(balance.get("weighted_avg_cost") or 0),
-            total_cost=abs(value_variance),
-            movement_date=adjustment_date,
-            reference_type="adjustment",
-            reference_id=None,
-            journal_id=journal_id,
-            created_by=actor_id,
-        )
+            new_qty = float(balance.get("quantity_on_hand") or 0) + quantity_variance
+            new_value = round(float(balance.get("inventory_value") or 0) + value_variance, 2)
+            new_avg = float(balance.get("weighted_avg_cost") or 0)
+            if new_qty > 0:
+                new_avg = round(new_value / new_qty, 4)
+            else:
+                new_avg = 0.0
+                new_value = 0.0
 
-        new_qty = float(balance.get("quantity_on_hand") or 0) + quantity_variance
-        new_value = round(float(balance.get("inventory_value") or 0) + value_variance, 2)
-        new_avg = float(balance.get("weighted_avg_cost") or 0)
-        if new_qty > 0:
-            new_avg = round(new_value / new_qty, 4)
-        else:
-            new_avg = 0.0
-            new_value = 0.0
+            balance_repository.upsert_conn(
+                conn,
+                org_id,
+                item_id=item_id,
+                warehouse_id=warehouse_id,
+                quantity_on_hand=new_qty,
+                inventory_value=new_value,
+                weighted_avg_cost=new_avg,
+            )
+            adj = adjustment_repository.create_conn(
+                conn,
+                org_id,
+                item_id=item_id,
+                warehouse_id=warehouse_id,
+                adjustment_date=adjustment_date,
+                quantity_variance=quantity_variance,
+                value_variance=value_variance,
+                reason=reason,
+                movement_id=str(movement["id"]),
+                journal_id=journal_id,
+                created_by=actor_id,
+                status="posted",
+            )
 
-        balance_repository.upsert(
-            org_id,
-            item_id=item_id,
-            warehouse_id=warehouse_id,
-            quantity_on_hand=new_qty,
-            inventory_value=new_value,
-            weighted_avg_cost=new_avg,
-        )
-        adj = adjustment_repository.create(
-            org_id,
-            item_id=item_id,
-            warehouse_id=warehouse_id,
-            adjustment_date=adjustment_date,
-            quantity_variance=quantity_variance,
-            value_variance=value_variance,
-            reason=reason,
-            movement_id=str(movement["id"]),
-            journal_id=journal_id,
-            created_by=actor_id,
-            status="posted",
-        )
+        if journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=journal_id,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=actor_id or "system",
+            )
+
         emit_inventory_adjusted(org_id, adjustment_id=str(adj["id"]), item_id=item_id)
         return {"adjustment_id": str(adj["id"]), "status": "posted", "movement_id": str(movement["id"]), "journal_id": journal_id}
 

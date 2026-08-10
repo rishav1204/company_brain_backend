@@ -418,5 +418,177 @@ class BillingRepository:
                 row = cur.fetchone()
                 return int(row["c"]) if row else 0
 
+    # --- Plan product CRUD (platform owner) ---
+
+    def get_plan(self, plan_key: str) -> dict[str, Any] | None:
+        if not self.schema_ready():
+            return None
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT plan_key, name, tier, monthly_price_inr, included_ai_credits, status,
+                           metadata, created_at, updated_at
+                    FROM billing.plans WHERE plan_key = %s
+                    """,
+                    (plan_key,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def create_plan(
+        self,
+        *,
+        plan_key: str,
+        name: str,
+        tier: int = 1,
+        monthly_price_inr: float = 0,
+        included_ai_credits: float = 0,
+        status: str = "active",
+        metadata: dict | None = None,
+    ) -> dict[str, Any]:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO billing.plans (
+                        plan_key, name, tier, monthly_price_inr, included_ai_credits, status, metadata
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                    RETURNING plan_key, name, tier, monthly_price_inr, included_ai_credits, status
+                    """,
+                    (
+                        plan_key,
+                        name,
+                        tier,
+                        monthly_price_inr,
+                        included_ai_credits,
+                        status,
+                        Json(metadata or {}),
+                    ),
+                )
+                row = dict(cur.fetchone() or {})
+                conn.commit()
+                return row
+
+    def update_plan(self, plan_key: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        allowed = {
+            "name",
+            "tier",
+            "monthly_price_inr",
+            "included_ai_credits",
+            "status",
+            "metadata",
+        }
+        sets: list[str] = []
+        params: list[Any] = []
+        for key, value in fields.items():
+            if key not in allowed or value is None:
+                continue
+            if key == "metadata":
+                sets.append("metadata = %s::jsonb")
+                params.append(Json(value))
+            else:
+                sets.append(f"{key} = %s")
+                params.append(value)
+        if not sets:
+            return self.get_plan(plan_key)
+        sets.append("updated_at = NOW()")
+        params.append(plan_key)
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE billing.plans SET {", ".join(sets)}
+                    WHERE plan_key = %s
+                    RETURNING plan_key, name, tier, monthly_price_inr, included_ai_credits, status
+                    """,
+                    tuple(params),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return dict(row) if row else None
+
+    def replace_plan_features(self, plan_key: str, features: list[dict[str, Any]]) -> list[str]:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM billing.plan_features WHERE plan_key = %s", (plan_key,))
+                enabled_codes: list[str] = []
+                for item in features:
+                    code = str(item.get("feature_code") or "").strip()
+                    if not code:
+                        continue
+                    enabled = bool(item.get("enabled", True))
+                    cur.execute(
+                        """
+                        INSERT INTO billing.plan_features (id, plan_key, feature_code, enabled)
+                        VALUES (%s::uuid, %s, %s, %s)
+                        ON CONFLICT (plan_key, feature_code) DO UPDATE SET enabled = EXCLUDED.enabled
+                        """,
+                        (str(uuid4()), plan_key, code, enabled),
+                    )
+                    if enabled:
+                        enabled_codes.append(code)
+                conn.commit()
+                return enabled_codes
+
+    def replace_plan_limits(self, plan_key: str, limits: list[dict[str, Any]]) -> dict[str, int | None]:
+        out: dict[str, int | None] = {}
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM billing.plan_limits WHERE plan_key = %s", (plan_key,))
+                for item in limits:
+                    code = str(item.get("limit_code") or "").strip()
+                    if not code:
+                        continue
+                    value = item.get("limit_value")
+                    cur.execute(
+                        """
+                        INSERT INTO billing.plan_limits (id, plan_key, limit_code, limit_value)
+                        VALUES (%s::uuid, %s, %s, %s)
+                        ON CONFLICT (plan_key, limit_code) DO UPDATE SET limit_value = EXCLUDED.limit_value
+                        """,
+                        (str(uuid4()), plan_key, code, value),
+                    )
+                    out[code] = int(value) if value is not None else None
+                conn.commit()
+        return out
+
+    def count_subscriptions_for_plan(self, plan_key: str) -> int:
+        if not self.schema_ready():
+            return 0
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*)::int AS c FROM billing.org_subscriptions WHERE plan_key = %s",
+                    (plan_key,),
+                )
+                row = cur.fetchone()
+                return int(row["c"]) if row else 0
+
+    def sync_wallet_included_monthly(self, org_id: str, included_monthly: float) -> None:
+        if not self.schema_ready():
+            return
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE billing.org_credit_wallets
+                    SET included_monthly = %s, updated_at = NOW()
+                    WHERE org_id = %s::uuid
+                    """,
+                    (included_monthly, org_id),
+                )
+                if cur.rowcount == 0:
+                    cur.execute(
+                        """
+                        INSERT INTO billing.org_credit_wallets (id, org_id, balance, included_monthly)
+                        VALUES (%s::uuid, %s::uuid, %s, %s)
+                        ON CONFLICT (org_id) DO UPDATE SET included_monthly = EXCLUDED.included_monthly
+                        """,
+                        (str(uuid4()), org_id, included_monthly, included_monthly),
+                    )
+                conn.commit()
+
 
 billing_repository = BillingRepository()

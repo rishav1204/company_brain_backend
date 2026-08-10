@@ -5,10 +5,12 @@ from app.modules.erp.reconciliation.engine.fuzzy_matching_engine import narratio
 from app.modules.erp.reconciliation.engine.confidence_engine import compute_confidence, score_to_band, load_weights
 from app.modules.erp.reconciliation.engine.settlement_engine import allocate_partial, build_match_lines, group_status
 from app.modules.erp.reconciliation.engine.anomaly_engine import detect_reconciliation_anomalies
-from app.modules.erp.reconciliation.ai.suggestion_engine import suggest_matches
-from app.modules.erp.reconciliation.ai.confidence_scorer import score_breakdown
-from app.modules.erp.reconciliation.ai.reconciliation_copilot import answer_reconciliation_question
-from app.modules.erp.reconciliation.ai.transaction_classifier import classify_narration
+from app.modules.finance_os.domain_intelligence.reconciliation.confidence_scorer import score_breakdown
+from app.modules.finance_os.domain_intelligence.reconciliation.reconciliation_copilot import (
+    answer_reconciliation_question,
+)
+from app.modules.finance_os.domain_intelligence.reconciliation.suggestion_engine import suggest_matches
+from app.modules.finance_os.domain_intelligence.reconciliation.transaction_classifier import classify_narration
 from app.modules.erp.reconciliation.validators.match_validator import validate_match_request
 from app.modules.erp.reconciliation.validators.approval_validator import validate_approve_status, validate_reject_status
 
@@ -292,7 +294,7 @@ def test_adjustment_service_import() -> None:
 
 
 def test_anomaly_detector_ai_wrapper() -> None:
-    from app.modules.erp.reconciliation.ai.anomaly_detector import detect_anomalies
+    from app.modules.finance_os.domain_intelligence.reconciliation.anomaly_detector import detect_anomalies
     flags = detect_anomalies(bank_tx={"amount": 100, "transaction_reference": "x", "description": ""})
     assert any(f["type"] == "unknown_beneficiary" for f in flags)
 

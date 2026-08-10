@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import build_request_context
 from app.modules.core.iam.repositories import organization_repo, permission_repo, role_repo, user_repo
 from app.modules.core.iam.routes.idempotency_helper import check_idempotency, mark_idempotency
-from app.modules.core.iam.services.rbac_service import has_permission
+from app.modules.core.iam.middleware.mutation_guard import require_db_mutation
 from app.modules.core.iam.validators.org_validator import validate_org_slug
 from app.modules.core.iam.validators.permission_validator import validate_permission_key
 
@@ -12,10 +12,12 @@ router = APIRouter(tags=["iam-admin"])
 
 
 def _require_admin(context) -> None:
-    if "tenant_admin" in {r.lower() for r in context.roles}:
-        return
-    if not has_permission(context.org_id, context.user_id, "org.admin"):
-        raise HTTPException(status_code=403, detail="org.admin permission required")
+    require_db_mutation(
+        context,
+        ["org.admin"],
+        detail="org.admin permission required",
+        allow_tenant_admin=True,
+    )
 
 
 class UpdateUserStatusRequest(BaseModel):

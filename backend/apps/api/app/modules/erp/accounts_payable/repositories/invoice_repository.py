@@ -29,6 +29,7 @@ class InvoiceRepository:
         metadata: dict | None = None,
         purchase_order_id: str | None = None,
         goods_receipt_id: str | None = None,
+        branch_id: str | None = None,
     ) -> dict:
         iid = str(uuid4())
         with get_db_conn() as conn:
@@ -37,13 +38,13 @@ class InvoiceRepository:
                 cur.execute(
                     """
                     INSERT INTO erp.ap_invoices (
-                      id, org_id, company_id, vendor_id, invoice_number, invoice_date, due_date,
+                      id, org_id, company_id, branch_id, vendor_id, invoice_number, invoice_date, due_date,
                       invoice_amount, gst_amount, total_amount, source_document_id,
                       duplicate_checksum, created_by, ai_confidence, metadata,
                       purchase_order_id, goods_receipt_id
                     )
                     VALUES (
-                      %s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::date,
+                      %s::uuid,%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::date,
                       %s::numeric,%s::numeric,%s::numeric,%s::uuid,
                       %s,%s::uuid,%s::jsonb,%s::jsonb,%s::uuid,%s::uuid
                     )
@@ -52,7 +53,7 @@ class InvoiceRepository:
                               vendor_id::text, source_document_id::text, created_at::text
                     """,
                     (
-                        iid, org_id, company_id, vendor_id, invoice_number,
+                        iid, org_id, company_id, branch_id, vendor_id, invoice_number,
                         invoice_date, due_date, invoice_amount, gst_amount, total_amount,
                         source_document_id, duplicate_checksum, created_by,
                         Json(ai_confidence or {}), Json(metadata or {}),
@@ -95,6 +96,26 @@ class InvoiceRepository:
                     LIMIT 1
                     """,
                     (org_id, duplicate_checksum),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def find_by_ai_extraction_id(self, org_id: str, *, extraction_id: str) -> dict | None:
+        """Idempotency guard for AI-created AP invoices (INT-28)."""
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text, invoice_number, status, vendor_id::text
+                    FROM erp.ap_invoices
+                    WHERE org_id = %s::uuid
+                      AND (metadata->>'m25_extraction_id') = %s
+                      AND status NOT IN ('cancelled')
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (org_id, str(extraction_id)),
                 )
                 row = cur.fetchone()
                 return dict(row) if row else None
@@ -177,41 +198,65 @@ class InvoiceRepository:
     ) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.ap_invoices
-                    SET status = %s,
-                        approved_by = COALESCE(%s::uuid, approved_by),
-                        journal_id = COALESCE(%s::uuid, journal_id),
-                        updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, status, journal_id::text, approved_by::text
-                    """,
-                    (status, approved_by, journal_id, org_id, invoice_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Invoice not found")
-                return dict(row)
+            return self.set_status_conn(
+                conn,
+                org_id,
+                invoice_id=invoice_id,
+                status=status,
+                approved_by=approved_by,
+                journal_id=journal_id,
+            )
+
+    def set_status_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        invoice_id: str,
+        status: str,
+        approved_by: str | None = None,
+        journal_id: str | None = None,
+    ) -> dict:
+        set_rls_org(conn, org_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.ap_invoices
+                SET status = %s,
+                    approved_by = COALESCE(%s::uuid, approved_by),
+                    journal_id = COALESCE(%s::uuid, journal_id),
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, status, journal_id::text, approved_by::text
+                """,
+                (status, approved_by, journal_id, org_id, invoice_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invoice not found")
+            return dict(row)
 
     def patch_metadata(self, org_id: str, *, invoice_id: str, metadata: dict) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.ap_invoices
-                    SET metadata = %s::jsonb, updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, metadata
-                    """,
-                    (Json(metadata), org_id, invoice_id),
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Invoice not found")
-                return dict(row)
+            return self.patch_metadata_conn(conn, org_id, invoice_id=invoice_id, metadata=metadata)
+
+    def patch_metadata_conn(self, conn, org_id: str, *, invoice_id: str, metadata: dict) -> dict:
+        set_rls_org(conn, org_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.ap_invoices
+                SET metadata = %s::jsonb, updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, metadata
+                """,
+                (Json(metadata), org_id, invoice_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invoice not found")
+            return dict(row)
 
     def record_payment(self, org_id: str, *, invoice_id: str, amount: float) -> dict:
         with get_db_conn() as conn:
@@ -255,12 +300,40 @@ class InvoiceRepository:
                 raise ValueError("Invoice not found")
             return dict(row)
 
+    def reverse_payment(self, org_id: str, *, invoice_id: str, amount: float) -> dict:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            return self.reverse_payment_conn(conn, org_id, invoice_id=invoice_id, amount=amount)
+
+    def reverse_payment_conn(self, conn, org_id: str, *, invoice_id: str, amount: float) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.ap_invoices
+                SET paid_amount = GREATEST(0, paid_amount - %s::numeric),
+                    status = CASE
+                      WHEN GREATEST(0, paid_amount - %s::numeric) <= 0 THEN 'approved'
+                      WHEN GREATEST(0, paid_amount - %s::numeric) < total_amount THEN 'partially_paid'
+                      ELSE status
+                    END,
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, paid_amount, total_amount, status
+                """,
+                (amount, amount, amount, org_id, invoice_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Invoice not found")
+            return dict(row)
+
     def list(
         self,
         org_id: str,
         *,
         status: str | None = None,
         vendor_id: str | None = None,
+        branch_ids: list[str] | None = None,
         limit: int = 100,
     ) -> list[dict]:
         limit = max(1, min(limit, 500))
@@ -272,6 +345,9 @@ class InvoiceRepository:
         if vendor_id:
             where.append("vendor_id = %s::uuid")
             params.append(vendor_id)
+        if branch_ids:
+            where.append("(branch_id IS NULL OR branch_id::text = ANY(%s))")
+            params.append([str(b) for b in branch_ids])
         params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)

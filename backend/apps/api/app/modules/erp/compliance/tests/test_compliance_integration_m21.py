@@ -1,4 +1,4 @@
-from datetime import date
+from random import randint
 
 import pytest
 
@@ -10,22 +10,31 @@ def org_id() -> str:
     return "11111111-1111-4111-8111-111111111111"
 
 
-def _unique_period() -> str:
-    return f"2099-{date.today().month:02d}"
+def _generate_open_period(service, org_id: str, *, attempts: int = 5) -> tuple[str, list[dict]]:
+    """Generate obligations into a far-future period that still has open work.
+
+    Obligations upsert on (org_id, compliance_type_id, return_period) and the
+    upsert never resets status, so every run of this test consumes its period
+    permanently. Picking an unused one keeps the test repeatable, and the org
+    has to be the seeded one because event_store.org_id is a foreign key.
+    """
+    for _ in range(attempts):
+        period = f"{randint(2090, 2199)}-{randint(1, 12):02d}"
+        result = service.generate_for_periods(org_id, periods=[period])
+        assert result["generated"] >= 1
+        items = [i for i in service.list(org_id) if i.get("return_period") == period]
+        open_items = [i for i in items if str(i.get("status")) not in {"completed", "waived"}]
+        if open_items:
+            return period, open_items
+    raise AssertionError("no far-future period with an open obligation after retries")
 
 
 @pytest.mark.skipif(not settings.postgres_dsn, reason="POSTGRES_DSN required")
 def test_obligation_lifecycle(org_id: str) -> None:
     from app.modules.erp.compliance.services.obligation_service import obligation_service
 
-    period = _unique_period()
     obligation_service.ensure_rules(org_id)
-    result = obligation_service.generate_for_periods(org_id, periods=[period])
-    assert result["generated"] >= 1
-    items = [i for i in obligation_service.list(org_id) if i.get("return_period") == period]
-    assert items
-    open_items = [i for i in items if str(i.get("status")) not in {"completed", "waived"}]
-    assert open_items, "expected open obligation for test period"
+    _, open_items = _generate_open_period(obligation_service, org_id)
     ob_id = open_items[0]["id"]
     obligation_service.refresh_statuses(org_id)
     completed = obligation_service.complete(org_id, ob_id, actor_id="test")

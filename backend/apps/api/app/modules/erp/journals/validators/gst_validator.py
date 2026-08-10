@@ -40,7 +40,11 @@ class GstValidator:
                 raise ValueError(f"Account {account_id} must be gst_input/gst_output for tax_code {tax_code}")
 
             mapped_account = by_gst_type.get(gst_type)
-            if mapped_account and mapped_account != account_id:
+            if not mapped_account:
+                raise ValueError(
+                    f"Missing COA GST mapping for {tax_code} ({gst_type}); configure via /erp/coa/mappings"
+                )
+            if mapped_account != account_id:
                 raise ValueError(
                     f"GST account mismatch for {tax_code}: expected mapped account {mapped_account}, got {account_id}"
                 )

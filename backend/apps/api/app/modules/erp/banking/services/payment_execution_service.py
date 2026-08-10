@@ -5,23 +5,92 @@ import uuid
 from datetime import date
 
 from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation, enforce_maker_checker
-from app.modules.erp.banking.ai.anomaly_detector import detect_payment_anomalies
 from app.modules.erp.banking.engine.payment_engine import build_generic_payment_lines, build_internal_transfer_lines
 from app.modules.erp.banking.engine.payment_policy_engine import evaluate_payment_policy
 from app.modules.erp.banking.events.banking_events import emit_payment_executed, emit_payment_failed
 from app.modules.erp.banking.repositories.payment_request_repository import payment_request_repository
 from app.modules.erp.banking.services.bank_account_service import bank_account_service
 from app.modules.erp.banking.services.bank_rail_service import bank_rail_service
-from app.modules.erp.banking.services.bank_transaction_recorder import record_payment_debit
+from app.modules.erp.banking.services.bank_transaction_recorder import record_payment_debit, record_payment_debit_conn
 from app.modules.erp.banking.services.beneficiary_service import beneficiary_service
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
+from app.services.db import get_db_conn, set_rls_org
 
 
 class PaymentExecutionService:
     def _ref(self) -> str:
         return "TPR-" + uuid.uuid4().hex[:10].upper()
+
+    def _post_payment_journal_atomic(
+        self,
+        org_id: str,
+        *,
+        journal_type: str,
+        posting_date: str,
+        description: str,
+        source_type: str,
+        source_id: str,
+        company_id: str | None,
+        lines: list[dict],
+        idempotency_key: str,
+        executed_by: str,
+        auto_post: bool,
+        bank_account_id: str,
+        amount: float,
+        payment_reference: str,
+        scheduled_date: str | None,
+        beneficiary_ref: str | None,
+    ) -> dict:
+        post_result = None
+        jid = None
+        journal = None
+        bank_tx = None
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal = create_draft_with_conn(
+                conn,
+                org_id,
+                created_by=None,
+                journal_type=journal_type,
+                posting_date=posting_date,
+                description=description,
+                source_type=source_type,
+                source_id=source_id,
+                company_id=company_id,
+                lines=lines,
+                idempotency_key=idempotency_key,
+            )
+            jid = str(journal["journal"]["id"])
+            approve_with_conn(conn, org_id, journal_id=jid, approver_id=executed_by, skip_maker_checker=True)
+            if auto_post:
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=executed_by, defer_side_effects=True
+                )
+            bank_tx = record_payment_debit_conn(
+                conn,
+                org_id,
+                bank_account_id=bank_account_id,
+                amount=amount,
+                reference=payment_reference,
+                payment_date=(scheduled_date or "")[:10] or None,
+                description=description,
+                idempotency_key=f"payment:{source_id}",
+                counterparty_ref=beneficiary_ref,
+                source_type="payment_request",
+                source_id=source_id,
+            )
+            conn.commit()
+        if auto_post and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=executed_by,
+            )
+        return {"journal_id": jid, "bank_transaction_id": str(bank_tx.get("id") or "") if bank_tx else ""}
 
     def get_request(self, org_id: str, *, payment_request_id: str) -> dict:
         row = payment_request_repository.get(org_id, payment_request_id=payment_request_id)
@@ -54,7 +123,7 @@ class PaymentExecutionService:
                 dup = payment_request_repository.find_duplicate(org_id, beneficiary_ref=beneficiary_ref, amount=amount, scheduled_date=scheduled_date)
                 if dup:
                     raise ValueError(f"Duplicate payment request: {dup.get('id')}")
-        anomaly = detect_payment_anomalies(amount=amount, beneficiary_ref=beneficiary_ref, history_amounts=meta.get("history_amounts") or [], beneficiary_verified=bool(meta.get("beneficiary_verified")))
+        anomaly = intelligence_registry.banking().detect_payment_anomalies(amount=amount, beneficiary_ref=beneficiary_ref, history_amounts=meta.get("history_amounts") or [], beneficiary_verified=bool(meta.get("beneficiary_verified")))
         if anomaly.get("block_execution"):
             raise ValueError(f"Payment blocked: {anomaly.get('flags')}")
         meta["anomaly"] = anomaly
@@ -65,9 +134,9 @@ class PaymentExecutionService:
             try:
                 from app.modules.workflows.services.erp_workflow_consumer import handle_entity_created
                 handle_entity_created(org_id=org_id, payload={"entity_type": "treasury_payment", "entity_id": rid, "workflow_key": "TREASURY_PAYMENT_APPROVAL", "amount": amount, "started_by": created_by, "metadata": {"payment_request_id": rid, "payment_type": payment_type, "required_roles": policy.get("required_roles")}})
-            except Exception:
-                meta["workflow_approved"] = True
-                payment_request_repository.update_metadata(org_id, payment_request_id=rid, metadata=meta)
+            except Exception as exc:
+                # INT-13: never auto-approve on workflow start failure; fail closed.
+                raise ValueError(f"Treasury payment workflow initiation failed: {exc}") from exc
         return req
 
     def mark_workflow_approved(self, org_id: str, *, payment_request_id: str, approver_id: str) -> dict:
@@ -112,24 +181,51 @@ class PaymentExecutionService:
             elif payment_type == "internal_transfer":
                 dest_ledger = bank_account_service.resolve_ledger_account(org_id, bank_account_id=str(meta.get("dest_bank_account_id") or ""))
                 lines = build_internal_transfer_lines(source_bank_ledger_id=bank_ledger, dest_bank_ledger_id=dest_ledger, amount=amount)
-                journal = journal_service.create_draft(org_id, created_by=None, journal_type="contra", posting_date=date.today().isoformat(), description=f"Internal transfer {row.get('payment_reference')}", source_type="banking_transfer", source_id=payment_request_id, company_id=row.get("company_id"), lines=lines, idempotency_key=f"banking-transfer:{payment_request_id}")
-                jid = str(journal["journal"]["id"])
-                journal_approval_service.approve(org_id, journal_id=jid, approver_id=executed_by, skip_maker_checker=True)
-                if auto_post:
-                    posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=executed_by)
-                result = {"journal_id": jid}
+                result = self._post_payment_journal_atomic(
+                    org_id,
+                    journal_type="contra",
+                    posting_date=date.today().isoformat(),
+                    description=f"Internal transfer {row.get('payment_reference')}",
+                    source_type="banking_transfer",
+                    source_id=payment_request_id,
+                    company_id=row.get("company_id"),
+                    lines=lines,
+                    idempotency_key=f"banking-transfer:{payment_request_id}",
+                    executed_by=executed_by,
+                    auto_post=auto_post,
+                    bank_account_id=bank_account_id,
+                    amount=amount,
+                    payment_reference=str(row.get("payment_reference") or payment_request_id),
+                    scheduled_date=str(row.get("scheduled_date") or "")[:10] or None,
+                    beneficiary_ref=str(row.get("beneficiary_ref") or ""),
+                )
+                jid = result.get("journal_id")
+                bank_tx = {"id": result.get("bank_transaction_id")}
             else:
                 expense_acct = str(meta.get("expense_account_id") or meta.get("liability_account_id") or "")
                 if not expense_acct:
                     raise ValueError("Expense or liability account required")
                 lines = build_generic_payment_lines(expense_or_liability_account_id=expense_acct, bank_ledger_account_id=bank_ledger, amount=amount)
-                journal = journal_service.create_draft(org_id, created_by=None, journal_type="payment", posting_date=str(row.get("scheduled_date") or date.today().isoformat()), description=f"Banking payment {row.get('payment_reference')}", source_type="banking_payment", source_id=payment_request_id, company_id=row.get("company_id"), lines=lines, idempotency_key=f"banking-payment:{payment_request_id}")
-                jid = str(journal["journal"]["id"])
-                journal_approval_service.approve(org_id, journal_id=jid, approver_id=executed_by, skip_maker_checker=True)
-                if auto_post:
-                    posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=executed_by)
-                result = {"journal_id": jid}
-            bank_tx = record_payment_debit(org_id, bank_account_id=bank_account_id, amount=amount, reference=str(row.get("payment_reference") or payment_request_id), payment_date=str(row.get("scheduled_date") or "")[:10] or None, description=f"Payment {payment_type}", idempotency_key=f"payment:{payment_request_id}", counterparty_ref=str(row.get("beneficiary_ref") or ""), source_type="payment_request", source_id=payment_request_id)
+                result = self._post_payment_journal_atomic(
+                    org_id,
+                    journal_type="payment",
+                    posting_date=str(row.get("scheduled_date") or date.today().isoformat()),
+                    description=f"Banking payment {row.get('payment_reference')}",
+                    source_type="banking_payment",
+                    source_id=payment_request_id,
+                    company_id=row.get("company_id"),
+                    lines=lines,
+                    idempotency_key=f"banking-payment:{payment_request_id}",
+                    executed_by=executed_by,
+                    auto_post=auto_post,
+                    bank_account_id=bank_account_id,
+                    amount=amount,
+                    payment_reference=str(row.get("payment_reference") or payment_request_id),
+                    scheduled_date=str(row.get("scheduled_date") or "")[:10] or None,
+                    beneficiary_ref=str(row.get("beneficiary_ref") or ""),
+                )
+                jid = result.get("journal_id")
+                bank_tx = {"id": result.get("bank_transaction_id")}
             payment_request_repository.set_status(org_id, payment_request_id=payment_request_id, status="completed", journal_id=result.get("journal_id"))
             emit_payment_executed(org_id, payment_request_id=payment_request_id, amount=amount, journal_id=result.get("journal_id"), bank_transaction_id=str(bank_tx.get("id") or ""), ap_payment_id=str(ap_payment_id) if ap_payment_id else None)
             jid = str(result.get("journal_id") or "")

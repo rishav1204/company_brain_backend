@@ -41,17 +41,24 @@ def _resolve_gst_type(meta: dict, *, default: str, is_ap: bool) -> str:
     return default
 
 
-def _extract_hsn_sac(lines: list[dict], meta: dict) -> str | None:
+def _extract_hsn_sac(lines: list[dict], meta: dict, *, require_for_taxable: bool = False) -> str | None:
     if meta.get("hsn_sac"):
         return str(meta["hsn_sac"])[:16]
     for line in lines:
+        if line.get("hsn_sac"):
+            return str(line["hsn_sac"])[:16]
+    for line in lines:
+        tax_code = str(line.get("tax_code") or "").strip()
+        if tax_code and require_for_taxable:
+            raise ValueError("hsn_sac required on invoice line or metadata for taxable GST lines")
         desc = str(line.get("description") or "")
         match = re.search(r"\b(\d{4,8})\b", desc)
         if match:
             return match.group(1)
-        tax_code = str(line.get("tax_code") or "")
         if tax_code.isdigit() and len(tax_code) >= 4:
             return tax_code[:16]
+    if require_for_taxable and any(float(line.get("amount") or 0) > 0 for line in lines):
+        raise ValueError("hsn_sac required for GST compliance when taxable amounts present")
     return None
 
 
@@ -99,13 +106,13 @@ class GstTransactionService:
             pass
         return line_components, lines
 
-    def record_from_ap_invoice(self, org_id: str, *, invoice_id: str) -> list[dict]:
+    def _build_ap_invoice_tx_fields(self, org_id: str, *, invoice_id: str) -> dict | None:
         from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository
         from app.modules.erp.accounts_payable.repositories.vendor_repository import vendor_repository
 
         inv = invoice_repository.get(org_id, invoice_id=invoice_id)
         if not inv:
-            return []
+            return None
         vendor = vendor_repository.get(org_id, vendor_id=str(inv["vendor_id"])) or {}
         supplier_state = self._supplier_state(org_id)
         party_gstin = vendor.get("gstin")
@@ -123,7 +130,7 @@ class GstTransactionService:
                     line_components.append(components_from_tax_code(str(row["tax_code"]), float(row["amount"])))
 
         gst_rate = round(gst_amount / taxable * 100, 2) if taxable > 0 and gst_amount > 0 else 0.0
-        hsn_sac = _extract_hsn_sac(lines, meta)
+        hsn_sac = _extract_hsn_sac(lines, meta, require_for_taxable=gst_amount > 0)
         gst_rate = tax_rate_service.resolve_rate(org_id, hsn_sac=hsn_sac, computed_rate=gst_rate)
         gst_type = _resolve_gst_type(meta, default="purchase", is_ap=True)
         if vendor_meta.get("is_import_vendor") or meta.get("is_import"):
@@ -145,31 +152,40 @@ class GstTransactionService:
             line_components=line_components if line_components else None,
             org_id=org_id,
         )
-        row = gst_transaction_repository.create(
-            org_id,
-            source_type="ap_invoice",
-            source_id=invoice_id,
-            invoice_date=invoice_date,
-            party_gstin=party_gstin,
-            place_of_supply=pos,
-            hsn_sac=hsn_sac,
-            return_period=self._return_period(invoice_date),
-            metadata={"invoice_number": inv.get("invoice_number"), **meta},
+        return {
+            "source_type": "ap_invoice",
+            "source_id": invoice_id,
+            "invoice_date": invoice_date,
+            "party_gstin": party_gstin,
+            "place_of_supply": pos,
+            "hsn_sac": hsn_sac,
+            "return_period": self._return_period(invoice_date),
+            "metadata": {"invoice_number": inv.get("invoice_number"), **meta},
             **tx_data,
-        )
-        if gst_type in {"purchase", "reverse_charge", "import"}:
-            itc_service.create_from_purchase(org_id, gst_transaction_id=str(row["id"]), gst_transaction={**tx_data, "id": row["id"], "metadata": meta})
+        }
+
+    def record_from_ap_invoice(self, org_id: str, *, invoice_id: str) -> list[dict]:
+        fields = self._build_ap_invoice_tx_fields(org_id, invoice_id=invoice_id)
+        if not fields:
+            return []
+        row = gst_transaction_repository.create(org_id, **fields)
+        if fields.get("gst_type") in {"purchase", "reverse_charge", "import"}:
+            itc_service.create_from_purchase(
+                org_id,
+                gst_transaction_id=str(row["id"]),
+                gst_transaction={**fields, "id": row["id"], "metadata": fields.get("metadata") or {}},
+            )
         emit_gst_transaction_recorded(org_id, gst_transaction_id=str(row["id"]), source_type="ap_invoice", source_id=invoice_id)
         return [row]
 
-    def record_from_ar_invoice(self, org_id: str, *, invoice_id: str) -> list[dict]:
+    def _build_ar_invoice_tx_fields(self, org_id: str, *, invoice_id: str) -> dict | None:
         from app.modules.erp.accounts_receivable.repositories.invoice_repository import ar_invoice_repository
         from app.modules.erp.accounts_receivable.repositories.customer_repository import customer_repository
         from app.modules.erp.accounts_receivable.repositories.customer_address_repository import customer_address_repository
 
         inv = ar_invoice_repository.get(org_id, invoice_id=invoice_id)
         if not inv:
-            return []
+            return None
         customer = customer_repository.get(org_id, customer_id=str(inv["customer_id"])) or {}
         supplier_state = self._supplier_state(org_id)
         party_gstin = customer.get("gstin")
@@ -195,7 +211,7 @@ class GstTransactionService:
                     line_components.append(components_from_tax_code(str(row["tax_code"]), float(row["amount"])))
 
         gst_rate = round(gst_amount / taxable * 100, 2) if taxable > 0 and gst_amount > 0 else 0.0
-        hsn_sac = _extract_hsn_sac(lines, meta)
+        hsn_sac = _extract_hsn_sac(lines, meta, require_for_taxable=gst_amount > 0)
         gst_rate = tax_rate_service.resolve_rate(org_id, hsn_sac=hsn_sac, computed_rate=gst_rate)
         default_type = "export" if export_zero else "sales"
         gst_type = _resolve_gst_type(meta, default=default_type, is_ap=False)
@@ -217,17 +233,52 @@ class GstTransactionService:
             line_components=line_components if line_components else None,
             org_id=org_id,
         )
+        return {
+            "source_type": "ar_invoice",
+            "source_id": invoice_id,
+            "invoice_date": invoice_date,
+            "party_gstin": party_gstin,
+            "place_of_supply": pos,
+            "hsn_sac": hsn_sac,
+            "return_period": self._return_period(invoice_date),
+            "metadata": {"invoice_number": inv.get("invoice_number"), **meta},
+            **tx_data,
+        }
+
+    def record_from_source_with_conn(self, conn, org_id: str, *, source_type: str, source_id: str) -> list[dict]:
+        """
+        INT-06: record GST inside caller transaction when required (posting consistency).
+        Supports AP and AR invoice sources atomically.
+        """
+        if source_type in {"ap_invoice", "erp.ap_invoice"}:
+            fields = self._build_ap_invoice_tx_fields(org_id, invoice_id=source_id)
+            if not fields:
+                return []
+            row = gst_transaction_repository.create_conn(conn, org_id, **fields)
+            return [row]
+        if source_type in {"ar_invoice", "sales_invoice", "erp.ar_invoice"}:
+            fields = self._build_ar_invoice_tx_fields(org_id, invoice_id=source_id)
+            if not fields:
+                return []
+            row = gst_transaction_repository.create_conn(conn, org_id, **fields)
+            return [row]
+        return []
+
+    def record_from_ar_invoice(self, org_id: str, *, invoice_id: str) -> list[dict]:
+        fields = self._build_ar_invoice_tx_fields(org_id, invoice_id=invoice_id)
+        if not fields:
+            return []
         row = gst_transaction_repository.create(
             org_id,
-            source_type="ar_invoice",
-            source_id=invoice_id,
-            invoice_date=invoice_date,
-            party_gstin=party_gstin,
-            place_of_supply=pos,
-            hsn_sac=hsn_sac,
-            return_period=self._return_period(invoice_date),
-            metadata={"invoice_number": inv.get("invoice_number"), **meta},
-            **tx_data,
+            source_type=fields.pop("source_type"),
+            source_id=fields.pop("source_id"),
+            invoice_date=fields.pop("invoice_date"),
+            party_gstin=fields.pop("party_gstin"),
+            place_of_supply=fields.pop("place_of_supply"),
+            hsn_sac=fields.pop("hsn_sac"),
+            return_period=fields.pop("return_period"),
+            metadata=fields.pop("metadata"),
+            **fields,
         )
         emit_gst_transaction_recorded(org_id, gst_transaction_id=str(row["id"]), source_type="ar_invoice", source_id=invoice_id)
         return [row]

@@ -40,7 +40,7 @@ def run_valuation(request: ValuationRunRequest, context=Depends(require_inventor
 
 @router.post("/ai/analyze")
 def analyze_inventory(request: InventoryAnalyzeRequest, context=Depends(require_inventory_read)) -> dict:
-    from app.modules.erp.inventory.ai.inventory_analyzer import analyze
+    from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
-    result = analyze(context.org_id, query=request.query)
+    result = intelligence_registry.inventory().analyze(context.org_id, query=request.query)
     return {"request_id": context.request_id, "analysis": result}

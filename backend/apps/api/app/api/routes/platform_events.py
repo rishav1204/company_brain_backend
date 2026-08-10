@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import build_request_context
+from app.modules.core.iam.middleware.permission_guard import require_permission
 from app.modules.platform.events.bus.event_registry import ALL_EVENTS, get_event_definition
 from app.modules.platform.events.queues.dead_letter_queue import list_dlq_depth, requeue_from_dlq
 from app.modules.platform.events.queues.queue_manager import queue_manager
@@ -68,11 +69,15 @@ def event_registry_lookup(event_type: str, context=Depends(build_request_context
 
 
 @router.post("/events/replay")
-def replay_events(request: ReplayEventsRequest, context=Depends(build_request_context)) -> dict:
+def replay_events(
+    request: ReplayEventsRequest,
+    context=Depends(require_permission("ops.queue.manage")),
+) -> dict:
     replayed = platform_event_service.replay(
         context.org_id,
         event_type=request.event_type,
         limit=request.limit,
+        from_event_id=request.from_event_id,
         actor_id=context.user_id,
         trace_id=context.trace_id or context.request_id,
     )
@@ -98,7 +103,11 @@ def list_queues(context=Depends(build_request_context)) -> dict:
 
 
 @router.post("/queues/{queue_name}/dlq/requeue")
-def requeue_dlq(queue_name: str, limit: int = 10, context=Depends(build_request_context)) -> dict:
+def requeue_dlq(
+    queue_name: str,
+    limit: int = 10,
+    context=Depends(require_permission("ops.queue.manage")),
+) -> dict:
     groups = queue_groups()
     if queue_name not in groups.values():
         raise HTTPException(status_code=404, detail="Unknown queue")

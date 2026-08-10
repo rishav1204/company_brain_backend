@@ -108,11 +108,18 @@ def test_webhook_dispatcher_single_path(mock_wh: MagicMock) -> None:
     assert out == [{"id": "d1"}]
 
 
-def test_gateway_access_allows_admin_scope() -> None:
+def test_gateway_access_allows_explicit_scope() -> None:
+    from app.modules.platform.api_gateway.security.gateway_access import _scope_allows
+
+    ctx = MagicMock(api_key_scopes=["api.keys.manage"], permissions=[])
+    assert _scope_allows(ctx, ["api.keys.manage"]) is True
+
+
+def test_gateway_access_rejects_admin_wildcard_key() -> None:
     from app.modules.platform.api_gateway.security.gateway_access import _scope_allows
 
     ctx = MagicMock(api_key_scopes=["admin"], permissions=[])
-    assert _scope_allows(ctx, ["invoice.write"]) is True
+    assert _scope_allows(ctx, ["api.keys.manage"]) is False
 
 
 def test_gateway_access_denies_missing_scope() -> None:
@@ -122,12 +129,17 @@ def test_gateway_access_denies_missing_scope() -> None:
     assert _scope_allows(ctx, ["invoice.write"]) is False
 
 
-@patch("app.modules.platform.api_gateway.security.gateway_access.enforce_gateway_action")
-@patch("app.modules.platform.api_gateway.services.api_request_log_service.api_request_log_service")
-def test_api_gateway_engine_success(mock_log: MagicMock, _mock_guard: MagicMock) -> None:
+@patch("app.modules.platform.api_gateway.engine.api_gateway_engine.enforce_gateway_action")
+@patch("app.modules.platform.api_gateway.engine.api_gateway_engine.api_request_log_service.record")
+def test_api_gateway_engine_success(mock_record: MagicMock, _mock_guard: MagicMock) -> None:
     from app.modules.platform.api_gateway.engine.api_gateway_engine import api_gateway_engine
 
-    ctx = MagicMock(org_id="org-1", api_key_id="k1", api_key_scopes=["admin"], attrs={})
+    ctx = MagicMock(
+        org_id="11111111-1111-4111-8111-111111111111",
+        api_key_id="k1",
+        api_key_scopes=["api.keys.manage"],
+        attrs={},
+    )
     out = api_gateway_engine.process_external_request(
         ctx,
         action="api.key.create",
@@ -136,7 +148,8 @@ def test_api_gateway_engine_success(mock_log: MagicMock, _mock_guard: MagicMock)
         handler=lambda: {"ok": True},
     )
     assert out["ok"] is True
-    mock_log.record.assert_called_once()
+    mock_record.assert_called_once()
+
 
 
 @pytest.mark.parametrize(
@@ -329,7 +342,7 @@ def test_gateway_access_enforce_raises_on_deny() -> None:
     from app.modules.platform.api_gateway.security.gateway_access import enforce_gateway_action
 
     ctx = MagicMock(
-        org_id="o",
+        org_id="11111111-1111-4111-8111-111111111111",
         user_id="u",
         roles=["viewer"],
         auth_method="api_key",
@@ -337,10 +350,13 @@ def test_gateway_access_enforce_raises_on_deny() -> None:
         permissions=[],
         attrs={},
     )
-    with patch("app.modules.platform.api_gateway.security.gateway_access.evaluate_access") as mock_eval:
+    with (
+        patch("app.modules.platform.api_gateway.security.gateway_access.enforce_billing"),
+        patch("app.modules.platform.api_gateway.security.gateway_access.evaluate_access") as mock_eval,
+    ):
         mock_eval.return_value = MagicMock(allowed=False, reason="denied")
         with pytest.raises(HTTPException) as exc:
-            enforce_gateway_action(ctx, action="api.key.create", required_scopes=["admin"])
+            enforce_gateway_action(ctx, action="api.key.create", required_scopes=["api.keys.manage"])
         assert exc.value.status_code == 403
 
 
@@ -349,7 +365,7 @@ def test_gateway_access_scope_violation_before_policy() -> None:
     from app.modules.platform.api_gateway.security.gateway_access import enforce_gateway_action
 
     ctx = MagicMock(
-        org_id="o",
+        org_id="11111111-1111-4111-8111-111111111111",
         user_id="u",
         roles=[],
         auth_method="api_key",
@@ -357,9 +373,10 @@ def test_gateway_access_scope_violation_before_policy() -> None:
         permissions=[],
         attrs={},
     )
-    with pytest.raises(HTTPException) as exc:
-        enforce_gateway_action(ctx, action="x", required_scopes=["admin"])
-    assert exc.value.status_code == 403
+    with patch("app.modules.platform.api_gateway.security.gateway_access.enforce_billing"):
+        with pytest.raises(HTTPException) as exc:
+            enforce_gateway_action(ctx, action="x", required_scopes=["api.keys.manage"])
+        assert exc.value.status_code == 403
 
 
 def test_tally_connector_health() -> None:
@@ -383,13 +400,15 @@ def test_sap_connector_export() -> None:
 
 
 def test_m36_doc_placeholder() -> None:
-    doc = _BACKEND / "ERP_MODULES" / "M36_api_platform.md"
+    docs = Path(__file__).resolve().parents[8] / "docs"
+    doc = docs / "ERP_MODULES" / "M36_api_platform.md"
+    if not doc.is_file():
+        doc = _BACKEND / "ERP_MODULES" / "M36_api_platform.md"
     assert doc.exists()
 
 
-def test_erp_master_map_m36() -> None:
-    text = (_BACKEND / "ERP_MASTER_MODULE_MAP.md").read_text(encoding="utf-8")
-    assert "M36" in text
+def test_erp_master_map_m36(erp_master_module_map: str) -> None:
+    assert "M36" in erp_master_module_map
 
 
 def test_api_keys_route_paths() -> None:

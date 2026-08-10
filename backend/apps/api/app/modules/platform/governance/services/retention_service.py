@@ -45,12 +45,12 @@ class RetentionService:
                         cur.execute(
                             """
                             UPDATE audit.audit_logs al
-                            SET metadata = COALESCE(al.metadata, '{}'::jsonb) || '{"archived": true}'::jsonb
+                            SET payload_jsonb = COALESCE(al.payload_jsonb, '{}'::jsonb) || '{"archived": true}'::jsonb
                             FROM (
                                 SELECT id FROM audit.audit_logs
                                 WHERE org_id = %s::uuid
-                                  AND created_at < NOW() - (%s || ' years')::interval
-                                  AND COALESCE(metadata->>'archived', 'false') <> 'true'
+                                  AND timestamp < NOW() - (%s || ' years')::interval
+                                  AND COALESCE(payload_jsonb->>'archived', 'false') <> 'true'
                                 LIMIT %s
                             ) batch
                             WHERE al.id = batch.id
@@ -62,7 +62,39 @@ class RetentionService:
             log_event("governance.retention.archival_failed", org_id=org_id, error=str(exc))
             return {"status": "error", "detail": str(exc), "archived": 0}
         log_event("governance.retention.archival_completed", org_id=org_id, archived=archived, resource_type=resource_type)
-        return {"status": "completed", "archived": archived, "resource_type": resource_type, "retain_years": retain_years}
+        result = {"status": "completed", "archived": archived, "resource_type": resource_type, "retain_years": retain_years}
+        result.update(self._run_physical_archival(org_id, retain_years=retain_years))
+        return result
+
+    def _run_physical_archival(self, org_id: str, *, retain_years: int) -> dict:
+        """Move archived rows to archive tables when SQL functions exist."""
+        moved_audit = 0
+        moved_ledger = 0
+        try:
+            with get_db_conn() as conn:
+                set_rls_org(conn, org_id)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT audit.archive_audit_logs_before(NOW() - (%s || ' years')::interval) AS moved",
+                        (str(retain_years),),
+                    )
+                    row = cur.fetchone()
+                    moved_audit = int((row or {}).get("moved") or 0)
+        except Exception as exc:
+            log_event("governance.retention.audit_archive_failed", org_id=org_id, error=str(exc))
+        try:
+            with get_db_conn() as conn:
+                set_rls_org(conn, org_id)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT erp.archive_ledger_entries_before((CURRENT_DATE - (%s || ' years')::interval)::date) AS moved",
+                        (str(retain_years + 7),),
+                    )
+                    row = cur.fetchone()
+                    moved_ledger = int((row or {}).get("moved") or 0)
+        except Exception as exc:
+            log_event("governance.retention.ledger_archive_failed", org_id=org_id, error=str(exc))
+        return {"moved_audit_logs": moved_audit, "moved_ledger_entries": moved_ledger}
 
 
 retention_service = RetentionService()

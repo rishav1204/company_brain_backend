@@ -64,6 +64,11 @@ def _is_public_path(path: str) -> bool:
     return False
 
 
+def _is_sse_stream_path(path: str) -> bool:
+    normalized = path.rstrip("/")
+    return "/realtime/" in normalized or normalized.endswith("/events/stream")
+
+
 class RequestMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # Always allow CORS preflight to pass through (CORSMiddleware will handle it).
@@ -80,9 +85,9 @@ class RequestMiddleware(BaseHTTPMiddleware):
                 if cookie_token and str(cookie_token).strip():
                     authorization = f"Bearer {str(cookie_token).strip()}"
             if not authorization.lower().startswith("bearer "):
-                token = request.query_params.get("access_token") or request.query_params.get("token")
-                if token and str(token).strip():
-                    authorization = f"Bearer {str(token).strip()}"
+                sse_token = request.headers.get("x-sse-token") or request.headers.get("X-SSE-Token")
+                if sse_token and _is_sse_stream_path(request.url.path):
+                    org_id = "token-org-scope"
             if authorization.lower().startswith("bearer "):
                 org_id = "token-org-scope"
         if not org_id:

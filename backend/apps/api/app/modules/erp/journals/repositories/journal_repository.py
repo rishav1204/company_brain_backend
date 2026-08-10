@@ -25,6 +25,7 @@ class JournalRepository:
         exchange_rate: float,
         created_by: str | None,
         company_id: str | None = None,
+        branch_id: str | None = None,
         idempotency_key: str | None = None,
         ai_confidence: dict | None = None,
     ) -> dict:
@@ -35,12 +36,12 @@ class JournalRepository:
                 cur.execute(
                     """
                     INSERT INTO erp.journals (
-                      id, org_id, company_id, journal_number, journal_type, journal_status,
+                      id, org_id, company_id, branch_id, journal_number, journal_type, journal_status,
                       posting_date, description, source_type, source_id,
                       currency_code, exchange_rate, created_by, idempotency_key, ai_confidence
                     )
                     VALUES (
-                      %s::uuid, %s::uuid, %s::uuid, %s, %s, 'draft',
+                      %s::uuid, %s::uuid, %s::uuid, %s::uuid, %s, %s, 'draft',
                       %s::date, %s, %s, %s::uuid,
                       %s, %s::numeric, %s::uuid, %s, %s::jsonb
                     )
@@ -53,6 +54,7 @@ class JournalRepository:
                         jid,
                         org_id,
                         company_id,
+                        branch_id,
                         journal_number,
                         journal_type,
                         posting_date,
@@ -167,6 +169,7 @@ class JournalRepository:
         journal_status: str | None = None,
         journal_type: str | None = None,
         company_id: str | None = None,
+        branch_ids: list[str] | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -183,6 +186,9 @@ class JournalRepository:
         if company_id:
             where.append("company_id = %s::uuid")
             params.append(company_id)
+        if branch_ids:
+            where.append("(branch_id IS NULL OR branch_id::text = ANY(%s))")
+            params.append([str(b) for b in branch_ids])
         sql = f"""
             SELECT id::text, journal_number, journal_type, journal_status,
                    posting_date::text, description, source_type, source_id::text,

@@ -8,7 +8,7 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from migration_utils import applied_versions, checksum, ensure_schema_migrations, plan_migrations
+from migration_utils import applied_versions, checksum, ensure_schema_migrations, is_seed_migration_skipped_in_prod, plan_migrations
 
 
 def run(dsn: str, migrations_dir: str, dry_run: bool = False) -> int:
@@ -28,6 +28,9 @@ def run(dsn: str, migrations_dir: str, dry_run: bool = False) -> int:
                     print(f"  pending: {migration.name}")
                 return 0
             for migration in pending:
+                if is_seed_migration_skipped_in_prod(migration.name):
+                    print(f"Skipping seed migration in prod: {migration.name}")
+                    continue
                 sql = migration.read_text(encoding="utf-8")
                 version = migration.name
                 cur.execute(sql)

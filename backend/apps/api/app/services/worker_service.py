@@ -1,3 +1,6 @@
+import os
+import socket
+
 from app.core.config import settings
 from app.modules.platform.events.queues.queue_manager import queue_manager
 from app.modules.platform.events.services.consumer_idempotency import consumer_idempotency
@@ -6,6 +9,14 @@ from app.services.event_consumers import consume_event
 from app.services.event_topology import queue_groups
 from app.services.logger import log_event
 from app.services.redis_queue_service import redis_queue_service
+
+# Ensure ERP ACL ports/allowlists exist even without API process
+try:
+    from app.modules.finance_os.bridges.erp_command_bridge.bootstrap import bootstrap_wave1_boundaries
+
+    bootstrap_wave1_boundaries()
+except Exception:
+    pass
 
 
 def _queues_for_worker() -> list[str]:
@@ -19,67 +30,118 @@ def _queues_for_worker() -> list[str]:
             return list(selected)
     return list(groups.values())
 
+_CONSUMER_NAME = f"worker:{socket.gethostname()}:{os.getpid()}"
+
 
 def _process_queue(queue: str) -> dict:
-    claim = queue_manager.claim_next(queue=queue)
-    status = claim.status
-    if status != "claimed" or not claim.envelope:
-        return {"status": status, "detail": claim.detail}
+    batch_size = int(getattr(settings, "worker_stream_batch_size", 10))
+    # Non-blocking: worker walks ~30 queues per loop. block_ms>0 multiplies lag.
+    claims = queue_manager.claim_batch(
+        queue, consumer_name=_CONSUMER_NAME, count=batch_size, block_ms=0
+    )
+    processed = 0
+    retries = 0
+    dlq = 0
+    deduped = 0
+    delayed = 0
+    last_detail = None
+    for claim in claims:
+        status = claim.status
+        last_detail = claim.detail
+        if status in {"empty", "skipped"}:
+            break
+        if status == "deduped":
+            deduped += 1
+            continue
+        if status == "delayed":
+            delayed += 1
+            continue
+        if status != "claimed" or not claim.envelope:
+            break
 
-    envelope = claim.envelope
-    org_id = str(envelope.get("org_id", ""))
-    event_id = str(envelope.get("event_id", ""))
-    event_type = str(envelope.get("event_type", ""))
+        envelope = claim.envelope
+        org_id = str(envelope.get("org_id", ""))
+        event_id = str(envelope.get("event_id", ""))
+        event_type = str(envelope.get("event_type", ""))
+        entity_id = str(envelope.get("entity_id") or (envelope.get("payload") or {}).get("entity_id") or "").strip()
+        entity_type = str(envelope.get("entity_type") or (envelope.get("payload") or {}).get("entity_type") or "").strip()
 
-    from app.modules.platform.events.repositories.queue_repository import queue_repository
+        from app.modules.platform.events.repositories.queue_repository import queue_repository
 
-    if org_id and event_id:
+        if org_id and event_id:
+            try:
+                queue_repository.update_job_by_event(org_id, event_id, status="processing")
+            except Exception:
+                pass
+
+        if consumer_idempotency.already_processed(org_id, event_id, queue):
+            queue_manager.complete_claim(queue, envelope, claim.claim_token)
+            deduped += 1
+            continue
+
         try:
-            queue_repository.update_job_by_event(org_id, event_id, status="processing")
-        except Exception:
-            pass
+            from app.modules.platform.events.middleware.event_trace_middleware import trace_event_processing
+            from app.modules.platform.events.middleware.event_validation_middleware import validate_incoming_event
 
-    if consumer_idempotency.already_processed(org_id, event_id, queue):
-        queue_manager.complete_claim(queue, envelope, claim.claim_token)
-        return {"status": "deduped", "detail": "consumer_idempotent"}
+            from app.services.event_org_validation import require_org_id
+            from app.core.redis_lock import redis_lock
 
-    try:
-        from app.modules.platform.events.middleware.event_trace_middleware import trace_event_processing
-        from app.modules.platform.events.middleware.event_validation_middleware import validate_incoming_event
-
-        from app.services.event_org_validation import require_org_id
-
-        validate_incoming_event(envelope, org_id=require_org_id(org_id, context="worker_consume"))
-        with trace_event_processing(event_type, queue):
-            consume_event(queue=queue, envelope=envelope)
-        consumer_idempotency.mark_processed(org_id, event_id, queue)
-        queue_manager.complete_claim(queue, envelope, claim.claim_token)
-        if org_id and event_id:
-            platform_event_service.mark_processed(org_id, event_id)
-            try:
-                queue_repository.update_job_by_event(org_id, event_id, status="completed")
-            except Exception:
-                pass
-        return {"status": "processed"}
-    except Exception as exc:
-        log_event("worker.consumer.error", queue=queue, error=str(exc), event_id=event_id)
-        if org_id and event_id:
-            try:
-                queue_repository.update_job_by_event(
-                    org_id, event_id, status="failed", error_detail=str(exc)[:500]
-                )
-            except Exception:
-                pass
-        result = queue_manager.fail_claim(queue, envelope, claim.claim_token, str(exc))
-        if result.status == "dlq" and org_id and event_id:
-            try:
-                queue_repository.update_job_by_event(org_id, event_id, status="dlq", error_detail=str(exc)[:500])
-            except Exception:
-                pass
-        return {"status": result.status, "detail": result.detail}
+            validate_incoming_event(envelope, org_id=require_org_id(org_id, context="worker_consume"))
+            with trace_event_processing(event_type, queue):
+                if entity_id and entity_type and (
+                    event_type.startswith(("erp.", "workflow.", "payment.", "journal.", "invoice."))
+                ):
+                    with redis_lock(
+                        f"event:entity:{org_id}:{entity_type}:{entity_id}", ttl_seconds=60, wait_seconds=5.0
+                    ):
+                        consume_event(queue=queue, envelope=envelope)
+                else:
+                    consume_event(queue=queue, envelope=envelope)
+            consumer_idempotency.mark_processed(org_id, event_id, queue)
+            queue_manager.complete_claim(queue, envelope, claim.claim_token)
+            if org_id and event_id:
+                platform_event_service.mark_processed(org_id, event_id)
+                try:
+                    queue_repository.update_job_by_event(org_id, event_id, status="completed")
+                except Exception:
+                    pass
+            processed += 1
+        except Exception as exc:
+            log_event("worker.consumer.error", queue=queue, error=str(exc), event_id=event_id)
+            if org_id and event_id:
+                try:
+                    queue_repository.update_job_by_event(
+                        org_id, event_id, status="failed", error_detail=str(exc)[:500]
+                    )
+                except Exception:
+                    pass
+            result = queue_manager.fail_claim(queue, envelope, claim.claim_token, str(exc))
+            if result.status == "retry":
+                retries += 1
+            if result.status == "dlq":
+                dlq += 1
+            if result.status == "dlq" and org_id and event_id:
+                try:
+                    queue_repository.update_job_by_event(org_id, event_id, status="dlq", error_detail=str(exc)[:500])
+                except Exception:
+                    pass
+    if processed:
+        return {"status": "processed", "processed": processed, "deduped": deduped, "retries": retries, "dlq": dlq}
+    if deduped:
+        return {"status": "deduped", "deduped": deduped}
+    if delayed:
+        return {"status": "delayed", "delayed": delayed}
+    return {"status": claims[0].status if claims else "empty", "detail": last_detail}
 
 
 def run_queue_worker_once() -> dict:
+    # RQ-19: drain outbox once per loop, not once per queue.
+    try:
+        from app.modules.platform.events.services.outbox_publisher import outbox_publisher
+
+        outbox_publisher.publish_once(limit=int(getattr(settings, "outbox_publish_batch_size", 200)))
+    except Exception as exc:
+        log_event("worker.outbox_drain_failed", error=str(exc))
     result = {"status": "skipped", "detail": "legacy_redis_queue_disabled"}
     if settings.legacy_redis_queue_enabled:
         result = redis_queue_service.process_next()

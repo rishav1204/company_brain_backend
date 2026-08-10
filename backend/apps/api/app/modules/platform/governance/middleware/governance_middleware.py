@@ -19,12 +19,30 @@ class GovernanceEnforcementMiddleware(BaseHTTPMiddleware):
         action = request.headers.get("x-governance-action")
         if not action or request.method not in {"POST", "PUT", "PATCH"}:
             return await call_next(request)
-        org_id = request.headers.get("x-org-id")
-        user_id = request.headers.get("x-user-id")
-        roles_header = request.headers.get("x-roles", "")
+
+        org_id = None
+        user_id = None
+        roles: list[str] = []
+        authorization = request.headers.get("authorization", "")
+        if authorization.lower().startswith("bearer "):
+            try:
+                from app.services.jwt_auth import decode_bearer_token
+
+                principal = decode_bearer_token(authorization.split(" ", 1)[1].strip())
+                org_id = principal.org_id
+                user_id = principal.user_id
+                roles = principal.roles
+            except Exception:
+                pass
+        if not org_id or not user_id:
+            if settings.app_env.lower() == "prod":
+                return JSONResponse(status_code=401, content={"detail": "Bearer auth required for governance action"})
+            org_id = request.headers.get("x-org-id")
+            user_id = request.headers.get("x-user-id")
+            roles_header = request.headers.get("x-roles", "")
+            roles = [r.strip() for r in roles_header.split(",") if r.strip()]
         if not org_id or not user_id:
             return await call_next(request)
-        roles = [r.strip() for r in roles_header.split(",") if r.strip()]
         created_by = request.headers.get("x-created-by") or request.headers.get("x-governance-creator")
         try:
             result = governance_policy_service.evaluate(

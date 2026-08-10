@@ -30,7 +30,7 @@ def create_api_key(request: ApiKeyCreateRequest, context=Depends(build_request_c
         method="POST",
         path="/platform/api-keys",
         handler=handler,
-        required_scopes=["api.keys.manage", "admin"],
+        required_scopes=["api.keys.manage"],
     )
 
 
@@ -52,5 +52,5 @@ def revoke_api_key(api_key_id: str, context=Depends(build_request_context)) -> d
         method="DELETE",
         path=f"/platform/api-keys/{api_key_id}",
         handler=handler,
-        required_scopes=["api.keys.manage", "admin"],
+        required_scopes=["api.keys.manage"],
     )

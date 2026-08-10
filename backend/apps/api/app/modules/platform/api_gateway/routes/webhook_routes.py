@@ -27,7 +27,7 @@ def create_webhook(request: WebhookCreateRequest, context=Depends(build_request_
         method="POST",
         path="/platform/webhooks",
         handler=handler,
-        required_scopes=["webhooks.manage", "admin"],
+        required_scopes=["webhooks.manage"],
     )
 
 
@@ -49,5 +49,5 @@ def delete_webhook(subscription_id: str, context=Depends(build_request_context))
         method="DELETE",
         path=f"/platform/webhooks/{subscription_id}",
         handler=handler,
-        required_scopes=["webhooks.manage", "admin"],
+        required_scopes=["webhooks.manage"],
     )

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.api.deps import build_request_context
+from app.modules.core.iam.middleware.permission_guard import require_permission
 from app.core.config import settings
 from app.services.embedding_worker_service import ingest_document_for_embedding
 from app.services.identity_resolution_service import resolve_identity
@@ -149,7 +150,9 @@ def identity_resolve(request: IdentityResolveRequest, context=Depends(build_requ
 
 
 @router.post("/ingestion/workers/webhook/consume")
-def webhook_consume(connector: str, payload: dict, context=Depends(build_request_context)) -> dict:
+def webhook_consume(connector: str, payload: dict, context=Depends(require_permission("ops.worker.manage"))) -> dict:
+    if not settings.enable_worker_routes:
+        raise HTTPException(status_code=403, detail="Webhook worker routes are disabled")
     worker_result = run_queue_worker_once()
     audit_repo.create_log(
         org_id=context.org_id,

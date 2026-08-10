@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from app.modules.erp.accounts_payable.repositories.invoice_repository import invoice_repository as ap_invoice_repo
-from app.modules.erp.accounts_receivable.repositories.invoice_repository import ar_invoice_repository
-from app.modules.erp.compliance.repositories.compliance_repository import compliance_obligation_repository
-from app.modules.erp.treasury.repositories.cash_position_repository import cash_position_repository
+from app.modules.erp.query_services import ap_queries, ar_queries, compliance_queries, treasury_queries
 from app.modules.finance_os.forecasting.engine.cash_forecast_engine import forecast_cash
 from app.modules.finance_os.forecasting.engine.collections_engine import forecast_collections
 from app.modules.finance_os.forecasting.engine.expense_engine import forecast_expenses
@@ -54,9 +51,9 @@ def _run_refresh_inner(org_id: str, *, as_of_date: str | None = None, horizons: 
     if not horizons:
         horizons = SUPPORTED_HORIZONS
 
-    outstanding_ar = ar_invoice_repository.list_outstanding(org_id)
-    outstanding_ap = ap_invoice_repo.list_outstanding(org_id)
-    obligations = compliance_obligation_repository.list(
+    outstanding_ar = ar_queries.list_outstanding_invoices(org_id)
+    outstanding_ap = ap_queries.list_outstanding_invoices(org_id)
+    obligations = compliance_queries.list_obligations(
         org_id,
         from_date=as_of.isoformat(),
         to_date=(as_of + timedelta(days=max(horizons))).isoformat(),
@@ -64,7 +61,7 @@ def _run_refresh_inner(org_id: str, *, as_of_date: str | None = None, horizons: 
     )
 
     # Cash: sum latest closing across accounts (simple proxy)
-    cash_positions = cash_position_repository.list_history(org_id, limit=30)
+    cash_positions = treasury_queries.list_cash_history(org_id, limit=30)
     starting_cash = 0.0
     for row in cash_positions[:10]:
         try:

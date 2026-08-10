@@ -13,7 +13,7 @@ def process_ingestion_job(envelope: dict) -> dict:
     event_type = str(envelope.get("event_type", ""))
     payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
     source_type = str(payload.get("source_type") or "")
-    log_event("integrations.ingestion.job", org_id=org_id, event_type=event_type)
+    log_event("integrations.ingestion.job", org_id=org_id, consumed_event_type=event_type)
     if source_type == "email":
         # Minimal pipeline: create document placeholders from provided attachments.
         try:

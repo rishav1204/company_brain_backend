@@ -1,9 +1,9 @@
 from datetime import date
 
-from app.modules.erp.compliance.ai.compliance_assistant import answer_compliance_question
-from app.modules.erp.compliance.ai.filing_advisor import filing_readiness_score
-from app.modules.erp.compliance.ai.notice_predictor import predict_notice_risk
-from app.modules.erp.compliance.ai.risk_detector import compute_risk_score, detect_risks
+from app.modules.finance_os.domain_intelligence.compliance.compliance_assistant import answer_compliance_question
+from app.modules.finance_os.domain_intelligence.compliance.filing_advisor import filing_readiness_score
+from app.modules.finance_os.domain_intelligence.compliance.notice_predictor import predict_notice_risk
+from app.modules.finance_os.domain_intelligence.compliance.risk_detector import compute_risk_score, detect_risks
 from app.modules.erp.compliance.engine.compliance_engine import calendar_color, priority_for_status, refresh_status
 from app.modules.erp.compliance.engine.due_date_engine import compute_due_date, periods_for_generation
 from app.modules.erp.compliance.engine.escalation_engine import next_escalation_level, should_escalate
@@ -122,10 +122,18 @@ def test_should_not_escalate_completed() -> None:
     assert not should_escalate(status="completed", due_date=date.today() - __import__("datetime").timedelta(days=2), today=date.today())
 
 
-def test_penalty_stub_zero() -> None:
-    est = estimate_penalty(obligation={"id": "x", "status": "overdue"})
-    assert est["penalty_amount"] == 0.0
-    assert est["formula"] == "stub"
+def test_penalty_overdue_gst() -> None:
+    est = estimate_penalty(
+        obligation={
+            "id": "x",
+            "status": "overdue",
+            "compliance_code": "GSTR3B",
+            "due_date": (date.today() - __import__("datetime").timedelta(days=10)).isoformat(),
+            "tax_liability": 10000,
+        }
+    )
+    assert est["penalty_amount"] > 0
+    assert est["formula"].startswith("gst_")
 
 
 def test_generation_periods_default() -> None:

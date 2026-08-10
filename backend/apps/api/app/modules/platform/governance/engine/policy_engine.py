@@ -173,27 +173,31 @@ def _finalize(
 ) -> PolicyEvaluationResult:
     if dry_run:
         return result
-    row = policy_decision_repository.record(
-        org_id,
-        action=action,
-        decision=result.decision,
-        object_type=object_type,
-        object_id=object_id,
-        policy_code=result.policy_code,
-        risk_level=result.risk_level,
-        approval_chain=result.approval_chain,
-        input_context=attrs,
-        reason=result.reason,
-        actor_id=actor_user_id,
-    )
-    result.decision_id = row.get("id")
-    if result.allowed:
-        policy_events.emit_policy_approved(org_id, action=action, decision_id=result.decision_id or "")
-    elif result.decision == "override_required":
-        policy_events.emit_override_required(org_id, action=action, reason=result.reason or "")
-    else:
-        policy_events.emit_policy_denied(org_id, action=action, reason=result.reason or "")
-    if result.risk_level in {"HIGH", "CRITICAL"}:
-        policy_events.emit_risk_detected(org_id, action=action, risk_level=result.risk_level)
-    policy_events.emit_policy_evaluated(org_id, action=action, decision=result.decision, decision_id=result.decision_id)
+    try:
+        row = policy_decision_repository.record(
+            org_id,
+            action=action,
+            decision=result.decision,
+            object_type=object_type,
+            object_id=object_id,
+            policy_code=result.policy_code,
+            risk_level=result.risk_level,
+            approval_chain=result.approval_chain,
+            input_context=attrs,
+            reason=result.reason,
+            actor_id=actor_user_id,
+        )
+        result.decision_id = row.get("id")
+        if result.allowed:
+            policy_events.emit_policy_approved(org_id, action=action, decision_id=result.decision_id or "")
+        elif result.decision == "override_required":
+            policy_events.emit_override_required(org_id, action=action, reason=result.reason or "")
+        else:
+            policy_events.emit_policy_denied(org_id, action=action, reason=result.reason or "")
+        if result.risk_level in {"HIGH", "CRITICAL"}:
+            policy_events.emit_risk_detected(org_id, action=action, risk_level=result.risk_level)
+        policy_events.emit_policy_evaluated(org_id, action=action, decision=result.decision, decision_id=result.decision_id)
+    except Exception:
+        # Decision persistence/events must not hard-fail non-UUID or transient DB issues.
+        pass
     return result

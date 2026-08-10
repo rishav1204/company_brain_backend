@@ -80,12 +80,14 @@ def test_bootstrap_script_exists() -> None:
 
 
 def test_m33_docs_exist() -> None:
-    doc = Path(__file__).resolve().parents[7] / "ERP_MODULES" / "M33_audit_explorer.md"
+    docs = Path(__file__).resolve().parents[8] / "docs"
+    doc = docs / "ERP_MODULES" / "M33_audit_explorer.md"
+    if not doc.is_file():
+        doc = Path(__file__).resolve().parents[7] / "ERP_MODULES" / "M33_audit_explorer.md"
     assert doc.exists()
     assert "Golden rule" in doc.read_text(encoding="utf-8")
 
 
-def test_master_map_m33_done() -> None:
-    doc = Path(__file__).resolve().parents[7] / "ERP_MASTER_MODULE_MAP.md"
-    assert "M33 | Audit Explorer" in doc.read_text(encoding="utf-8")
-    assert "| M33 | Audit Explorer | 7 | 2 | Done |" in doc.read_text(encoding="utf-8")
+def test_master_map_m33_done(erp_master_module_map: str) -> None:
+    assert "M33 | Audit Explorer" in erp_master_module_map
+    assert "| M33 | Audit Explorer | 7 | 2 | Done |" in erp_master_module_map

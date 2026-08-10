@@ -6,6 +6,7 @@ from app.modules.platform.integrations.routes import (
     inbound_webhook_routes,
     ingestion_routes,
     registry_routes,
+    connector_uat_routes,
     ops_routes,
     sync_routes,
     webhook_routes,
@@ -19,6 +20,7 @@ integrations_router.include_router(sync_routes.router)
 integrations_router.include_router(api_key_routes.router)
 integrations_router.include_router(ingestion_routes.router)
 integrations_router.include_router(registry_routes.router)
+integrations_router.include_router(connector_uat_routes.router)
 integrations_router.include_router(inbound_webhook_routes.router)
 integrations_router.include_router(ops_routes.router)
 integrations_router.include_router(webhook_delivery_routes.router)

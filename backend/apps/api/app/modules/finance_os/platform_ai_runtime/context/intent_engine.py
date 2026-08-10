@@ -89,6 +89,8 @@ def _llm_classify(message: str) -> IntentResult | None:
             ),
             user_prompt=f"User message: {message}",
             estimated_tokens=400,
+            usage_operation_code="m38_intent",
+            execution_class="intent_classify",
         )
         if not isinstance(raw, dict):
             return None

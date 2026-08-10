@@ -15,6 +15,7 @@ class ErpToolRegistry:
         self._compensation: dict[tuple[str, str], str] = {}
         self._read_only: set[tuple[str, str]] = set()
         self._policy_actions: dict[tuple[str, str], str] = {}
+        self._security_meta: dict[tuple[str, str], dict] = {}
 
     def register(
         self,
@@ -25,6 +26,7 @@ class ErpToolRegistry:
         read_only: bool = False,
         compensation: str | None = None,
         policy_action: str | None = None,
+        security_meta: dict | None = None,
     ) -> None:
         key = (tool.lower(), method.lower())
         self._handlers[key] = handler
@@ -34,6 +36,8 @@ class ErpToolRegistry:
             self._compensation[key] = compensation
         if policy_action:
             self._policy_actions[key] = policy_action
+        if security_meta:
+            self._security_meta[key] = dict(security_meta)
 
     def is_read_only(self, tool: str, method: str) -> bool:
         return (tool.lower(), method.lower()) in self._read_only
@@ -44,6 +48,9 @@ class ErpToolRegistry:
     def policy_action_for(self, tool: str, method: str) -> str | None:
         return self._policy_actions.get((tool.lower(), method.lower()))
 
+    def security_meta_for(self, tool: str, method: str) -> dict | None:
+        return self._security_meta.get((tool.lower(), method.lower()))
+
     def list_tools(self) -> list[dict]:
         return [
             {
@@ -52,6 +59,7 @@ class ErpToolRegistry:
                 "read_only": k in self._read_only,
                 "compensation": self._compensation.get(k),
                 "policy_action": self._policy_actions.get(k),
+                **(self._security_meta.get(k) or {}),
             }
             for k in sorted(self._handlers.keys())
         ]
@@ -71,29 +79,6 @@ class ErpToolRegistry:
         if is_forbidden_action(tool, method):
             return {"status": "error", "detail": "forbidden_action", "target": tool}
         key = (tool.lower(), method.lower())
-        policy_action = self._policy_actions.get(key)
-        if policy_action and key not in self._read_only:
-            from app.modules.core.iam.services.access_control import evaluate_access
-            from app.services.object_context import ObjectContext
-
-            amount = params.get("amount") or params.get("total_amount")
-            branch_id = params.get("branch_id")
-            decision = evaluate_access(
-                org_id=org_id,
-                user_id=actor_id,
-                roles=roles or [],
-                action=policy_action,
-                object_context=ObjectContext(
-                    object_type=tool,
-                    object_id=str(params.get("entity_id") or params.get("id") or ""),
-                    amount=float(amount) if amount is not None else None,
-                    branch_id=str(branch_id) if branch_id else None,
-                ),
-                attrs=attrs,
-                human_approved=human_approved,
-            )
-            if not decision.allowed:
-                return {"status": "error", "detail": decision.reason or "policy_denied", "target": tool}
         handler = self._handlers.get(key)
         if not handler:
             if tool in {"memory", "graph", "workflow", "email", "slack", "jira", "linear"}:

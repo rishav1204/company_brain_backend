@@ -18,6 +18,7 @@ class PaymentRepository:
         amount: float,
         bank_account_id: str | None = None,
         company_id: str | None = None,
+        branch_id: str | None = None,
         created_by: str | None = None,
         metadata: dict | None = None,
     ) -> dict:
@@ -28,14 +29,14 @@ class PaymentRepository:
                 cur.execute(
                     """
                     INSERT INTO erp.ap_payments (
-                      id, org_id, company_id, vendor_id, payment_reference, payment_date,
+                      id, org_id, company_id, branch_id, vendor_id, payment_reference, payment_date,
                       amount, bank_account_id, created_by, metadata
                     )
-                    VALUES (%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::numeric,%s::uuid,%s::uuid,%s::jsonb)
+                    VALUES (%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s::date,%s::numeric,%s::uuid,%s::uuid,%s::jsonb)
                     RETURNING id::text, payment_reference, payment_date::text, amount, status, vendor_id::text
                     """,
                     (
-                        pid, org_id, company_id, vendor_id, payment_reference,
+                        pid, org_id, company_id, branch_id, vendor_id, payment_reference,
                         payment_date, amount, bank_account_id, created_by, Json(metadata or {}),
                     ),
                 )
@@ -154,13 +155,16 @@ class PaymentRepository:
                 )
                 return dict(cur.fetchone() or {"id": aid})
 
-    def list(self, org_id: str, *, status: str | None = None, limit: int = 100) -> list[dict]:
+    def list(self, org_id: str, *, status: str | None = None, branch_ids: list[str] | None = None, limit: int = 100) -> list[dict]:
         limit = max(1, min(limit, 500))
         where = ["org_id = %s::uuid"]
         params: list = [org_id]
         if status:
             where.append("status = %s")
             params.append(status)
+        if branch_ids:
+            where.append("(branch_id IS NULL OR branch_id::text = ANY(%s))")
+            params.append([str(b) for b in branch_ids])
         params.append(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -172,6 +176,29 @@ class PaymentRepository:
                     FROM erp.ap_payments
                     WHERE {' AND '.join(where)}
                     ORDER BY payment_date DESC
+                    LIMIT %s
+                    """,
+                    tuple(params),
+                )
+                return [dict(r) for r in (cur.fetchall() or [])]
+
+    def list_allocations(self, org_id: str, *, payment_id: str | None = None, limit: int = 500) -> list[dict]:
+        limit = max(1, min(limit, 2000))
+        where = ["org_id = %s::uuid"]
+        params: list = [org_id]
+        if payment_id:
+            where.append("payment_id = %s::uuid")
+            params.append(payment_id)
+        params.append(limit)
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT id::text, payment_id::text, invoice_id::text, amount
+                    FROM erp.ap_payment_allocations
+                    WHERE {' AND '.join(where)}
+                    ORDER BY created_at DESC
                     LIMIT %s
                     """,
                     tuple(params),

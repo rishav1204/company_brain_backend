@@ -15,9 +15,9 @@ from app.modules.erp.inventory.repositories.movement_repository import (
     movement_repository,
 )
 from app.modules.erp.inventory.validators.stock_validator import validate_issue, validate_receipt
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
 
 
 class InventoryService:
@@ -46,6 +46,7 @@ class InventoryService:
         actor_id: str | None,
         post_journal: bool,
         idempotency_suffix: str,
+        grn_link: dict | None = None,
     ) -> dict:
         validate_receipt(quantity=quantity, unit_cost=unit_cost)
         item = item_repository.get(org_id, item_id=item_id)
@@ -61,69 +62,110 @@ class InventoryService:
         ensure_posting_allowed(org_id, movement_date)
 
         journal_id = None
-        if post_journal and total_cost > 0:
-            lines = build_receipt_journal_lines(
-                org_id,
-                total_cost=total_cost,
-                inventory_account_id=item.get("inventory_account_id"),
-            )
-            journal = journal_service.create_draft(
-                org_id,
-                created_by=actor_id,
-                journal_type="receipt",
-                posting_date=movement_date,
-                description=f"Inventory receipt {item.get('item_code')}",
-                source_type="goods_receipt" if reference_type == "goods_receipt" else "inventory_receipt",
-                source_id=reference_id,
-                company_id=item.get("company_id"),
-                lines=lines,
-                idempotency_key=f"inv-receipt:{idempotency_suffix}",
-            )
-            journal_id = str(journal["journal"]["id"])
-            journal_approval_service.approve(org_id, journal_id=journal_id, approver_id=actor_id or "system", skip_maker_checker=True)
-            posting_orchestrator.post_journal(org_id, journal_id=journal_id, posted_by=actor_id or "system")
+        journal = None
+        post_result = None
+        movement = None
 
-        movement = movement_repository.create(
-            org_id,
-            item_id=item_id,
-            warehouse_id=warehouse_id,
-            movement_type="receipt",
-            quantity=quantity,
-            unit_cost=unit_cost,
-            total_cost=total_cost,
-            movement_date=movement_date,
-            reference_type=reference_type,
-            reference_id=reference_id,
-            journal_id=journal_id,
-            created_by=actor_id,
-        )
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            if post_journal and total_cost > 0:
+                lines = build_receipt_journal_lines(
+                    org_id,
+                    total_cost=total_cost,
+                    inventory_account_id=item.get("inventory_account_id"),
+                )
+                journal = create_draft_with_conn(
+                    conn,
+                    org_id,
+                    created_by=actor_id,
+                    journal_type="receipt",
+                    posting_date=movement_date,
+                    description=f"Inventory receipt {item.get('item_code')}",
+                    source_type="goods_receipt" if reference_type == "goods_receipt" else "inventory_receipt",
+                    source_id=reference_id,
+                    company_id=item.get("company_id"),
+                    lines=lines,
+                    idempotency_key=f"inv-receipt:{idempotency_suffix}",
+                )
+                journal_id = str(journal["journal"]["id"])
+                approve_with_conn(
+                    conn,
+                    org_id,
+                    journal_id=journal_id,
+                    approver_id=actor_id or "system",
+                    skip_maker_checker=True,
+                )
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn,
+                    org_id,
+                    journal_id=journal_id,
+                    posted_by=actor_id or "system",
+                    defer_side_effects=True,
+                )
 
-        if method == "fifo":
-            layer_repository.create(
+            movement = movement_repository.create_conn(
+                conn,
                 org_id,
                 item_id=item_id,
                 warehouse_id=warehouse_id,
-                movement_id=str(movement["id"]),
-                remaining_quantity=quantity,
+                movement_type="receipt",
+                quantity=quantity,
                 unit_cost=unit_cost,
-                receipt_date=movement_date,
-            )
-            new_qty = float(balance.get("quantity_on_hand") or 0) + quantity
-            new_value = float(balance.get("inventory_value") or 0) + total_cost
-            new_avg = float(balance.get("weighted_avg_cost") or 0)
-        else:
-            new_qty, new_value, new_avg = costing_service.receipt_average(
-                balance=balance, receipt_qty=quantity, unit_cost=unit_cost,
+                total_cost=total_cost,
+                movement_date=movement_date,
+                reference_type=reference_type,
+                reference_id=reference_id,
+                journal_id=journal_id,
+                created_by=actor_id,
             )
 
-        balance_repository.upsert(
-            org_id,
-            item_id=item_id,
-            warehouse_id=warehouse_id,
-            quantity_on_hand=new_qty,
-            inventory_value=new_value,
-            weighted_avg_cost=new_avg,
-        )
+            if method == "fifo":
+                layer_repository.create_conn(
+                    conn,
+                    org_id,
+                    item_id=item_id,
+                    warehouse_id=warehouse_id,
+                    movement_id=str(movement["id"]),
+                    remaining_quantity=quantity,
+                    unit_cost=unit_cost,
+                    receipt_date=movement_date,
+                )
+                new_qty = float(balance.get("quantity_on_hand") or 0) + quantity
+                new_value = float(balance.get("inventory_value") or 0) + total_cost
+                new_avg = float(balance.get("weighted_avg_cost") or 0)
+            else:
+                new_qty, new_value, new_avg = costing_service.receipt_average(
+                    balance=balance, receipt_qty=quantity, unit_cost=unit_cost,
+                )
+
+            balance_repository.upsert_conn(
+                conn,
+                org_id,
+                item_id=item_id,
+                warehouse_id=warehouse_id,
+                quantity_on_hand=new_qty,
+                inventory_value=new_value,
+                weighted_avg_cost=new_avg,
+            )
+
+            if grn_link:
+                grn_link_repository.create_conn(
+                    conn,
+                    org_id,
+                    goods_receipt_id=str(grn_link["goods_receipt_id"]),
+                    grn_item_id=str(grn_link["grn_item_id"]),
+                    movement_id=str(movement["id"]),
+                )
+
+        if post_journal and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=journal_id,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=actor_id or "system",
+            )
+
         emit_inventory_received(org_id, movement_id=str(movement["id"]), item_id=item_id, quantity=quantity)
         return movement
 
@@ -207,12 +249,7 @@ class InventoryService:
                 actor_id=actor_id,
                 post_journal=True,
                 idempotency_suffix=f"grn:{grn_item_id}",
-            )
-            grn_link_repository.create(
-                org_id,
-                goods_receipt_id=grn_id,
-                grn_item_id=grn_item_id,
-                movement_id=str(movement["id"]),
+                grn_link={"goods_receipt_id": grn_id, "grn_item_id": grn_item_id},
             )
             results.append(movement)
         return results

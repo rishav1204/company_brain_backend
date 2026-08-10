@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.modules.core.iam.services.access_control import evaluate_access
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
 from app.modules.erp.vouchers.constants import EDITABLE_STATUSES, POSTABLE_STATUSES, VOUCHER_TYPES
 from app.modules.erp.vouchers.events.voucher_events import (
     emit_voucher_approved,
@@ -98,8 +99,16 @@ class VoucherService:
         status: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        branch_ids: list[str] | None = None,
     ) -> list[dict]:
-        return voucher_repository.list(org_id, voucher_type=voucher_type, status=status, limit=limit, offset=offset)
+        return voucher_repository.list(
+            org_id,
+            voucher_type=voucher_type,
+            status=status,
+            limit=limit,
+            offset=offset,
+            branch_ids=branch_ids,
+        )
 
     def validate(self, org_id: str, *, voucher_id: str) -> dict:
         item = self.get(org_id, voucher_id=voucher_id)
@@ -152,6 +161,47 @@ class VoucherService:
         if not decision.allowed:
             raise ValueError(decision.reason or "Voucher approval denied")
 
+        gen = None
+        post_result = None
+        if auto_post:
+            with get_db_conn() as conn:
+                set_rls_org(conn, org_id)
+                voucher_repository.set_status_conn(
+                    conn, org_id, voucher_id=voucher_id, status="approved", approved_by=approver_id
+                )
+                gen = journal_generation_service.generate_with_conn(
+                    conn,
+                    org_id,
+                    voucher_id=voucher_id,
+                    approver_id=approver_id,
+                    generator_payload=generator_payload,
+                )
+                journal_id = str(gen["journal_id"])
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=journal_id, posted_by=approver_id, defer_side_effects=True
+                )
+                voucher_repository.set_status_conn(
+                    conn, org_id, voucher_id=voucher_id, status="posted", posted_by=approver_id
+                )
+            if gen and gen.get("journal"):
+                posting_orchestrator._emit_post_side_effects(
+                    org_id,
+                    journal_id=str(gen["journal_id"]),
+                    journal=gen["journal"]["journal"],
+                    batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                    posted_by=approver_id,
+                )
+            emit_voucher_approved(org_id, voucher_id)
+            self._audit(org_id, voucher_id=voucher_id, action="voucher.approved", actor_id=approver_id)
+            emit_voucher_posted(org_id, voucher_id, journal_id=str(gen["journal_id"]))
+            self._audit(org_id, voucher_id=voucher_id, action="voucher.posted", actor_id=approver_id)
+            result = {
+                "voucher": self.get(org_id, voucher_id=voucher_id),
+                "journal": {"voucher_id": voucher_id, "journal_id": gen["journal_id"], "status": "journal_generated"},
+                "post_result": post_result,
+            }
+            return result
+
         voucher_repository.set_status(org_id, voucher_id=voucher_id, status="approved", approved_by=approver_id)
         emit_voucher_approved(org_id, voucher_id)
         self._audit(org_id, voucher_id=voucher_id, action="voucher.approved", actor_id=approver_id)
@@ -163,8 +213,6 @@ class VoucherService:
             generator_payload=generator_payload,
         )
         result = {"voucher": self.get(org_id, voucher_id=voucher_id), "journal": gen}
-        if auto_post:
-            result["post_result"] = self.post(org_id, voucher_id=voucher_id, posted_by=approver_id)
         return result
 
     def generate_journal(
@@ -196,8 +244,26 @@ class VoucherService:
         if not journal_id:
             raise ValueError("Voucher has no linked journal")
 
-        post_result = posting_orchestrator.post_journal(org_id, journal_id=journal_id, posted_by=posted_by)
-        voucher_repository.set_status(org_id, voucher_id=voucher_id, status="posted", posted_by=posted_by)
+        post_result = None
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            post_result = posting_orchestrator.post_journal_with_conn(
+                conn, org_id, journal_id=journal_id, posted_by=posted_by, defer_side_effects=True
+            )
+            voucher_repository.set_status_conn(
+                conn, org_id, voucher_id=voucher_id, status="posted", posted_by=posted_by
+            )
+
+        from app.modules.erp.journals.repositories.journal_repository import journal_repository
+
+        journal_row = journal_repository.get(org_id, journal_id=journal_id) or {}
+        posting_orchestrator._emit_post_side_effects(
+            org_id,
+            journal_id=journal_id,
+            journal=journal_row,
+            batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+            posted_by=posted_by,
+        )
         emit_voucher_posted(org_id, voucher_id, journal_id=journal_id)
         self._audit(org_id, voucher_id=voucher_id, action="voucher.posted", actor_id=posted_by)
         return post_result
@@ -231,16 +297,16 @@ class VoucherService:
         return {"voucher": self.get(org_id, voucher_id=voucher_id), "reversal": rev}
 
     def create_from_extraction(self, org_id: str, *, extraction_id: str, created_by: str | None = None) -> dict:
-        from app.modules.finance_os.invoice_ai.repositories.prediction_repository import prediction_repository
-        from app.modules.finance_os.invoice_ai.services.extraction_service import extraction_service
+        from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
-        extraction = extraction_service.get(org_id, extraction_id)
+        intel = intelligence_registry.invoice()
+        extraction = intel.get_extraction(org_id, extraction_id)
         if not extraction:
             raise ValueError("Extraction not found")
         meta = extraction.get("metadata") if isinstance(extraction.get("metadata"), dict) else {}
         expense_id = meta.get("expense_account_id")
         payable_id = meta.get("payable_account_id")
-        for pred in prediction_repository.list_for_extraction(org_id, extraction_id):
+        for pred in intel.list_predictions_for_extraction(org_id, extraction_id):
             if pred.get("prediction_type") == "expense_account" and not expense_id:
                 expense_id = pred.get("suggested_account_id")
             if pred.get("prediction_type") == "payable_account" and not payable_id:

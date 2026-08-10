@@ -41,12 +41,39 @@ class TdsReturnService:
             ]
             payload = _build_return_payload(form_type="27EQ", return_period=return_period, txs=txs, tax_field="tcs_amount")
         elif form == "24Q":
-            payload = {
-                "form_type": "24Q",
-                "return_period": return_period,
-                "sections": [],
-                "summary": {"total_tax": 0, "transaction_count": 0, "note": "Salary TDS stub — integrate payroll"},
-            }
+            from app.modules.erp.payroll.repositories.salary_run_repository import salary_run_repository
+            from app.modules.erp.tax.services.payroll_tds_service import payroll_tds_service
+
+            payroll_tds_service.sync_all(org_id, return_period=return_period)
+            txs = [
+                t for t in tds_transaction_repository.list(org_id, limit=5000)
+                if str(t.get("return_period") or "") == return_period or not t.get("return_period")
+            ]
+            salary_txs = [
+                t for t in txs
+                if str(t.get("section_code") or "").upper() in {"192", "192A"}
+                or str(t.get("source_type") or "").lower() in {"payroll", "salary", "payroll_payment", "payroll_salary_run"}
+            ]
+            payload = _build_return_payload(form_type="24Q", return_period=return_period, txs=salary_txs)
+            salary_runs = salary_run_repository.list(org_id, return_period=return_period, limit=5000)
+            payload["employees"] = [
+                {
+                    "employee_id": r.get("employee_id"),
+                    "employee_code": r.get("employee_code"),
+                    "pan": r.get("pan"),
+                    "name": r.get("employee_name"),
+                    "gross_salary": float(r.get("gross_salary") or 0),
+                    "tds_amount": float(r.get("tds_amount") or 0),
+                    "tds_section": r.get("tds_section") or "192",
+                    "payment_date": r.get("payment_date"),
+                    "salary_run_id": r.get("id"),
+                }
+                for r in salary_runs
+            ]
+            payload["export_format"] = "24Q_JSON"
+            payload["summary"]["employee_count"] = len(payload["employees"])
+            if not salary_txs and not payload["employees"]:
+                payload["summary"]["note"] = "No salary TDS transactions for period; run payroll salary-runs or sync"
         elif form == "27Q":
             txs = [
                 t for t in tds_transaction_repository.list(org_id, limit=500)

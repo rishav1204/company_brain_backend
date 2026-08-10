@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
-from app.modules.erp.banking.ai.banking_copilot import answer_banking_question
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.banking.schemas.banking_schema import (
     BankAccountCreateRequest,
     BankAccountUpdateRequest,
@@ -193,5 +193,9 @@ def list_receipts(context=Depends(require_banking_read), customer_id: str | None
 def banking_copilot(request: BankingCopilotRequest, context=Depends(require_banking_read)) -> dict:
     payments = payment_execution_service.list_requests(context.org_id)
     transactions = transaction_service.list_transactions(context.org_id)
-    item = answer_banking_question(question=request.question, payments=payments, transactions=transactions)
+    item = intelligence_registry.banking().answer_banking_question(
+        question=request.question,
+        payments=payments,
+        transactions=transactions,
+    )
     return {"request_id": context.request_id, "item": item}

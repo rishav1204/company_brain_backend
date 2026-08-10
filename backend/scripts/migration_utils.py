@@ -1,5 +1,21 @@
 import hashlib
+import os
 import pathlib
+
+# DB-26: Dev/demo seed migrations must not run in production
+PROD_SKIP_SEED_MIGRATIONS = frozenset({
+    "004_benchmark_org_seed.sql",
+    "005_tenant_b_seed.sql",
+    "020_neon_dev_login.sql",
+})
+
+
+def is_seed_migration_skipped_in_prod(filename: str) -> bool:
+    if os.getenv("APP_ENV", "").lower() != "prod":
+        return False
+    if os.getenv("MIGRATION_ALLOW_SEEDS_IN_PROD", "").lower() == "true":
+        return False
+    return filename in PROD_SKIP_SEED_MIGRATIONS
 
 
 def checksum(content: str) -> str:
@@ -29,6 +45,8 @@ def plan_migrations(migrations_dir: str, applied: dict[str, str]) -> tuple[list[
     pending: list[pathlib.Path] = []
     for migration in files:
         version = migration.name
+        if is_seed_migration_skipped_in_prod(version):
+            continue
         content = migration.read_text(encoding="utf-8")
         if version not in applied:
             pending.append(migration)

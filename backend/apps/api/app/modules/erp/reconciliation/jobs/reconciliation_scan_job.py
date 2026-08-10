@@ -10,8 +10,18 @@ def run_reconciliation_scan(org_id: str) -> dict:
     unreconciled_count = len(workbench.get("unreconciled") or [])
     suggestions = reconciliation_service.run_daily_suggestions(org_id)
     exceptions = exception_service.list(org_id, status="open")
+    subledger_gl: dict = {}
+    try:
+        from app.modules.erp.reconciliation.services.subledger_gl_reconciliation_service import (
+            subledger_gl_reconciliation_service,
+        )
+
+        subledger_gl = subledger_gl_reconciliation_service.run_daily(org_id)
+    except Exception:
+        subledger_gl = {}
     return {
         "unreconciled_count": unreconciled_count,
         **suggestions,
         "open_exceptions": len(exceptions),
+        "subledger_gl": subledger_gl,
     }

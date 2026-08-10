@@ -74,6 +74,7 @@ def approve_with_conn(
     *,
     journal_id: str,
     approver_id: str,
+    skip_maker_checker: bool = False,
 ) -> dict:
     journal = journal_repository.get_conn(conn, org_id, journal_id=journal_id)
     if not journal:
@@ -81,6 +82,17 @@ def approve_with_conn(
     status = str(journal.get("journal_status"))
     if status not in {"draft", "pending_approval"}:
         raise ValueError(f"Cannot approve journal in status '{status}'")
+    if not skip_maker_checker:
+        from app.modules.core.iam.services.maker_checker_service import MakerCheckerViolation, enforce_maker_checker
+
+        try:
+            enforce_maker_checker(
+                created_by=str(journal.get("created_by") or ""),
+                actor_user_id=approver_id,
+                org_id=org_id,
+            )
+        except MakerCheckerViolation as exc:
+            raise ValueError(str(exc)) from exc
     lines = journal_line_repository.list_by_journal_conn(conn, org_id, journal_id=journal_id)
     from app.modules.erp.journals.services.journal_validation_service import journal_validation_service
 

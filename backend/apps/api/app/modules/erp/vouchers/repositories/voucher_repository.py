@@ -96,6 +96,7 @@ class VoucherRepository:
         status: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        branch_ids: list[str] | None = None,
     ) -> list[dict]:
         limit = max(1, min(int(limit or 100), 500))
         offset = max(0, int(offset or 0))
@@ -107,6 +108,9 @@ class VoucherRepository:
         if status:
             where.append("status = %s")
             params.append(status)
+        if branch_ids:
+            where.append("(branch_id IS NULL OR branch_id::text = ANY(%s))")
+            params.append([str(b) for b in branch_ids])
         params.extend([limit, offset])
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -138,47 +142,73 @@ class VoucherRepository:
     ) -> dict | None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.vouchers
-                    SET status = %s,
-                        journal_id = COALESCE(%s::uuid, journal_id),
-                        workflow_id = COALESCE(%s::uuid, workflow_id),
-                        approved_by = COALESCE(%s::uuid, approved_by),
-                        posted_by = COALESCE(%s::uuid, posted_by),
-                        approved_at = CASE WHEN %s IS NOT NULL AND approved_at IS NULL THEN now() ELSE approved_at END,
-                        posted_at = CASE WHEN %s IS NOT NULL AND posted_at IS NULL THEN now() ELSE posted_at END,
-                        updated_at = now()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, status, journal_id::text
-                    """,
-                    (
-                        status, journal_id, workflow_id, approved_by, posted_by,
-                        approved_by, posted_by, org_id, voucher_id,
-                    ),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
+            return self.set_status_conn(
+                conn,
+                org_id,
+                voucher_id=voucher_id,
+                status=status,
+                journal_id=journal_id,
+                workflow_id=workflow_id,
+                approved_by=approved_by,
+                posted_by=posted_by,
+            )
+
+    def set_status_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        voucher_id: str,
+        status: str,
+        journal_id: str | None = None,
+        workflow_id: str | None = None,
+        approved_by: str | None = None,
+        posted_by: str | None = None,
+    ) -> dict | None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.vouchers
+                SET status = %s,
+                    journal_id = COALESCE(%s::uuid, journal_id),
+                    workflow_id = COALESCE(%s::uuid, workflow_id),
+                    approved_by = COALESCE(%s::uuid, approved_by),
+                    posted_by = COALESCE(%s::uuid, posted_by),
+                    approved_at = CASE WHEN %s IS NOT NULL AND approved_at IS NULL THEN now() ELSE approved_at END,
+                    posted_at = CASE WHEN %s IS NOT NULL AND posted_at IS NULL THEN now() ELSE posted_at END,
+                    updated_at = now()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, status, journal_id::text
+                """,
+                (
+                    status, journal_id, workflow_id, approved_by, posted_by,
+                    approved_by, posted_by, org_id, voucher_id,
+                ),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
 
     def link_journal(self, org_id: str, *, voucher_id: str, journal_id: str) -> None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.vouchers SET journal_id = %s::uuid, status = 'journal_generated', updated_at = now()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    """,
-                    (journal_id, org_id, voucher_id),
-                )
-                cur.execute(
-                    """
-                    UPDATE erp.journals SET voucher_id = %s::uuid, updated_at = now()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    """,
-                    (voucher_id, org_id, journal_id),
-                )
+            self.link_journal_conn(conn, org_id, voucher_id=voucher_id, journal_id=journal_id)
+
+    def link_journal_conn(self, conn, org_id: str, *, voucher_id: str, journal_id: str) -> None:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.vouchers SET journal_id = %s::uuid, status = 'journal_generated', updated_at = now()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                """,
+                (journal_id, org_id, voucher_id),
+            )
+            cur.execute(
+                """
+                UPDATE erp.journals SET voucher_id = %s::uuid, updated_at = now()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                """,
+                (voucher_id, org_id, journal_id),
+            )
 
 
 voucher_repository = VoucherRepository()

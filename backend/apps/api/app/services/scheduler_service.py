@@ -3,9 +3,16 @@ from datetime import datetime, timezone
 from app.services.logger import log_event
 from app.services.memory_service import apply_memory_decay
 from app.services.repositories import memory_repo
+from app.services.redis_client import get_redis_client
 
 
 def run_scheduled_jobs_once(org_id: str) -> dict:
+    # RQ-08: scheduler idempotency (defense-in-depth beyond leader election).
+    client = get_redis_client()
+    if client is not None:
+        window = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+        if not client.set(f"scheduler:tick:{org_id}:{window}", "1", nx=True, ex=180):
+            return {"ran_at": datetime.now(timezone.utc).isoformat(), "org_id": org_id, "skipped": True, "reason": "idempotent_tick"}
     decay_summary = apply_memory_decay(org_id=org_id)
     m27_decay: dict = {}
     try:

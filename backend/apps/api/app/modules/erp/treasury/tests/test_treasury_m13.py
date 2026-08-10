@@ -1,6 +1,8 @@
 import pytest
 
-from app.modules.erp.treasury.ai.anomaly_detector import detect_payment_anomalies
+from app.modules.finance_os.domain_intelligence.payments.anomaly_detector import (
+    detect_scheduling_anomalies as detect_payment_anomalies,
+)
 from app.modules.erp.treasury.engine.cash_position_engine import build_position, compute_available_cash, compute_net_liquidity
 from app.modules.erp.treasury.engine.liquidity_engine import bucket_cashflows
 from app.modules.erp.treasury.engine.reconciliation_engine import score_match
@@ -117,7 +119,7 @@ def test_bank_rail_stub_execute() -> None:
         return_value={"metadata": {"provider": "stub_bank"}},
     ):
         with patch(
-            "app.modules.erp.banking.services.bank_rail_service.connector_registry.resolve",
+            "app.modules.erp.banking.services.bank_rail_service.resolve_bank_connector",
         ) as resolve:
             from app.modules.platform.integrations.connectors.banks.stub_bank_connector import StubBankConnector
 

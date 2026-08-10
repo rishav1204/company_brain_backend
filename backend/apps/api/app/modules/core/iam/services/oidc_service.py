@@ -159,6 +159,10 @@ class IamOidcService:
         from app.modules.core.iam.services.auth_service import AuthError, iam_db_enabled
 
         if not iam_db_enabled():
+            from app.core.config import settings
+
+            if settings.app_env.lower() == "prod":
+                raise AuthError("IAM_USE_DB_AUTH must be enabled in production for OIDC login")
             return self._legacy_token_session(claims)
 
         from app.modules.core.iam.repositories import permission_repo, user_repo

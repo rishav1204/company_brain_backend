@@ -85,7 +85,7 @@ def _send_reset_email(email: str, token: str) -> None:
     if not settings.password_reset_email_enabled:
         return
     try:
-        from app.modules.platform.notifications.services.email_service import email_service
+        from app.modules.platform.notifications.services.email_service import EmailDeliveryError, email_service
 
         reset_url = f"{settings.app_public_base_url.rstrip('/')}/reset-password?token={token}"
         email_service.send_email(
@@ -93,5 +93,7 @@ def _send_reset_email(email: str, token: str) -> None:
             subject="Password reset request",
             body=f"Use this link to reset your password (valid 1 hour): {reset_url}",
         )
+    except EmailDeliveryError:
+        raise
     except Exception:
         pass

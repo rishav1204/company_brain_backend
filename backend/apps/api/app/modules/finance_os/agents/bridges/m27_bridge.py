@@ -3,6 +3,9 @@ from __future__ import annotations
 from app.modules.finance_os.memory.engine.retrieval_engine import search as memory_search
 
 
+from app.services.logger import log_event
+
+
 def search_memories(
     org_id: str,
     query: str,
@@ -13,7 +16,8 @@ def search_memories(
 ) -> list[dict]:
     try:
         return memory_search(org_id, query, entity_type=entity_type, entity_id=entity_id, top_k=top_k)
-    except Exception:
+    except Exception as exc:
+        log_event("memory.bridge.search_failed", org_id=org_id, error=str(exc))
         return []
 
 

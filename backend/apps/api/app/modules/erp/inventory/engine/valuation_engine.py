@@ -15,9 +15,16 @@ def compute_issue_cost(
     balance_value: float,
     weighted_avg_cost: float,
     layers: list[dict],
+    standard_unit_cost: float | None = None,
 ) -> tuple[float, float]:
     if issue_qty <= 0:
         raise ValueError("Issue quantity must be positive")
+    if method == "standard_cost":
+        unit = float(standard_unit_cost or weighted_avg_cost or 0)
+        if unit <= 0:
+            raise ValueError("standard_unit_cost required for standard_cost valuation")
+        total = round(issue_qty * unit, 2)
+        return total, unit
     if method == "fifo":
         total, _ = consume_fifo_layers(layers, issue_qty)
         unit = round(total / issue_qty, 4) if issue_qty else 0

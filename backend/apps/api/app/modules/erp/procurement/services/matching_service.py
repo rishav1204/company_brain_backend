@@ -21,6 +21,28 @@ def _within_tolerance(variance_pct: float, tolerance_pct: float) -> bool:
     return variance_pct <= tolerance_pct
 
 
+def _po_requires_grn(po: dict, po_items: list[dict]) -> bool:
+    """Stock/service POs always require GRN for 3-way match (SEC-36)."""
+    has_stock_or_service = any(float(item.get("quantity") or 0) > 0 for item in po_items)
+    if has_stock_or_service:
+        return True
+    meta = po.get("metadata") if isinstance(po.get("metadata"), dict) else {}
+    if meta.get("requires_grn") is False:
+        return False
+    if meta.get("requires_grn") is True:
+        return True
+    return False
+
+
+def _invoice_line_for_po_item(invoice_lines: list[dict], po_item_id: str, index: int, *, allow_index_fallback: bool = False) -> dict | None:
+    for line in invoice_lines:
+        if str(line.get("po_item_id") or "") == po_item_id:
+            return line
+    # INT-25: never "index match" invoice lines to PO lines.
+    # A missing `po_item_id` linkage must surface as an exception, not silently match the wrong line.
+    return None
+
+
 class MatchingService:
     def run_match(
         self,
@@ -35,6 +57,9 @@ class MatchingService:
             raise ValueError("PO not found")
         tolerances = procurement_policy_service.get_tolerances(org_id)
         po_items = po_repository.list_items(org_id, po_id=po_id)
+        requires_grn = _po_requires_grn(po, po_items)
+        if requires_grn and not grn_id:
+            raise ValueError("GRN is required for 3-way match on stock/service POs")
         grn_items: list[dict] = []
         if grn_id:
             grn_items = grn_repository.list_items(org_id, grn_id=grn_id)
@@ -44,29 +69,48 @@ class MatchingService:
 
         line_results: list[dict] = []
         issues = 0
-        for po_item in po_items:
+        for idx, po_item in enumerate(po_items):
             po_item_id = str(po_item["id"])
             grn_line = next((g for g in grn_items if str(g.get("po_item_id")) == po_item_id), None)
-            inv_line = invoice_lines[0] if invoice_lines else None
+            inv_line = _invoice_line_for_po_item(invoice_lines, po_item_id, idx, allow_index_fallback=False)
             po_qty = float(po_item.get("quantity") or 0)
             po_price = float(po_item.get("unit_price") or 0)
-            po_amount = float(po_item.get("amount") or 0)
-            grn_qty = float(grn_line.get("accepted_quantity") or 0) if grn_line else 0
-            inv_qty = po_qty
-            inv_price = po_price
-            inv_amount = float(inv_line.get("amount") or po_amount) if inv_line else po_amount
+            po_amount = float(po_item.get("amount") or round(po_qty * po_price, 2))
+            grn_qty = float(grn_line.get("accepted_quantity") or 0) if grn_line else (po_qty if not requires_grn else 0)
+            if inv_line and inv_line.get("quantity") is not None:
+                inv_qty = float(inv_line.get("quantity") or 0)
+            elif inv_line and po_qty > 0 and float(inv_line.get("amount") or 0) > 0:
+                inv_qty = po_qty
+            else:
+                inv_qty = po_qty if inv_line else 0
+            if inv_line and inv_line.get("unit_price") is not None:
+                inv_price = float(inv_line.get("unit_price") or 0)
+            elif inv_line and inv_qty > 0:
+                inv_price = float(inv_line.get("amount") or 0) / inv_qty
+            else:
+                inv_price = po_price
+            inv_amount = float(inv_line.get("amount") or round(inv_qty * inv_price, 2)) if inv_line else po_amount
 
-            qty_var = _pct_variance(inv_qty, grn_qty if grn_qty else po_qty)
+            qty_var = _pct_variance(inv_qty, grn_qty if requires_grn else po_qty)
             price_var = _pct_variance(inv_price, po_price)
             amount_var = _pct_variance(inv_amount, po_amount)
             qty_ok = _within_tolerance(qty_var, tolerances["qty_tolerance_pct"])
             price_ok = _within_tolerance(price_var, tolerances["price_tolerance_pct"])
             amount_ok = _within_tolerance(amount_var, tolerances["amount_tolerance_pct"])
             line_ok = qty_ok and price_ok and amount_ok
+            if requires_grn and not grn_line:
+                line_ok = False
             if not line_ok:
                 issues += 1
             line_results.append({
                 "po_item_id": po_item_id,
+                "grn_item_id": str(grn_line.get("id")) if grn_line else None,
+                "invoice_line_id": str(inv_line.get("id")) if inv_line else None,
+                "po_qty": po_qty,
+                "grn_qty": grn_qty,
+                "invoice_qty": inv_qty,
+                "po_price": po_price,
+                "invoice_price": inv_price,
                 "qty_variance_pct": round(qty_var, 4),
                 "price_variance_pct": round(price_var, 4),
                 "amount_variance_pct": round(amount_var, 4),
@@ -79,14 +123,14 @@ class MatchingService:
             for g in grn_items
             for pi in po_items
             if str(g.get("po_item_id")) == str(pi.get("id"))
-        ) if grn_items else po_total
+        ) if grn_items else (po_total if not requires_grn else 0)
         inv_total = float(invoice.get("total_amount") or 0) if invoice else po_total
         header_amount_var = _pct_variance(inv_total, po_total)
         header_ok = _within_tolerance(header_amount_var, tolerances["amount_tolerance_pct"])
 
-        if issues == 0 and header_ok:
+        if issues == 0 and header_ok and all(l.get("matched") for l in line_results):
             match_status = "matched"
-        elif issues <= 1 and header_ok:
+        elif issues <= 1 and header_ok and requires_grn:
             match_status = "matched_within_tolerance"
         elif issues > 0:
             match_status = "exception"
@@ -101,6 +145,7 @@ class MatchingService:
                 "grn_total": round(grn_total, 2),
                 "invoice_total": inv_total,
                 "amount_variance_pct": round(header_amount_var, 4),
+                "requires_grn": requires_grn,
             },
             "tolerances": tolerances,
         }
@@ -158,9 +203,12 @@ class MatchingService:
             if policy.get("mandatory_po"):
                 raise ValueError("Mandatory PO policy: invoice must be linked to a purchase order")
             return
+        invoice = invoice_repository.get(org_id, invoice_id=ap_invoice_id)
+        inv_meta = (invoice or {}).get("metadata") if isinstance((invoice or {}).get("metadata"), dict) else {}
+        grn_id = inv_meta.get("grn_id")
         match = match_repository.get_for_invoice(org_id, ap_invoice_id=ap_invoice_id)
         if not match:
-            result = self.run_match(org_id, po_id=purchase_order_id, ap_invoice_id=ap_invoice_id)
+            result = self.run_match(org_id, po_id=purchase_order_id, grn_id=grn_id, ap_invoice_id=ap_invoice_id)
             match_status = result.get("match_status")
         else:
             match_status = str(match.get("match_status"))

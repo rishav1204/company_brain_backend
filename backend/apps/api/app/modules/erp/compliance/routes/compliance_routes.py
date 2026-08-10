@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.modules.erp.compliance.ai.compliance_assistant import answer_compliance_question
-from app.modules.erp.compliance.ai.filing_advisor import filing_readiness_score
-from app.modules.erp.compliance.ai.notice_predictor import predict_notice_risk
-from app.modules.erp.compliance.ai.risk_detector import detect_risks
 from app.modules.erp.compliance.schemas.compliance_schema import (
     CompleteRequest,
     CopilotRequest,
@@ -21,6 +17,7 @@ from app.modules.erp.compliance.services.compliance_dashboard_service import com
 from app.modules.erp.compliance.services.compliance_rule_service import compliance_rule_service
 from app.modules.erp.compliance.services.obligation_service import obligation_service
 from app.modules.erp.compliance.services.penalty_service import penalty_service
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 router = APIRouter()
 
@@ -128,8 +125,9 @@ def compliance_risk(context=Depends(require_compliance_read)) -> dict:
 
     escalations = escalation_service.list_open(context.org_id)
     exposure = penalty_service.total_exposure(context.org_id)
-    item = detect_risks(obligations=obligations, escalations=escalations, exposure=exposure)
-    notice = predict_notice_risk(risk_flags=item.get("flags") or [])
+    compliance_intel = intelligence_registry.compliance()
+    item = compliance_intel.detect_risks(obligations=obligations, escalations=escalations, exposure=exposure)
+    notice = compliance_intel.predict_notice_risk(risk_flags=item.get("flags") or [])
     item["notice_prediction"] = notice
     return {"request_id": context.request_id, "item": item}
 
@@ -142,7 +140,7 @@ def readiness(context=Depends(require_compliance_read), period: str | None = Que
     from app.modules.erp.tax.services.tds_service import tds_service
 
     obligations = obligation_service.list(context.org_id)
-    item = filing_readiness_score(
+    item = intelligence_registry.compliance().filing_readiness_score(
         gst_returns=gst_return_service.list_returns(context.org_id),
         tds_returns=tds_return_service.list_returns(context.org_id),
         tds_liability=tds_service.liability_summary(context.org_id),
@@ -157,7 +155,11 @@ def readiness(context=Depends(require_compliance_read), period: str | None = Que
 def copilot(request: CopilotRequest, context=Depends(require_compliance_read)) -> dict:
     dashboard = compliance_dashboard_service.build(context.org_id)
     obligations = obligation_service.list(context.org_id)
-    item = answer_compliance_question(question=request.question, obligations=obligations, dashboard=dashboard)
+    item = intelligence_registry.compliance().answer_compliance_question(
+        question=request.question,
+        obligations=obligations,
+        dashboard=dashboard,
+    )
     return {"request_id": context.request_id, "item": item}
 
 

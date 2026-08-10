@@ -1285,9 +1285,19 @@ class GraphDataRepository:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id::text AS journal_entry_id, period, account_code, status
-                    FROM journal_entries
-                    WHERE org_id = %s::uuid
+                    SELECT j.id::text AS journal_entry_id,
+                           COALESCE(j.posting_date::text, '') AS period,
+                           COALESCE(jl.account_id::text, '') AS account_code,
+                           j.journal_status AS status
+                    FROM erp.journals j
+                    LEFT JOIN LATERAL (
+                        SELECT account_id
+                        FROM erp.journal_lines
+                        WHERE org_id = j.org_id AND journal_id = j.id
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                    ) jl ON true
+                    WHERE j.org_id = %s::uuid
                     """,
                     (org_id,),
                 )

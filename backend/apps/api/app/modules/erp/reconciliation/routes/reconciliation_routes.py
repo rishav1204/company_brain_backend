@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.modules.erp.reconciliation.ai.reconciliation_copilot import answer_reconciliation_question
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.reconciliation.schemas.reconciliation_schema import (
     ExceptionAssignRequest,
     ReconciliationAdjustmentCreate,
@@ -170,6 +170,30 @@ def approve_adjustment(adjustment_id: str, context=Depends(require_reconciliatio
     return {"request_id": context.request_id, "item": item}
 
 
+@router.post("/vendor/{vendor_id}/match/apply")
+def apply_vendor_matches(vendor_id: str, context=Depends(require_reconciliation_read)) -> dict:
+    item = vendor_match_service.apply_suggested_matches(context.org_id, vendor_id=vendor_id)
+    return {"request_id": context.request_id, "item": item}
+
+
+@router.get("/vendor/{vendor_id}/match")
+def vendor_subledger_match(vendor_id: str, context=Depends(require_reconciliation_read)) -> dict:
+    item = vendor_match_service.match_payments_to_invoices(context.org_id, vendor_id=vendor_id)
+    return {"request_id": context.request_id, "item": item}
+
+
+@router.get("/customer/{customer_id}/match")
+def customer_subledger_match(customer_id: str, context=Depends(require_reconciliation_read)) -> dict:
+    item = customer_match_service.match_receipts_to_invoices(context.org_id, customer_id=customer_id)
+    return {"request_id": context.request_id, "item": item}
+
+
+@router.post("/customer/{customer_id}/match/apply")
+def apply_customer_matches(customer_id: str, context=Depends(require_reconciliation_read)) -> dict:
+    item = customer_match_service.apply_suggested_matches(context.org_id, customer_id=customer_id)
+    return {"request_id": context.request_id, "item": item}
+
+
 @router.get("/vendor/{vendor_id}")
 def vendor_reconciliation(vendor_id: str, context=Depends(require_reconciliation_read)) -> dict:
     summary = vendor_match_service.vendor_summary(context.org_id, vendor_id=vendor_id)
@@ -187,7 +211,7 @@ def reconciliation_copilot(request: ReconciliationCopilotRequest, context=Depend
     workbench = bank_match_service.list_workbench(context.org_id)
     suggestions = reconciliation_service.list_suggestions(context.org_id, status="suggested")
     exceptions = exception_service.list(context.org_id, status="open")
-    answer = answer_reconciliation_question(
+    answer = intelligence_registry.reconciliation().answer_question(
         question=request.question,
         unreconciled=workbench.get("unreconciled"),
         exceptions=exceptions,

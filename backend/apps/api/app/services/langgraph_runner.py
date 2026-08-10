@@ -6,9 +6,6 @@ from uuid import uuid4
 from app.services.action_service import execute_action
 from app.services.llm_provider import llm_provider
 from app.services.logger import log_event
-from app.modules.core.iam.services.access_control import evaluate_access
-from app.services.policy_service import evaluate_permission, requires_human_approval
-from app.services.object_context import ObjectContext, resolve_object_context
 
 
 @dataclass
@@ -367,106 +364,68 @@ def _plan_actions_node(state: GraphRuntimeState) -> None:
 
 
 def _policy_gate_node(state: GraphRuntimeState) -> None:
-    from app.modules.finance_os.agents.orchestrator.forbidden_actions import (
-        agent_tool_requires_approval,
-        is_agent_tool_allowed,
-        normalize_tool_method,
+    from app.modules.finance_os.platform_ai_runtime.policy.unified_policy_gate import (
+        evaluate_session_action,
+        evaluate_tool_invocation,
     )
 
-    amount_raw = state.payload.get("amount")
-    parsed_amount: float | None = None
-    if amount_raw is not None and str(amount_raw).strip():
-        try:
-            parsed_amount = float(amount_raw)
-        except (TypeError, ValueError):
-            parsed_amount = None
-    action = str(state.payload.get("action", "notify_user"))
-    object_type = str(state.payload.get("object_type", "workflow"))
-    object_id = str(state.payload.get("object_id", "")).strip()
-    if object_id:
-        object_context = resolve_object_context(org_id=state.org_id, object_type=object_type, object_id=object_id)
-        if parsed_amount is not None and object_context.amount is None:
-            object_context.amount = parsed_amount
-        if state.payload.get("vendor_risk") and not object_context.vendor_risk:
-            object_context.vendor_risk = str(state.payload.get("vendor_risk"))
-    else:
-        object_context = ObjectContext(
-            object_type=object_type,
-            object_id="",
-            amount=parsed_amount,
-            vendor_risk=str(state.payload.get("vendor_risk")) if state.payload.get("vendor_risk") else None,
-        )
     human_approved = bool(state.payload.get("human_approved"))
     principal_roles = state.principal_roles or ["viewer"]
     principal_user = str(state.principal_attrs.get("user_id") or "agent-system")
+    action = str(state.payload.get("action", "notify_user"))
 
-    requires_approval = requires_human_approval(
+    session = evaluate_session_action(
+        state.org_id,
         action=action,
-        amount=object_context.amount,
-        vendor_risk=object_context.vendor_risk,
-    )
-    permission = evaluate_access(
-        org_id=state.org_id,
-        user_id=principal_user,
+        payload=state.payload,
+        actor_id=principal_user,
         roles=principal_roles,
-        action=action,
-        object_context=object_context,
         attrs=state.principal_attrs,
-        created_by=str(state.payload.get("created_by") or state.payload.get("owner_user_id") or ""),
         human_approved=human_approved,
     )
-    if not permission.allowed:
+    if not session.allowed:
         state.status = "failed"
-        state.failure_contract = {"code": "POLICY_DENIED", "retryable": False, "step": "policy_gate"}
-        state.checkpoint("policy_gate", "denied", {"reason": permission.reason, "checks": permission.checks or []})
+        state.failure_contract = {"code": session.code or "POLICY_DENIED", "retryable": False, "step": "policy_gate"}
+        state.checkpoint("policy_gate", "denied", {"reason": session.reason, "checks": session.checks})
         return
-    if requires_approval and not human_approved:
+    if session.requires_human_approval:
         state.status = "pending_human_approval"
         state.failure_contract = {"code": "HUMAN_APPROVAL_REQUIRED", "retryable": False, "step": "policy_gate"}
-        state.checkpoint("policy_gate", "awaiting_approval", {"reason": "threshold_or_risk"})
+        state.checkpoint("policy_gate", "awaiting_approval", {"reason": session.reason})
         return
 
     for proposed in state.proposed_actions:
         tool = proposed.tool if hasattr(proposed, "tool") else str(proposed.get("tool", ""))
         method = proposed.method if hasattr(proposed, "method") else str(proposed.get("method", ""))
-        if not is_agent_tool_allowed(tool, method):
+        params = proposed.params if hasattr(proposed, "params") else proposed.get("params", {})
+        decision = evaluate_tool_invocation(
+            state.org_id,
+            tool=tool,
+            method=method,
+            params=params if isinstance(params, dict) else {},
+            actor_id=principal_user,
+            roles=principal_roles,
+            attrs=state.principal_attrs,
+            human_approved=human_approved,
+            payload=state.payload,
+        )
+        if not decision.allowed:
             state.status = "failed"
             state.failure_contract = {
-                "code": "TOOL_NOT_ALLOWED",
+                "code": decision.code or "POLICY_DENIED",
                 "retryable": False,
                 "step": "policy_gate",
                 "detail": f"{tool}.{method}",
             }
-            state.checkpoint("policy_gate", "denied", {"reason": "tool_not_allowed", "tool": tool, "method": method})
+            state.checkpoint("policy_gate", "denied", {"reason": decision.reason, "tool": tool, "method": method})
             return
-        tool_l, method_l = normalize_tool_method(tool, method)
-        tool_action = f"{tool_l}.{method_l}"
-        tool_permission = evaluate_access(
-            org_id=state.org_id,
-            user_id=principal_user,
-            roles=principal_roles,
-            action=tool_action,
-            object_context=object_context,
-            attrs=state.principal_attrs,
-            created_by=str(state.payload.get("created_by") or state.payload.get("owner_user_id") or ""),
-            human_approved=human_approved,
-        )
-        if not tool_permission.allowed:
-            state.status = "failed"
-            state.failure_contract = {"code": "POLICY_DENIED", "retryable": False, "step": "policy_gate"}
-            state.checkpoint(
-                "policy_gate",
-                "denied",
-                {"reason": tool_permission.reason, "tool": tool, "method": method},
-            )
-            return
-        if agent_tool_requires_approval(tool, method) and not human_approved:
+        if decision.requires_human_approval:
             state.status = "pending_human_approval"
             state.failure_contract = {"code": "HUMAN_APPROVAL_REQUIRED", "retryable": False, "step": "policy_gate"}
             state.checkpoint("policy_gate", "awaiting_approval", {"reason": "tool_requires_approval", "tool": tool})
             return
 
-    state.checkpoint("policy_gate", "allowed", {"checks": permission.checks or []})
+    state.checkpoint("policy_gate", "allowed", {"checks": session.checks})
 
 
 def tool_adapter(org_id: str, action: ToolAction, attrs: dict | None = None, roles: list[str] | None = None) -> dict:
@@ -600,32 +559,16 @@ def _delegate_to_m38_runtime(
     principal_roles: list[str] | None = None,
     principal_attrs: dict | None = None,
 ) -> dict | None:
-    """M38 bridge: optional iterative runtime instead of linear 3-node langgraph."""
-    if not isinstance(payload, dict) or not payload.get("use_m38_runtime"):
-        return None
-    try:
-        from app.modules.finance_os.platform_ai_runtime.services.runtime_service import runtime_service
+    from app.modules.finance_os.platform_ai_runtime.runtime_router import delegate_to_m38_runtime
 
-        if not runtime_service.schema_ready():
-            return None
-        message = str(payload.get("user_message") or payload.get("query") or f"Run {agent_type} via M38 runtime")
-        resp = runtime_service.chat(
-            org_id,
-            message=message,
-            user_id=str((principal_attrs or {}).get("user_id") or "langgraph-m38"),
-            roles=principal_roles,
-            attrs=principal_attrs,
-            human_approved=bool(payload.get("human_approved")),
-        )
-        return {
-            "status": resp.status,
-            "executed_at": datetime.now(timezone.utc).isoformat(),
-            "proposed_actions": [],
-            "graph_runtime": {"delegated_to": "m38", "goal_run_id": resp.goal_run_id},
-            "m38": resp.model_dump(),
-        }
-    except Exception:
-        return None
+    return delegate_to_m38_runtime(
+        org_id,
+        agent_type,
+        trigger_type,
+        payload if isinstance(payload, dict) else {},
+        principal_roles=principal_roles,
+        principal_attrs=principal_attrs,
+    )
 
 
 def run_langgraph_flow(

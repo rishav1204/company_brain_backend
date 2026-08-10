@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from app.modules.erp.fiscal.events.year_end_events import emit_fiscal_year_closed, emit_year_end_completed
 from app.modules.erp.fiscal.repositories.fiscal_period_repository import fiscal_period_repository, year_end_repository
 from app.modules.erp.fiscal.repositories.fiscal_year_repository import fiscal_year_repository
@@ -45,13 +47,30 @@ class YearEndService:
         self._audit(org_id, fiscal_year_id=fiscal_year_id, actor_id=run_by)
         return {"run": completed, "next_fiscal_year": next_fy, "closing_journal_id": journal_id}
 
+    def _fy_start_month(self) -> int:
+        try:
+            return max(1, min(12, int(os.getenv("FISCAL_YEAR_START_MONTH", "4"))))
+        except ValueError:
+            return 4
+
     def _next_fy_start(self, end_date: str) -> str:
-        y, m, d = [int(x) for x in end_date[:10].split("-")]
-        return f"{y}-04-01" if m == 3 else f"{y + 1}-04-01"
+        y, m, _ = [int(x) for x in end_date[:10].split("-")]
+        start_m = self._fy_start_month()
+        if m == start_m - 1 or (start_m == 1 and m == 12):
+            return f"{y + (1 if start_m == 1 else 0)}-{start_m:02d}-01"
+        if m >= start_m:
+            return f"{y + 1}-{start_m:02d}-01"
+        return f"{y}-{start_m:02d}-01"
 
     def _next_fy_end(self, end_date: str) -> str:
-        y, m, _ = [int(x) for x in end_date[:10].split("-")]
-        return f"{y + 1}-03-31" if m == 3 else f"{y + 2}-03-31"
+        start = self._next_fy_start(end_date)
+        sy, sm, _ = [int(x) for x in start[:10].split("-")]
+        end_y = sy + 1 if sm > 1 else sy
+        end_m = sm - 1 if sm > 1 else 12
+        import calendar
+
+        last_day = calendar.monthrange(end_y, end_m)[1]
+        return f"{end_y}-{end_m:02d}-{last_day}"
 
     def _generate_closing_journal(
         self,

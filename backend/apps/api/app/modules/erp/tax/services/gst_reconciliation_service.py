@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.modules.erp.tax.ai.mismatch_detector import detect_mismatches
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.tax.engine.reconciliation_engine import match_2b_row
 from app.modules.erp.tax.events.tax_events import emit_gst_mismatch_detected
 from app.modules.erp.tax.repositories.gst_repository import gst_transaction_repository
@@ -40,7 +40,7 @@ class GstReconciliationService:
                 )
                 created.append(row)
                 if best["match_status"] == "mismatch":
-                    flags = detect_mismatches(tx, best_row)
+                    flags = intelligence_registry.tax().detect_mismatches(tx, best_row)
                     emit_gst_mismatch_detected(org_id, reconciliation_id=str(row.get("id")), summary=", ".join(flags.get("flags") or []))
                     try:
                         from app.modules.platform.governance.services.compliance_service import compliance_service

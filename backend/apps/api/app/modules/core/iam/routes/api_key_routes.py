@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import build_request_context
 from app.modules.core.iam.repositories.api_key_repository import ApiKeyRepository
 from app.modules.core.iam.routes.idempotency_helper import check_idempotency, mark_idempotency
-from app.modules.core.iam.services.rbac_service import has_permission
+from app.modules.core.iam.middleware.mutation_guard import require_db_mutation
 from app.modules.core.iam.validators.permission_validator import validate_permission_key
 
 router = APIRouter(tags=["iam-api-keys"])
@@ -20,11 +20,18 @@ class ApiKeyCreateRequest(BaseModel):
     idempotency_key: str | None = None
 
 
+def _require_api_key_manage(context) -> None:
+    require_db_mutation(
+        context,
+        ["organization.manage"],
+        detail="organization.manage required",
+        allow_tenant_admin=True,
+    )
+
+
 @router.get("/api-keys")
 def list_api_keys(context=Depends(build_request_context)) -> dict:
-    if not has_permission(context.org_id, context.user_id, "organization.manage"):
-        if "tenant_admin" not in {r.lower() for r in context.roles}:
-            raise HTTPException(status_code=403, detail="organization.manage required")
+    _require_api_key_manage(context)
     rows = api_key_repo.list_keys(context.org_id)
     return {
         "request_id": context.request_id,
@@ -36,16 +43,18 @@ def list_api_keys(context=Depends(build_request_context)) -> dict:
 
 @router.post("/api-keys")
 def create_api_key(body: ApiKeyCreateRequest, context=Depends(build_request_context)) -> dict:
-    if not has_permission(context.org_id, context.user_id, "organization.manage"):
-        if "tenant_admin" not in {r.lower() for r in context.roles}:
-            raise HTTPException(status_code=403, detail="organization.manage required")
+    _require_api_key_manage(context)
     check_idempotency("iam:api_key_create", context, body.idempotency_key)
     for scope in body.scopes:
+        if scope in {"*", "admin"}:
+            raise HTTPException(
+                status_code=400,
+                detail="Wildcard scopes '*' and 'admin' are not allowed on API keys",
+            )
         try:
             validate_permission_key(scope)
         except ValueError:
-            if scope not in {"*", "admin"}:
-                raise HTTPException(status_code=400, detail=f"Invalid API key scope: {scope}")
+            raise HTTPException(status_code=400, detail=f"Invalid API key scope: {scope}")
     row, raw_key = api_key_repo.create_key(
         org_id=context.org_id,
         name=body.name,
@@ -65,9 +74,7 @@ def create_api_key(body: ApiKeyCreateRequest, context=Depends(build_request_cont
 
 @router.post("/api-keys/{key_id}/revoke")
 def revoke_api_key(key_id: str, context=Depends(build_request_context)) -> dict:
-    if not has_permission(context.org_id, context.user_id, "organization.manage"):
-        if "tenant_admin" not in {r.lower() for r in context.roles}:
-            raise HTTPException(status_code=403, detail="organization.manage required")
+    _require_api_key_manage(context)
     if not api_key_repo.revoke_key(context.org_id, key_id):
         raise HTTPException(status_code=404, detail="API key not found")
     return {

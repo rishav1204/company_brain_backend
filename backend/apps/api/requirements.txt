@@ -21,3 +21,5 @@ pypdf
 reportlab
 boto3
 google-cloud-documentai
+webauthn>=2.5.0
+cryptography>=42.0.0

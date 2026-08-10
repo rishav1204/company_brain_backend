@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 
 from app.modules.platform.integrations.services.connector_registry import connector_registry
+from app.core.config import settings
 
 
 @dataclass(frozen=True)
@@ -52,13 +53,20 @@ def load_gst_connector_config() -> GstConnectorConfig:
 def resolve_gst_filing_connector():
     cfg = load_gst_connector_config()
     if cfg.provider == "stub":
-        return connector_registry.resolve(connector_type="gst", provider_name="stub_gst")
+        conn = connector_registry.resolve(connector_type="gst", provider_name="stub_gst")
+        if settings.app_env.lower() == "prod":
+            raise RuntimeError("Production requires GSTN credentials or GST_CONNECTOR_PROVIDER=gstn with GSTN_BASE_URL configured")
+        return conn
+    conn = None
     if cfg.gstn_configured:
         conn = connector_registry.resolve(connector_type="gst", provider_name="gstn_production")
         if conn:
             return conn
         conn = connector_registry.resolve(connector_type="gst", provider_name="gstn")
-    return connector_registry.resolve(connector_type="gst", provider_name="stub_gst")
+    conn = conn or connector_registry.resolve(connector_type="gst", provider_name="stub_gst")
+    if settings.app_env.lower() == "prod" and conn and getattr(conn, "provider_name", "stub_gst").startswith("stub"):
+        raise RuntimeError("Production GST filing requires GSTN credentials; stub connector is not allowed")
+    return conn
 
 
 def resolve_irp_connector():

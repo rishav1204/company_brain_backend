@@ -9,6 +9,7 @@ from app.modules.erp.journals.validators.journal_validator import journal_valida
 
 
 from app.core.config import settings
+from app.modules.erp.security.company_resolution_service import company_resolution_service
 from app.modules.erp.security.company_scope import require_company_id_for_erp_write
 
 
@@ -34,6 +35,12 @@ class JournalService:
         ai_confidence: dict | None = None,
     ) -> dict:
         if settings.erp_require_company_id:
+            company_id = company_resolution_service.resolve_for_write(
+                org_id,
+                company_id=company_id,
+                operation="journal.create_draft",
+            )
+        elif company_id:
             require_company_id_for_erp_write(
                 org_id=org_id, company_id=company_id, operation="journal.create_draft"
             )
@@ -99,6 +106,7 @@ class JournalService:
         journal_status: str | None = None,
         journal_type: str | None = None,
         company_id: str | None = None,
+        branch_ids: list[str] | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
@@ -107,6 +115,7 @@ class JournalService:
             journal_status=journal_status,
             journal_type=journal_type,
             company_id=company_id,
+            branch_ids=branch_ids,
             limit=limit,
             offset=offset,
         )

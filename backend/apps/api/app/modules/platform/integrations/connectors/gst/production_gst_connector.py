@@ -45,7 +45,10 @@ class ProductionGstnConnector(_HttpGstMixin):
                 filed_at=str(result.get("filed_at") or datetime.now(timezone.utc).isoformat()),
                 raw=result,
             )
-        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError):
+        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+            from app.modules.platform.integrations.connectors.connector_errors import fail_closed_in_prod
+
+            fail_closed_in_prod(exc, operation="gstn.submit_return")
             return StubGstConnector().submit_return(idempotency_key=idempotency_key, payload=payload)
 
 
@@ -122,7 +125,10 @@ class ProductionEwayConnector(_HttpGstMixin):
                 {"idempotency_key": idempotency_key, **payload},
                 headers={"X-Eway-Username": cfg.eway_username, "X-Eway-Password": cfg.eway_password},
             )
-        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError):
+        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+            from app.modules.platform.integrations.connectors.connector_errors import fail_closed_in_prod
+
+            fail_closed_in_prod(exc, operation="eway.generate")
             return StubGstConnector().generate_eway_bill(idempotency_key=idempotency_key, payload=payload)
 
     def cancel_eway_bill(self, *, eway_bill_no: str, reason: str = "") -> dict:
@@ -136,7 +142,10 @@ class ProductionEwayConnector(_HttpGstMixin):
                 {"eway_bill_no": eway_bill_no, "reason": reason},
                 headers={"X-Eway-Username": cfg.eway_username, "X-Eway-Password": cfg.eway_password},
             )
-        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError):
+        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+            from app.modules.platform.integrations.connectors.connector_errors import fail_closed_in_prod
+
+            fail_closed_in_prod(exc, operation="eway.cancel")
             return StubGstConnector().cancel_eway_bill(eway_bill_no=eway_bill_no, reason=reason)
 
 

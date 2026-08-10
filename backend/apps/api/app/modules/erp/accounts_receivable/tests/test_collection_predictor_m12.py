@@ -1,4 +1,4 @@
-from app.modules.erp.accounts_receivable.ai.collection_predictor import forecast_collections
+from app.modules.finance_os.domain_intelligence.ar.collection_predictor import forecast_collections
 
 
 def test_collection_forecast() -> None:

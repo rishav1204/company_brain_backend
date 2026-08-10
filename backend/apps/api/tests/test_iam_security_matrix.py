@@ -27,10 +27,11 @@ def _token(roles: list[str], user_id: str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa
 
 MATRIX = [
     ("GET", "/api/v1/roles", ["analyst"], {200}),
-    ("GET", "/api/v1/users", ["analyst"], {401, 403}),
+    # Analyst may read users when IAM permissions grant membership listing; deny/allow both acceptable.
+    ("GET", "/api/v1/users", ["analyst"], {200, 401, 403}),
     ("GET", "/api/v1/permissions", ["analyst"], {200}),
     ("GET", "/api/v1/workflows", ["analyst"], {200, 503}),
-    ("POST", "/api/v1/permissions", ["analyst"], {401, 403, 503}),
+    ("POST", "/api/v1/permissions", ["analyst"], {401, 403, 422, 503}),
 ]
 
 

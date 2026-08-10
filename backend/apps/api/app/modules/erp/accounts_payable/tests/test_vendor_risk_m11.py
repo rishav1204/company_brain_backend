@@ -1,4 +1,4 @@
-from app.modules.erp.accounts_payable.ai.vendor_risk import assess_vendor_risk
+from app.modules.finance_os.domain_intelligence.ap.vendor_risk import assess_vendor_risk
 
 
 def test_vendor_risk_overdue_invoices() -> None:

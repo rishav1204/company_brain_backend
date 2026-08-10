@@ -60,6 +60,7 @@ class SalesInvoiceCreateRequest(BaseModel):
     gst_rate: float | None = Field(default=None, ge=0, le=1)
     export_zero_rated: bool = False
     company_id: str | None = None
+    branch_id: str | None = None
     contract_months: int | None = Field(default=None, ge=1)
     lines: list[InvoiceLineInput] = Field(default_factory=list)
 

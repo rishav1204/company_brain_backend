@@ -24,17 +24,20 @@ def load_matrix(org_id: str, action_code: str, *, company_id: str | None = None)
             if scoped:
                 return scoped
         return rows
-    rows = approval_matrix_repository.list_active(
-        org_id, action_code=_normalize_action(action_code), company_id=company_id
-    )
-    if not rows:
-        rows = approval_matrix_repository.list_active(org_id, action_code=action_code)
-    all_matrix: dict[str, list] = {}
-    if approval_matrix_repository.schema_ready():
-        for code in {_normalize_action(action_code), action_code, "vendor_payment", "payment.execute"}:
-            all_matrix[code] = approval_matrix_repository.list_active(org_id, action_code=code)
-    policy_cache_engine.set_cached(org_id, "matrix", all_matrix)
-    return all_matrix.get(_normalize_action(action_code)) or rows
+    try:
+        rows = approval_matrix_repository.list_active(
+            org_id, action_code=_normalize_action(action_code), company_id=company_id
+        )
+        if not rows:
+            rows = approval_matrix_repository.list_active(org_id, action_code=action_code)
+        all_matrix: dict[str, list] = {}
+        if approval_matrix_repository.schema_ready():
+            for code in {_normalize_action(action_code), action_code, "vendor_payment", "payment.execute"}:
+                all_matrix[code] = approval_matrix_repository.list_active(org_id, action_code=code)
+        policy_cache_engine.set_cached(org_id, "matrix", all_matrix)
+        return all_matrix.get(_normalize_action(action_code)) or rows
+    except Exception:
+        return []
 
 
 def resolve_chain(

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+from app.modules.erp.query_services import treasury_queries
+
 
 def load_treasury(org_id: str) -> dict:
-    from app.modules.erp.treasury.services.cash_position_service import cash_position_service
-    from app.modules.erp.treasury.services.liquidity_service import liquidity_service
-
-    position = cash_position_service.compute_live_position(org_id)
-    liquidity = liquidity_service.analyze(org_id)
+    position = treasury_queries.compute_live_position(org_id)
+    liquidity = treasury_queries.analyze_liquidity(org_id)
     available = float(position.get("available_cash") or position.get("net_liquidity") or 0)
     coverage = liquidity.get("liquidity_coverage")
     return {

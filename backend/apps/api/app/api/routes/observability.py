@@ -26,6 +26,12 @@ def observability_stack_status(probe: bool = False, context=Depends(build_reques
 def metrics(context=Depends(build_request_context)) -> dict:
     snapshot = metrics_store.snapshot()
     lag_by_queue = {queue: event_queue.lag(queue) for queue in queue_groups().values()}
+    try:
+        from app.modules.platform.events.queues.queue_manager import queue_manager
+
+        stream_group_lag_by_queue = {queue: queue_manager.consumer_group_lag(queue) for queue in queue_groups().values()}
+    except Exception:
+        stream_group_lag_by_queue = {}
     obs = observability_status()
     return {
         "request_id": context.request_id,
@@ -47,6 +53,7 @@ def metrics(context=Depends(build_request_context)) -> dict:
             "iam_token_refreshes": snapshot.iam_token_refreshes,
             "queue_lag_estimate": sum(max(0, value) for value in lag_by_queue.values()),
             "queue_lag_by_queue": lag_by_queue,
+            "queue_consumer_group_lag_by_queue": stream_group_lag_by_queue,
             "otel_enabled": is_otel_ready(),
             "log_sink_configured": obs["log_sink_configured"],
             "prod_requirements_met": obs["prod_requirements_met"],
@@ -80,6 +87,12 @@ def metrics(context=Depends(build_request_context)) -> dict:
 def metrics_prometheus(context=Depends(build_request_context)) -> Response:
     snapshot = metrics_store.snapshot()
     lag_by_queue = {queue: event_queue.lag(queue) for queue in queue_groups().values()}
+    try:
+        from app.modules.platform.events.queues.queue_manager import queue_manager
+
+        stream_group_lag_by_queue = {queue: queue_manager.consumer_group_lag(queue) for queue in queue_groups().values()}
+    except Exception:
+        stream_group_lag_by_queue = {}
     obs = observability_status()
     lines = [
         "# HELP app_request_count total request count",
@@ -158,6 +171,9 @@ def metrics_prometheus(context=Depends(build_request_context)) -> Response:
     for queue, lag in lag_by_queue.items():
         metric_queue = queue.replace(".", "_")
         lines.append(f'app_queue_lag{{queue="{metric_queue}"}} {lag}')
+    for queue, lag in stream_group_lag_by_queue.items():
+        metric_queue = queue.replace(".", "_")
+        lines.append(f'app_queue_consumer_group_lag{{queue="{metric_queue}"}} {lag}')
     return Response("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
 

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from app.modules.erp.query_services import compliance_queries
+
 
 def load_compliance(org_id: str) -> dict:
-    from app.modules.erp.compliance.services.compliance_dashboard_service import compliance_dashboard_service
-
-    dash = compliance_dashboard_service.build(org_id)
+    dash = compliance_queries.dashboard(org_id)
     all_open = len(dash.get("today") or []) + len(dash.get("upcoming_7d") or []) + len(dash.get("overdue") or [])
     overdue = len(dash.get("overdue") or [])
     completed_proxy = max(all_open, 1)

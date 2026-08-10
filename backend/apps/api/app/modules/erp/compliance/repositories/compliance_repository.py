@@ -81,7 +81,7 @@ class ComplianceRuleRepository:
                     ORDER BY t.compliance_code
                     LIMIT %s
                     """,
-                    tuple(params),
+                    (*params, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

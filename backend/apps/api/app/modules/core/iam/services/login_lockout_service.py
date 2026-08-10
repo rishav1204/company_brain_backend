@@ -16,6 +16,10 @@ def _locked_key(email: str, ip: str | None) -> str:
 def is_locked(email: str, ip: str | None = None) -> bool:
     client = get_redis_client()
     if not client:
+        from app.core.config import settings
+
+        if settings.app_env.lower() == "prod":
+            return True
         return False
     try:
         return bool(client.get(_locked_key(email, ip)))
@@ -26,6 +30,10 @@ def is_locked(email: str, ip: str | None = None) -> bool:
 def record_failure(email: str, ip: str | None = None) -> int:
     client = get_redis_client()
     if not client:
+        from app.core.config import settings
+
+        if settings.app_env.lower() == "prod":
+            return MAX_FAILURES
         return 0
     try:
         key = _fail_key(email, ip)
@@ -36,6 +44,10 @@ def record_failure(email: str, ip: str | None = None) -> int:
             client.setex(f"{key}:locked", LOCKOUT_SECONDS, "1")
         return int(count)
     except Exception:
+        from app.core.config import settings
+
+        if settings.app_env.lower() == "prod":
+            return MAX_FAILURES
         return 0
 
 

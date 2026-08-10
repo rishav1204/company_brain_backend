@@ -1,6 +1,6 @@
-from app.modules.erp.tax.ai.compliance_assistant import answer_compliance_question
-from app.modules.erp.tax.ai.gst_copilot import answer_gst_question
-from app.modules.erp.tax.ai.tax_risk_engine import assess_tax_risks
+from app.modules.finance_os.domain_intelligence.tax.compliance_assistant import answer_compliance_question
+from app.modules.finance_os.domain_intelligence.tax.gst_copilot import answer_gst_question
+from app.modules.finance_os.domain_intelligence.tax.tax_risk_engine import assess_tax_risks
 from app.services.event_consumers import _handle_tax_workflow_approval
 
 

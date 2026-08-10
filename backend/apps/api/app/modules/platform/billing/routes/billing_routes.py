@@ -9,7 +9,6 @@ from app.modules.platform.billing.services.entitlement_service import entitlemen
 from app.modules.platform.billing.services.usage_service import usage_service
 from app.modules.platform.billing.services.credit_service import credit_service
 from app.modules.platform.billing.services.plan_service import plan_service
-from app.modules.platform.billing.constants import FEATURE_CODES
 
 router = APIRouter(tags=["billing"])
 
@@ -36,11 +35,11 @@ def get_subscription(context: RequestContext = Depends(build_request_context)) -
 @router.get("/billing/entitlements")
 def get_entitlements(context: RequestContext = Depends(build_request_context)) -> dict:
     org_id = _require_org(context)
-    enabled = [f for f in FEATURE_CODES if entitlement_service.has_feature(org_id, f)]
+    features = entitlement_service.list_effective_features(org_id)
     return {
         "request_id": context.request_id,
         "plan_key": subscription_service.get_plan_key(org_id),
-        "features": enabled,
+        "features": features,
         "verification_status": "billing_entitlements",
     }
 

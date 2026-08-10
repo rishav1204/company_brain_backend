@@ -14,6 +14,7 @@ from app.modules.erp.consolidation.repositories.elimination_repository import el
 from app.modules.erp.consolidation.repositories.hierarchy_repository import hierarchy_repository
 from app.modules.erp.consolidation.repositories.intercompany_repository import intercompany_repository
 from app.modules.erp.consolidation.repositories.ownership_snapshot_repository import ownership_snapshot_repository
+from app.services.db import get_db_conn, set_rls_org
 
 
 @dataclass
@@ -44,8 +45,8 @@ def _validate_periods_closed(org_id: str, company_ids: list[str], fiscal_period_
             match = next((p for p in periods if p.get("period_name") == period_name), None)
             if match and str(match.get("status") or "").lower() not in closed_statuses:
                 return f"Fiscal period not closed for company {cid}"
-    except Exception:
-        pass
+    except Exception as exc:
+        return f"Fiscal period validation failed: {exc}"
     return None
 
 
@@ -65,6 +66,26 @@ def run_consolidation(
         children = hierarchy_repository.list_children(org_id, group_company_id)
         company_ids = [group_company_id] + [c["child_company_id"] for c in children]
     company_ids = list(dict.fromkeys(company_ids))
+
+    # INT-27: V1 consolidation fails closed on multi-currency groups (translation not implemented).
+    try:
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT base_currency
+                    FROM core.companies
+                    WHERE org_id = %s::uuid AND id = ANY(%s::uuid[])
+                    """,
+                    (org_id, company_ids),
+                )
+                currencies = [str(r.get("base_currency") or "") for r in (cur.fetchall() or [])]
+        cur_err = currency_engine.validate_same_currency(currencies)
+        if cur_err:
+            return ConsolidationResult(run_id="", status="failed", error=cur_err)
+    except Exception as exc:
+        return ConsolidationResult(run_id="", status="failed", error=f"Currency validation failed: {exc}")
 
     if not dry_run:
         period_err = _validate_periods_closed(org_id, company_ids, fiscal_period_id)

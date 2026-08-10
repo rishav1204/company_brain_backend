@@ -73,6 +73,51 @@ class TdsTransactionRepository:
                 )
                 return dict(cur.fetchone() or {"id": tid})
 
+    def create_conn(self, conn, org_id: str, **fields) -> dict:
+        tid = str(uuid4())
+        set_rls_org(conn, org_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO erp.tds_transactions (
+                  id, org_id, source_type, source_id, section_code, gross_amount, tds_amount, net_amount,
+                  status, return_period, vendor_id, invoice_id, payment_id, challan_id,
+                  financial_year, quarter, deduction_date, metadata
+                )
+                VALUES (
+                  %s::uuid,%s::uuid,%s,%s::uuid,%s,%s,%s,%s,%s,%s,
+                  %s::uuid,%s::uuid,%s::uuid,%s::uuid,%s,%s,%s::date,%s::jsonb
+                )
+                ON CONFLICT (org_id, source_type, source_id, section_code) DO UPDATE
+                  SET tds_amount=EXCLUDED.tds_amount, net_amount=EXCLUDED.net_amount
+                RETURNING id::text, section_code, tds_amount, net_amount
+                """,
+                (
+                    tid, org_id, fields["source_type"], fields["source_id"], fields["section_code"],
+                    fields["gross_amount"], fields["tds_amount"], fields["net_amount"],
+                    fields.get("status", "calculated"), fields.get("return_period"),
+                    fields.get("vendor_id"), fields.get("invoice_id"), fields.get("payment_id"),
+                    fields.get("challan_id"), fields.get("financial_year"), fields.get("quarter"),
+                    fields.get("deduction_date"), Json(fields.get("metadata") or {}),
+                ),
+            )
+            return dict(cur.fetchone() or {"id": tid})
+
+    def reverse_by_source_conn(self, conn, org_id: str, *, source_type: str, source_id: str) -> int:
+        set_rls_org(conn, org_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.tds_transactions
+                SET status = 'reversed',
+                    metadata = COALESCE(metadata, '{}'::jsonb) || '{"reversed": true}'::jsonb
+                WHERE org_id = %s::uuid AND source_type = %s AND source_id = %s::uuid
+                  AND status <> 'reversed'
+                """,
+                (org_id, source_type, source_id),
+            )
+            return int(cur.rowcount or 0)
+
     def get_by_source(self, org_id: str, *, source_type: str, source_id: str) -> dict | None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)

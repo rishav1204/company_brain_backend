@@ -318,7 +318,7 @@ def test_dashboard_from_cache(mock_schema, mock_dash) -> None:
 
 
 @patch("app.modules.finance_os.analytics.ai.executive_copilot.llm_provider")
-@patch("app.modules.finance_os.analytics.ai.executive_copilot.build_context")
+@patch("app.modules.finance_os.analytics.ai.executive_copilot.legacy_build_context")
 def test_executive_copilot_fallback(mock_ctx, mock_llm) -> None:
     from app.modules.finance_os.analytics.ai.executive_copilot import answer
 
@@ -439,14 +439,18 @@ def test_accuracy_job_uses_proxy(mock_proxy, mock_repo, mock_rec) -> None:
 # --- forecast report variance ---
 
 
-@patch("app.modules.erp.reporting.services.forecast_report_service._actual_proxy")
-@patch("app.modules.erp.reporting.services.forecast_report_service.get_series")
-def test_forecast_report_variance(mock_series, mock_proxy) -> None:
+def test_forecast_report_variance() -> None:
+    from unittest.mock import MagicMock
     from app.modules.erp.reporting.services.forecast_report_service import forecast_report_service
 
-    mock_series.return_value = {"items": [{"forecast_value": 100, "forecast_date": "2026-06-01"}]}
-    mock_proxy.return_value = 110
-    data = forecast_report_service.get("org", forecast_type="cash")
+    mock_forecast = MagicMock()
+    mock_forecast.get_series.return_value = {"items": [{"forecast_value": 100, "forecast_date": "2026-06-01"}]}
+    mock_forecast.actual_proxy.return_value = 110
+    with patch(
+        "app.modules.erp.reporting.services.forecast_report_service.intelligence_registry.forecast",
+        return_value=mock_forecast,
+    ):
+        data = forecast_report_service.get("org", forecast_type="cash")
     assert data["variance"][0]["variance_percent"] == 10.0
 
 

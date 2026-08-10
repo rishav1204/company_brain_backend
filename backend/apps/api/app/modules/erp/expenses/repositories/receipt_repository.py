@@ -220,23 +220,26 @@ class AdvanceRepository:
     def adjust(self, org_id: str, *, advance_id: str, amount: float) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.employee_advances
-                    SET settled_amount = settled_amount + %s::numeric,
-                        status = CASE
-                          WHEN settled_amount + %s::numeric >= advance_amount THEN 'adjusted'
-                          ELSE 'partially_adjusted'
-                        END,
-                        updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, settled_amount, status
-                    """,
-                    (amount, amount, org_id, advance_id),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else {}
+            return self.adjust_conn(conn, org_id, advance_id=advance_id, amount=amount)
+
+    def adjust_conn(self, conn, org_id: str, *, advance_id: str, amount: float) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.employee_advances
+                SET settled_amount = settled_amount + %s::numeric,
+                    status = CASE
+                      WHEN settled_amount + %s::numeric >= advance_amount THEN 'adjusted'
+                      ELSE 'partially_adjusted'
+                    END,
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, settled_amount, status
+                """,
+                (amount, amount, org_id, advance_id),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else {}
 
 
 receipt_repository = ReceiptRepository()

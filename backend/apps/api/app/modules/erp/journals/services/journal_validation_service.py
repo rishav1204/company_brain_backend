@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.modules.erp.journals.ai.confidence_engine import requires_finance_review
 from app.modules.erp.journals.validators.posting_validator import posting_validator
 from app.modules.erp.journals.validators.journal_validator import journal_validator
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 
 
 class JournalValidationService:
@@ -25,7 +25,7 @@ class JournalValidationService:
 
     def ensure_ai_reviewed(self, journal: dict) -> None:
         confidence = journal.get("ai_confidence") if isinstance(journal.get("ai_confidence"), dict) else {}
-        if requires_finance_review(confidence):
+        if intelligence_registry.journal().requires_finance_review(confidence):
             raise ValueError(
                 "AI confidence below threshold; finance review required before approve/post. "
                 "Edit journal lines or mark as reviewed."

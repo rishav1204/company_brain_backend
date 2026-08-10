@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from app.modules.erp.gl.services.posting_service import posting_service
+from app.modules.erp.gl.services.posting_service import POSTING_INTERNAL, posting_service
 from app.modules.erp.journals.events.journal_events import emit_journal_posted
 from app.modules.erp.journals.events.posting_events import emit_posting_completed
 from app.modules.erp.journals.repositories.journal_line_repository import journal_line_repository
@@ -57,6 +57,7 @@ class PostingOrchestrator:
             posting_date=str(journal.get("posting_date")),
             lines=gl_lines,
             company_id=journal.get("company_id"),
+            _posting_caller=POSTING_INTERNAL,
         )
         batch_id = str(gl_result.get("batch_id") or "")
         journal_repository.set_status_conn(
@@ -67,6 +68,15 @@ class PostingOrchestrator:
             posted_by=posted_by,
             ledger_batch_id=batch_id or None,
         )
+        # INT-06: Record GST transactions atomically with journal posting for invoice sources.
+        from app.modules.erp.tax.services.gst_transaction_service import gst_transaction_service
+
+        source_type = str(journal.get("source_type") or "")
+        source_id = str(journal.get("source_id") or "")
+        if source_type in {"ap_invoice", "ar_invoice"} and source_id:
+            gst_transaction_service.record_from_source_with_conn(
+                conn, org_id, source_type=source_type, source_id=source_id
+            )
         result = {
             "journal_id": journal_id,
             "journal_status": "posted",
@@ -114,8 +124,35 @@ class PostingOrchestrator:
             )
         except Exception:
             pass
+        try:
+            from app.modules.erp.coa.repositories.account_usage_repository import account_usage_repository
+            from app.modules.erp.journals.repositories.journal_line_repository import journal_line_repository
+
+            for line in journal_line_repository.list_by_journal(org_id, journal_id=journal_id):
+                account_usage_repository.upsert(
+                    org_id,
+                    account_id=str(line.get("account_id")),
+                    has_balance=True,
+                    used_in_journals=True,
+                )
+        except Exception as exc:
+            from app.services.logger import log_event
+
+            log_event(
+                "erp.coa.account_usage_upsert_failed",
+                org_id=org_id,
+                journal_id=journal_id,
+                error=str(exc),
+            )
 
     def post_journal(self, org_id: str, *, journal_id: str, posted_by: str | None) -> dict:
+        # RQ-11: Serialize posting per journal_id to prevent duplicate batches under concurrency/retry.
+        from app.core.redis_lock import redis_lock
+
+        with redis_lock(f"erp:journal:post:{org_id}:{journal_id}", ttl_seconds=90, wait_seconds=10.0):
+            return self._post_journal_locked(org_id, journal_id=journal_id, posted_by=posted_by)
+
+    def _post_journal_locked(self, org_id: str, *, journal_id: str, posted_by: str | None) -> dict:
         started = time.time()
         journal = journal_repository.get(org_id, journal_id=journal_id)
         if not journal:

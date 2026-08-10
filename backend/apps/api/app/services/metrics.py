@@ -53,6 +53,9 @@ class MetricsSnapshot:
     journal_approvals: int
     journal_submissions: int
     journal_ai_low_confidence: int
+    outbox_published: int
+    outbox_failed: int
+    outbox_dead: int
 
 
 class MetricsStore:
@@ -107,6 +110,9 @@ class MetricsStore:
         self.journal_approvals = 0
         self.journal_submissions = 0
         self.journal_ai_low_confidence = 0
+        self.outbox_published = 0
+        self.outbox_failed = 0
+        self.outbox_dead = 0
         self._queue_lag: dict[str, int] = {}
         self._queue_dlq_lag: dict[str, int] = {}
 
@@ -282,6 +288,18 @@ class MetricsStore:
         with self._lock:
             self.journal_ai_low_confidence += 1
 
+    def incr_outbox_published(self) -> None:
+        with self._lock:
+            self.outbox_published += 1
+
+    def incr_outbox_failed(self) -> None:
+        with self._lock:
+            self.outbox_failed += 1
+
+    def incr_outbox_dead(self) -> None:
+        with self._lock:
+            self.outbox_dead += 1
+
     def record_notification_delivery_latency(self, latency_ms: int) -> None:
         with self._lock:
             self.notification_delivery_latency_ms_total += latency_ms
@@ -356,6 +374,9 @@ class MetricsStore:
                 journal_approvals=self.journal_approvals,
                 journal_submissions=self.journal_submissions,
                 journal_ai_low_confidence=self.journal_ai_low_confidence,
+                outbox_published=self.outbox_published,
+                outbox_failed=self.outbox_failed,
+                outbox_dead=self.outbox_dead,
             )
 
 

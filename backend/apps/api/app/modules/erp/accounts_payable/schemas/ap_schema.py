@@ -53,6 +53,7 @@ class InvoiceCreateRequest(BaseModel):
     total_amount: float = Field(gt=0)
     source_document_id: str | None = None
     company_id: str | None = None
+    branch_id: str | None = None
     expense_account_id: str | None = None
     purchase_order_id: str | None = None
     goods_receipt_id: str | None = None
@@ -87,6 +88,7 @@ class PaymentScheduleRequest(BaseModel):
     amount: float = Field(gt=0)
     bank_account_id: str
     company_id: str | None = None
+    branch_id: str | None = None
     invoice_allocations: list[dict] = Field(default_factory=list)
 
 

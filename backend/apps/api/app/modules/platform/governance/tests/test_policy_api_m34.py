@@ -175,8 +175,12 @@ def test_list_matrix_route(mock_repo: MagicMock) -> None:
 def test_sod_catalog_route() -> None:
     from app.modules.platform.governance.routes.policy_engine_routes import sod_catalog
 
-    ctx = MagicMock(request_id="req-1")
-    out = sod_catalog(ctx)
+    ctx = MagicMock(request_id="req-1", org_id="11111111-1111-4111-8111-111111111111")
+    with patch(
+        "app.modules.platform.governance.repositories.sod_conflict_repository.sod_conflict_repo.list_conflicts",
+        return_value=[],
+    ):
+        out = sod_catalog(ctx)
     assert "maker_checker_actions" in out
     assert isinstance(out["maker_checker_actions"], list)
 
@@ -195,12 +199,14 @@ def test_create_exception_route(mock_repo: MagicMock) -> None:
 
 
 def test_m34_doc_exists() -> None:
-    doc = Path(__file__).resolve().parents[7] / "ERP_MODULES" / "M34_policy_engine.md"
+    docs = Path(__file__).resolve().parents[8] / "docs"
+    doc = docs / "ERP_MODULES" / "M34_policy_engine.md"
+    if not doc.is_file():
+        doc = Path(__file__).resolve().parents[7] / "ERP_MODULES" / "M34_policy_engine.md"
     assert doc.exists()
     assert "Golden rule" in doc.read_text(encoding="utf-8")
 
 
-def test_erp_master_map_references_m34() -> None:
-    text = Path(__file__).resolve().parents[7].joinpath("ERP_MASTER_MODULE_MAP.md").read_text(encoding="utf-8")
-    assert "M34" in text
-    assert "Policy Engine" in text
+def test_erp_master_map_references_m34(erp_master_module_map: str) -> None:
+    assert "M34" in erp_master_module_map
+    assert "Policy Engine" in erp_master_module_map

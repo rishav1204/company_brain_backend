@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+
+from app.api.deps import build_request_context
+from app.core.sse_token_service import issue_sse_token
 
 from app.core.config import settings
 from app.modules.core.iam.schemas.auth_schema import (
@@ -41,6 +44,8 @@ def auth_login(request_body: LoginRequest, request: Request, response: Response)
             device_info={"user_agent": request.headers.get("user-agent", "")},
             ip_address=_client_ip(request),
             mfa_code=request_body.mfa_code,
+            org_id=request_body.org_id,
+            org_slug=request_body.org_slug,
         )
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
@@ -61,6 +66,17 @@ def auth_login(request_body: LoginRequest, request: Request, response: Response)
         confidence=0.99,
         verification_status="iam_db_login",
     )
+
+
+@router.post("/auth/sse-token")
+def auth_sse_token(context=Depends(build_request_context)) -> dict:
+    """Issue short-lived token for EventSource streams (SEC-03). Use X-SSE-Token header on stream URL."""
+    raw, ttl = issue_sse_token(
+        org_id=context.org_id,
+        user_id=context.user_id,
+        session_id=context.session_id,
+    )
+    return {"sse_token": raw, "expires_in": ttl}
 
 
 @router.post("/auth/refresh", response_model=RefreshResponse)

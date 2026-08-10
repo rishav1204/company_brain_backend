@@ -6,6 +6,7 @@ from app.api.deps import build_request_context
 from app.modules.erp.coa.repositories.account_group_repository import account_group_repository
 from app.modules.erp.coa.repositories.account_repository import account_repository
 from app.modules.erp.coa.repositories.cost_center_repository import cost_center_repository
+from app.modules.erp.coa.services.coa_version_service import coa_version_service
 
 router = APIRouter()
 
@@ -87,4 +88,33 @@ def search_accounts(
         if qn in str(a.get("account_code") or "").lower() or qn in str(a.get("account_name") or "").lower()
     ][:100]
     return {"request_id": context.request_id, "items": matches}
+
+
+@router.post("/coa/versions/snapshot")
+def snapshot_coa_version(
+    context=Depends(build_request_context),
+    fiscal_year: str = Query(..., min_length=4, max_length=16),
+    version_label: str = Query(default="default", max_length=64),
+    effective_from: str = Query(...),
+    effective_to: str | None = Query(default=None),
+    company_id: str | None = Query(default=None),
+) -> dict:
+    item = coa_version_service.snapshot_current(
+        context.org_id,
+        fiscal_year=fiscal_year,
+        version_label=version_label,
+        effective_from=effective_from,
+        effective_to=effective_to,
+        company_id=company_id,
+    )
+    return {"request_id": context.request_id, "item": item}
+
+
+@router.get("/coa/versions")
+def list_coa_versions(
+    context=Depends(build_request_context),
+    fiscal_year: str | None = Query(default=None),
+) -> dict:
+    items = coa_version_service.list_versions(context.org_id, fiscal_year=fiscal_year)
+    return {"request_id": context.request_id, "items": items}
 

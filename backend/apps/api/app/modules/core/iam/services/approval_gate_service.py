@@ -65,7 +65,11 @@ def requires_human_approval(
                                     return True
                             except (TypeError, ValueError):
                                 pass
-    return False
+    # Legacy default when no IAM amount attrs constrain the decision.
+    try:
+        return float(amount) > 50_000
+    except (TypeError, ValueError):
+        return False
 
 
 def pending_approval_response_reason(decision_reason: str) -> bool:

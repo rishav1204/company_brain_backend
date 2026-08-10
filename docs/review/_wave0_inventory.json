@@ -1,0 +1,3119 @@
+{
+  "app_py_count": 1905,
+  "test_py_count": 147,
+  "service_named": [
+    "core/sse_token_service.py",
+    "modules/core/iam/services/abac_service.py",
+    "modules/core/iam/services/api_key_auth_service.py",
+    "modules/core/iam/services/approval_gate_service.py",
+    "modules/core/iam/services/auth_audit_service.py",
+    "modules/core/iam/services/auth_service.py",
+    "modules/core/iam/services/branch_scope_service.py",
+    "modules/core/iam/services/device_trust_service.py",
+    "modules/core/iam/services/email_otp_service.py",
+    "modules/core/iam/services/fiscal_period_service.py",
+    "modules/core/iam/services/iam_schema_service.py",
+    "modules/core/iam/services/invite_service.py",
+    "modules/core/iam/services/jwt_service.py",
+    "modules/core/iam/services/login_lockout_service.py",
+    "modules/core/iam/services/maker_checker_service.py",
+    "modules/core/iam/services/mfa_service.py",
+    "modules/core/iam/services/oidc_service.py",
+    "modules/core/iam/services/organization_service.py",
+    "modules/core/iam/services/password_lifecycle_service.py",
+    "modules/core/iam/services/password_service.py",
+    "modules/core/iam/services/policy_rules_service.py",
+    "modules/core/iam/services/rbac_service.py",
+    "modules/core/iam/services/session_policy_service.py",
+    "modules/core/iam/services/session_service.py",
+    "modules/core/iam/services/sms_otp_service.py",
+    "modules/core/iam/services/webauthn_service.py",
+    "modules/erp/accounts_payable/services/aging_service.py",
+    "modules/erp/accounts_payable/services/ai_invoice_service.py",
+    "modules/erp/accounts_payable/services/ap_realtime_service.py",
+    "modules/erp/accounts_payable/services/approval_service.py",
+    "modules/erp/accounts_payable/services/duplicate_invoice_service.py",
+    "modules/erp/accounts_payable/services/invoice_service.py",
+    "modules/erp/accounts_payable/services/note_service.py",
+    "modules/erp/accounts_payable/services/payment_scheduler_service.py",
+    "modules/erp/accounts_payable/services/payment_service.py",
+    "modules/erp/accounts_payable/services/statement_service.py",
+    "modules/erp/accounts_payable/services/vendor_balance_service.py",
+    "modules/erp/accounts_payable/services/vendor_service.py",
+    "modules/erp/accounts_receivable/services/aging_service.py",
+    "modules/erp/accounts_receivable/services/ai_collection_service.py",
+    "modules/erp/accounts_receivable/services/ar_realtime_service.py",
+    "modules/erp/accounts_receivable/services/collection_service.py",
+    "modules/erp/accounts_receivable/services/credit_limit_service.py",
+    "modules/erp/accounts_receivable/services/customer_balance_service.py",
+    "modules/erp/accounts_receivable/services/customer_service.py",
+    "modules/erp/accounts_receivable/services/dunning_service.py",
+    "modules/erp/accounts_receivable/services/note_service.py",
+    "modules/erp/accounts_receivable/services/revenue_recognition_service.py",
+    "modules/erp/accounts_receivable/services/sales_invoice_service.py",
+    "modules/erp/accounts_receivable/services/statement_service.py",
+    "modules/erp/assets/services/asset_register_service.py",
+    "modules/erp/assets/services/asset_service.py",
+    "modules/erp/assets/services/candidate_service.py",
+    "modules/erp/assets/services/capitalization_service.py",
+    "modules/erp/assets/services/depreciation_service.py",
+    "modules/erp/assets/services/disposal_service.py",
+    "modules/erp/assets/services/impairment_service.py",
+    "modules/erp/assets/services/transfer_service.py",
+    "modules/erp/assets/services/useful_life_service.py",
+    "modules/erp/banking/services/bank_account_service.py",
+    "modules/erp/banking/services/bank_feed_service.py",
+    "modules/erp/banking/services/bank_rail_service.py",
+    "modules/erp/banking/services/beneficiary_service.py",
+    "modules/erp/banking/services/payment_execution_service.py",
+    "modules/erp/banking/services/payment_status_service.py",
+    "modules/erp/banking/services/receipt_service.py",
+    "modules/erp/banking/services/statement_import_service.py",
+    "modules/erp/banking/services/transaction_service.py",
+    "modules/erp/coa/services/account_group_service.py",
+    "modules/erp/coa/services/account_service.py",
+    "modules/erp/coa/services/account_validation_service.py",
+    "modules/erp/coa/services/coa_version_service.py",
+    "modules/erp/coa/services/cost_center_service.py",
+    "modules/erp/coa/services/import_export_service.py",
+    "modules/erp/coa/services/mapping_service.py",
+    "modules/erp/compliance/services/calendar_service.py",
+    "modules/erp/compliance/services/compliance_dashboard_service.py",
+    "modules/erp/compliance/services/compliance_rule_service.py",
+    "modules/erp/compliance/services/compliance_scheduler_service.py",
+    "modules/erp/compliance/services/escalation_service.py",
+    "modules/erp/compliance/services/obligation_service.py",
+    "modules/erp/compliance/services/penalty_service.py",
+    "modules/erp/compliance/services/reminder_service.py",
+    "modules/erp/consolidation/services/branch_service.py",
+    "modules/erp/consolidation/services/consolidation_service.py",
+    "modules/erp/consolidation/services/elimination_service.py",
+    "modules/erp/consolidation/services/entity_service.py",
+    "modules/erp/consolidation/services/intercompany_service.py",
+    "modules/erp/consolidation/services/ownership_service.py",
+    "modules/erp/expenses/services/advance_service.py",
+    "modules/erp/expenses/services/ai_expense_service.py",
+    "modules/erp/expenses/services/card_expense_service.py",
+    "modules/erp/expenses/services/claim_service.py",
+    "modules/erp/expenses/services/duplicate_detection_service.py",
+    "modules/erp/expenses/services/policy_service.py",
+    "modules/erp/expenses/services/reimbursement_service.py",
+    "modules/erp/fiscal/services/close_service.py",
+    "modules/erp/fiscal/services/fiscal_period_service.py",
+    "modules/erp/fiscal/services/fiscal_year_service.py",
+    "modules/erp/fiscal/services/period_lock_service.py",
+    "modules/erp/fiscal/services/posting_validation_service.py",
+    "modules/erp/fiscal/services/reopen_service.py",
+    "modules/erp/fiscal/services/year_end_service.py",
+    "modules/erp/fx/services/exchange_rate_service.py",
+    "modules/erp/fx/services/fx_revaluation_service.py",
+    "modules/erp/gl/services/balance_service.py",
+    "modules/erp/gl/services/fiscal_period_service.py",
+    "modules/erp/gl/services/ledger_service.py",
+    "modules/erp/gl/services/parallel_ledger_service.py",
+    "modules/erp/gl/services/posting_service.py",
+    "modules/erp/gl/services/reversal_service.py",
+    "modules/erp/gl/services/trial_balance_service.py",
+    "modules/erp/import_customs/services/bill_of_entry_service.py",
+    "modules/erp/inventory/services/adjustment_service.py",
+    "modules/erp/inventory/services/costing_service.py",
+    "modules/erp/inventory/services/inventory_close_service.py",
+    "modules/erp/inventory/services/inventory_service.py",
+    "modules/erp/inventory/services/issue_service.py",
+    "modules/erp/inventory/services/item_service.py",
+    "modules/erp/inventory/services/movement_service.py",
+    "modules/erp/inventory/services/receipt_service.py",
+    "modules/erp/inventory/services/valuation_service.py",
+    "modules/erp/journals/services/accrual_service.py",
+    "modules/erp/journals/services/ai_journal_service.py",
+    "modules/erp/journals/services/approval_service.py",
+    "modules/erp/journals/services/journal_realtime_service.py",
+    "modules/erp/journals/services/journal_service.py",
+    "modules/erp/journals/services/journal_template_service.py",
+    "modules/erp/journals/services/journal_validation_service.py",
+    "modules/erp/journals/services/recurring_journal_service.py",
+    "modules/erp/journals/services/reversal_service.py",
+    "modules/erp/payroll/services/salary_run_service.py",
+    "modules/erp/procurement/services/approval_service.py",
+    "modules/erp/procurement/services/budget_check_service.py",
+    "modules/erp/procurement/services/grn_accrual_service.py",
+    "modules/erp/procurement/services/grn_service.py",
+    "modules/erp/procurement/services/matching_service.py",
+    "modules/erp/procurement/services/po_invoice_line_service.py",
+    "modules/erp/procurement/services/po_service.py",
+    "modules/erp/procurement/services/procurement_policy_service.py",
+    "modules/erp/procurement/services/requisition_service.py",
+    "modules/erp/procurement/services/vendor_selection_service.py",
+    "modules/erp/reconciliation/services/adjustment_service.py",
+    "modules/erp/reconciliation/services/approval_service.py",
+    "modules/erp/reconciliation/services/bank_match_service.py",
+    "modules/erp/reconciliation/services/customer_match_service.py",
+    "modules/erp/reconciliation/services/exception_service.py",
+    "modules/erp/reconciliation/services/reconciliation_service.py",
+    "modules/erp/reconciliation/services/subledger_gl_reconciliation_service.py",
+    "modules/erp/reconciliation/services/vendor_match_service.py",
+    "modules/erp/reporting/services/aging_report_service.py",
+    "modules/erp/reporting/services/balance_sheet_service.py",
+    "modules/erp/reporting/services/cash_flow_service.py",
+    "modules/erp/reporting/services/export_service.py",
+    "modules/erp/reporting/services/forecast_report_service.py",
+    "modules/erp/reporting/services/gst_report_service.py",
+    "modules/erp/reporting/services/pnl_service.py",
+    "modules/erp/reporting/services/tds_report_service.py",
+    "modules/erp/reporting/services/treasury_report_service.py",
+    "modules/erp/reporting/services/trial_balance_service.py",
+    "modules/erp/security/company_resolution_service.py",
+    "modules/erp/security/services/company_remediation_service.py",
+    "modules/erp/tax/services/compliance_calendar_service.py",
+    "modules/erp/tax/services/e_invoice_service.py",
+    "modules/erp/tax/services/eway_bill_service.py",
+    "modules/erp/tax/services/filing_service.py",
+    "modules/erp/tax/services/form16a_service.py",
+    "modules/erp/tax/services/gst_calculation_service.py",
+    "modules/erp/tax/services/gst_posting_service.py",
+    "modules/erp/tax/services/gst_reconciliation_service.py",
+    "modules/erp/tax/services/gst_return_service.py",
+    "modules/erp/tax/services/gst_service.py",
+    "modules/erp/tax/services/gst_transaction_service.py",
+    "modules/erp/tax/services/itc_service.py",
+    "modules/erp/tax/services/notice_management_service.py",
+    "modules/erp/tax/services/payroll_tds_service.py",
+    "modules/erp/tax/services/tax_account_setup_service.py",
+    "modules/erp/tax/services/tax_rate_service.py",
+    "modules/erp/tax/services/tax_treasury_bridge_service.py",
+    "modules/erp/tax/services/tcs_service.py",
+    "modules/erp/tax/services/tds_challan_service.py",
+    "modules/erp/tax/services/tds_posting_service.py",
+    "modules/erp/tax/services/tds_reconciliation_service.py",
+    "modules/erp/tax/services/tds_return_service.py",
+    "modules/erp/tax/services/tds_service.py",
+    "modules/erp/treasury/services/bank_account_service.py",
+    "modules/erp/treasury/services/bank_feed_service.py",
+    "modules/erp/treasury/services/bank_rail_service.py",
+    "modules/erp/treasury/services/bank_transaction_service.py",
+    "modules/erp/treasury/services/beneficiary_verification_service.py",
+    "modules/erp/treasury/services/cash_pool_service.py",
+    "modules/erp/treasury/services/cash_position_service.py",
+    "modules/erp/treasury/services/cashflow_service.py",
+    "modules/erp/treasury/services/concentration_service.py",
+    "modules/erp/treasury/services/funding_service.py",
+    "modules/erp/treasury/services/liquidity_service.py",
+    "modules/erp/treasury/services/payment_service.py",
+    "modules/erp/treasury/services/reconciliation_service.py",
+    "modules/erp/treasury/services/transfer_service.py",
+    "modules/erp/treasury/services/treasury_forecast_service.py",
+    "modules/erp/treasury/services/treasury_policy_service.py",
+    "modules/erp/treasury/services/treasury_realtime_service.py",
+    "modules/erp/treasury/services/treasury_service.py",
+    "modules/erp/vouchers/services/journal_generation_service.py",
+    "modules/erp/vouchers/services/voucher_projection_service.py",
+    "modules/erp/vouchers/services/voucher_sequence_service.py",
+    "modules/erp/vouchers/services/voucher_service.py",
+    "modules/erp/vouchers/services/voucher_validation_service.py",
+    "modules/erp/vouchers/services/voucher_workflow_service.py",
+    "modules/finance_os/agents/services/agent_memory_service.py",
+    "modules/finance_os/agents/services/context_service.py",
+    "modules/finance_os/agents/services/execution_service.py",
+    "modules/finance_os/agents/services/planning_service.py",
+    "modules/finance_os/agents/services/recommendation_service.py",
+    "modules/finance_os/analytics/services/anomaly_analytics_service.py",
+    "modules/finance_os/analytics/services/benchmark_service.py",
+    "modules/finance_os/analytics/services/close_analytics_service.py",
+    "modules/finance_os/analytics/services/executive_dashboard_service.py",
+    "modules/finance_os/analytics/services/insight_service.py",
+    "modules/finance_os/analytics/services/kpi_service.py",
+    "modules/finance_os/analytics/services/trend_service.py",
+    "modules/finance_os/audit_explorer/services/ai_explanation_service.py",
+    "modules/finance_os/audit_explorer/services/audit_evidence_service.py",
+    "modules/finance_os/audit_explorer/services/audit_explorer_service.py",
+    "modules/finance_os/audit_explorer/services/audit_search_service.py",
+    "modules/finance_os/audit_explorer/services/timeline_service.py",
+    "modules/finance_os/audit_explorer/services/workflow_trace_service.py",
+    "modules/finance_os/forecasting/services/forecast_accuracy_query_service.py",
+    "modules/finance_os/forecasting/services/forecast_accuracy_service.py",
+    "modules/finance_os/forecasting/services/forecast_explanation_service.py",
+    "modules/finance_os/forecasting/services/forecast_query_service.py",
+    "modules/finance_os/graph/services/causality_service.py",
+    "modules/finance_os/graph/services/dependency_service.py",
+    "modules/finance_os/graph/services/finance_graph_service.py",
+    "modules/finance_os/graph/services/graph_projection_service.py",
+    "modules/finance_os/graph/services/graph_search_service.py",
+    "modules/finance_os/graph/services/lineage_service.py",
+    "modules/finance_os/graph/services/visualization_service.py",
+    "modules/finance_os/invoice_ai/services/anomaly_service.py",
+    "modules/finance_os/invoice_ai/services/confidence_service.py",
+    "modules/finance_os/invoice_ai/services/copilot_service.py",
+    "modules/finance_os/invoice_ai/services/duplicate_service.py",
+    "modules/finance_os/invoice_ai/services/extraction_service.py",
+    "modules/finance_os/invoice_ai/services/ledger_suggestion_service.py",
+    "modules/finance_os/invoice_ai/services/prediction_service.py",
+    "modules/finance_os/memory/services/memory_cleanup_service.py",
+    "modules/finance_os/memory/services/memory_insight_service.py",
+    "modules/finance_os/memory/services/memory_service.py",
+    "modules/finance_os/memory/services/memory_summarization_service.py",
+    "modules/finance_os/memory/services/memory_writer_service.py",
+    "modules/finance_os/memory/services/retrieval_service.py",
+    "modules/finance_os/platform_ai_runtime/services/runtime_service.py",
+    "modules/finance_os/workflow_intelligence/services/approval_optimization_service.py",
+    "modules/finance_os/workflow_intelligence/services/bottleneck_service.py",
+    "modules/finance_os/workflow_intelligence/services/sla_prediction_service.py",
+    "modules/finance_os/workflow_intelligence/services/workflow_analysis_service.py",
+    "modules/finance_os/workflow_intelligence/services/workflow_insight_service.py",
+    "modules/finance_os/workflow_intelligence/services/workflow_pattern_service.py",
+    "modules/platform/api_gateway/services/api_key_service.py",
+    "modules/platform/api_gateway/services/api_request_log_service.py",
+    "modules/platform/api_gateway/services/event_stream_service.py",
+    "modules/platform/api_gateway/services/rate_limit_service.py",
+    "modules/platform/api_gateway/services/retry_service.py",
+    "modules/platform/api_gateway/services/signature_service.py",
+    "modules/platform/api_gateway/services/webhook_service.py",
+    "modules/platform/billing/services/credit_service.py",
+    "modules/platform/billing/services/entitlement_service.py",
+    "modules/platform/billing/services/plan_service.py",
+    "modules/platform/billing/services/subscription_service.py",
+    "modules/platform/billing/services/usage_service.py",
+    "modules/platform/documents/search/semantic_search_service.py",
+    "modules/platform/documents/services/classification_service.py",
+    "modules/platform/documents/services/document_review_workflow_service.py",
+    "modules/platform/documents/services/document_search_service.py",
+    "modules/platform/documents/services/document_service.py",
+    "modules/platform/documents/services/duplicate_detection_service.py",
+    "modules/platform/documents/services/evidence_service.py",
+    "modules/platform/documents/services/extraction_service.py",
+    "modules/platform/documents/services/malware_scan_service.py",
+    "modules/platform/documents/services/ocr_service.py",
+    "modules/platform/documents/services/realtime_documents_service.py",
+    "modules/platform/documents/services/retention_service.py",
+    "modules/platform/documents/services/storage_service.py",
+    "modules/platform/documents/services/versioning_service.py",
+    "modules/platform/events/services/event_service.py",
+    "modules/platform/events/services/idempotency_service.py",
+    "modules/platform/events/services/rate_limit_service.py",
+    "modules/platform/events/services/retry_service.py",
+    "modules/platform/events/services/scheduling_service.py",
+    "modules/platform/events/services/webhook_service.py",
+    "modules/platform/governance/services/ai_trace_service.py",
+    "modules/platform/governance/services/audit_service.py",
+    "modules/platform/governance/services/compliance_service.py",
+    "modules/platform/governance/services/evidence_service.py",
+    "modules/platform/governance/services/forensics_service.py",
+    "modules/platform/governance/services/governance_service.py",
+    "modules/platform/governance/services/policy_service.py",
+    "modules/platform/governance/services/retention_service.py",
+    "modules/platform/governance/services/risk_service.py",
+    "modules/platform/integrations/services/api_key_service.py",
+    "modules/platform/integrations/services/connector_service.py",
+    "modules/platform/integrations/services/connector_uat_service.py",
+    "modules/platform/integrations/services/ingestion_service.py",
+    "modules/platform/integrations/services/rate_limit_service.py",
+    "modules/platform/integrations/services/sync_service.py",
+    "modules/platform/integrations/services/transformation_service.py",
+    "modules/platform/integrations/services/webhook_service.py",
+    "modules/platform/notifications/services/delivery_service.py",
+    "modules/platform/notifications/services/digest_service.py",
+    "modules/platform/notifications/services/email_service.py",
+    "modules/platform/notifications/services/escalation_notification_service.py",
+    "modules/platform/notifications/services/notification_service.py",
+    "modules/platform/notifications/services/preference_service.py",
+    "modules/platform/notifications/services/realtime_service.py",
+    "modules/platform/notifications/services/retry_service.py",
+    "modules/platform/notifications/services/subscription_service.py",
+    "modules/platform/notifications/services/template_service.py",
+    "modules/workflows/services/approval_service.py",
+    "modules/workflows/services/assignment_service.py",
+    "modules/workflows/services/escalation_service.py",
+    "modules/workflows/services/retry_service.py",
+    "modules/workflows/services/scheduled_workflow_service.py",
+    "modules/workflows/services/sla_service.py",
+    "modules/workflows/services/step_service.py",
+    "modules/workflows/services/workflow_policy_service.py",
+    "modules/workflows/services/workflow_service.py",
+    "services/action_service.py",
+    "services/benchmark_eval_service.py",
+    "services/canonicalization_service.py",
+    "services/embedding_worker_service.py",
+    "services/graph_extraction_service.py",
+    "services/graph_service.py",
+    "services/identity_resolution_service.py",
+    "services/ingestion_service.py",
+    "services/integration_service.py",
+    "services/learning_governance_service.py",
+    "services/memory_service.py",
+    "services/neo4j_service.py",
+    "services/observability_service.py",
+    "services/oidc_service.py",
+    "services/policy_service.py",
+    "services/processing_service.py",
+    "services/queue_service.py",
+    "services/redis_queue_service.py",
+    "services/retrieval_eval_service.py",
+    "services/retrieval_service.py",
+    "services/scheduler_service.py",
+    "services/training_eval_service.py",
+    "services/worker_service.py"
+  ],
+  "repo_named": [
+    "modules/core/iam/repositories/api_key_repository.py",
+    "modules/core/iam/repositories/auth_audit_repository.py",
+    "modules/core/iam/repositories/department_repository.py",
+    "modules/core/iam/repositories/mfa_repository.py",
+    "modules/core/iam/repositories/organization_repository.py",
+    "modules/core/iam/repositories/permission_repository.py",
+    "modules/core/iam/repositories/role_repository.py",
+    "modules/core/iam/repositories/session_repository.py",
+    "modules/core/iam/repositories/user_repository.py",
+    "modules/erp/accounts_payable/repositories/invoice_line_repository.py",
+    "modules/erp/accounts_payable/repositories/invoice_repository.py",
+    "modules/erp/accounts_payable/repositories/payment_repository.py",
+    "modules/erp/accounts_payable/repositories/vendor_balance_repository.py",
+    "modules/erp/accounts_payable/repositories/vendor_bank_repository.py",
+    "modules/erp/accounts_payable/repositories/vendor_repository.py",
+    "modules/erp/accounts_receivable/repositories/customer_address_repository.py",
+    "modules/erp/accounts_receivable/repositories/customer_balance_repository.py",
+    "modules/erp/accounts_receivable/repositories/customer_repository.py",
+    "modules/erp/accounts_receivable/repositories/invoice_line_repository.py",
+    "modules/erp/accounts_receivable/repositories/invoice_repository.py",
+    "modules/erp/accounts_receivable/repositories/receipt_repository.py",
+    "modules/erp/assets/repositories/asset_repository.py",
+    "modules/erp/assets/repositories/candidate_repository.py",
+    "modules/erp/assets/repositories/category_repository.py",
+    "modules/erp/assets/repositories/depreciation_repository.py",
+    "modules/erp/banking/repositories/bank_account_repository.py",
+    "modules/erp/banking/repositories/bank_transaction_repository.py",
+    "modules/erp/banking/repositories/beneficiary_repository.py",
+    "modules/erp/banking/repositories/payment_request_repository.py",
+    "modules/erp/coa/repositories/account_group_repository.py",
+    "modules/erp/coa/repositories/account_repository.py",
+    "modules/erp/coa/repositories/account_usage_repository.py",
+    "modules/erp/coa/repositories/coa_version_repository.py",
+    "modules/erp/coa/repositories/cost_center_repository.py",
+    "modules/erp/coa/repositories/mapping_repository.py",
+    "modules/erp/compliance/repositories/compliance_repository.py",
+    "modules/erp/consolidation/repositories/consolidation_run_repository.py",
+    "modules/erp/consolidation/repositories/elimination_repository.py",
+    "modules/erp/consolidation/repositories/hierarchy_repository.py",
+    "modules/erp/consolidation/repositories/intercompany_repository.py",
+    "modules/erp/consolidation/repositories/ownership_snapshot_repository.py",
+    "modules/erp/expenses/repositories/claim_repository.py",
+    "modules/erp/expenses/repositories/receipt_repository.py",
+    "modules/erp/fiscal/repositories/fiscal_period_repository.py",
+    "modules/erp/fiscal/repositories/fiscal_year_repository.py",
+    "modules/erp/fx/repositories/exchange_rate_repository.py",
+    "modules/erp/fx/repositories/fx_revaluation_repository.py",
+    "modules/erp/gl/repositories/balance_repository.py",
+    "modules/erp/gl/repositories/fiscal_period_repository.py",
+    "modules/erp/gl/repositories/ledger_query_repository.py",
+    "modules/erp/gl/repositories/ledger_repository.py",
+    "modules/erp/gl/repositories/parallel_ledger_repository.py",
+    "modules/erp/import_customs/repositories/bill_of_entry_repository.py",
+    "modules/erp/inventory/repositories/item_repository.py",
+    "modules/erp/inventory/repositories/movement_repository.py",
+    "modules/erp/journals/repositories/accrual_repository.py",
+    "modules/erp/journals/repositories/journal_line_repository.py",
+    "modules/erp/journals/repositories/journal_repository.py",
+    "modules/erp/journals/repositories/recurring_repository.py",
+    "modules/erp/journals/repositories/reversal_repository.py",
+    "modules/erp/payroll/repositories/employee_repository.py",
+    "modules/erp/payroll/repositories/salary_run_repository.py",
+    "modules/erp/procurement/repositories/grn_repository.py",
+    "modules/erp/procurement/repositories/match_repository.py",
+    "modules/erp/procurement/repositories/po_repository.py",
+    "modules/erp/procurement/repositories/policy_repository.py",
+    "modules/erp/procurement/repositories/requisition_repository.py",
+    "modules/erp/reconciliation/repositories/adjustment_repository.py",
+    "modules/erp/reconciliation/repositories/exception_repository.py",
+    "modules/erp/reconciliation/repositories/match_line_repository.py",
+    "modules/erp/reconciliation/repositories/reconciliation_repository.py",
+    "modules/erp/reconciliation/repositories/rules_repository.py",
+    "modules/erp/reporting/repositories/aging_repository.py",
+    "modules/erp/reporting/repositories/report_runs_repository.py",
+    "modules/erp/reporting/repositories/schema_repository.py",
+    "modules/erp/reporting/repositories/snapshots_repository.py",
+    "modules/erp/reporting/repositories/statement_repository.py",
+    "modules/erp/reporting/repositories/tax_summary_repository.py",
+    "modules/erp/reporting/repositories/trial_balance_repository.py",
+    "modules/erp/tax/repositories/compliance_repository.py",
+    "modules/erp/tax/repositories/gst_repository.py",
+    "modules/erp/tax/repositories/itc_repository.py",
+    "modules/erp/tax/repositories/return_repository.py",
+    "modules/erp/tax/repositories/tax_rate_repository.py",
+    "modules/erp/tax/repositories/tcs_transaction_repository.py",
+    "modules/erp/tax/repositories/tds_certificate_repository.py",
+    "modules/erp/tax/repositories/tds_challan_repository.py",
+    "modules/erp/tax/repositories/tds_reconciliation_repository.py",
+    "modules/erp/tax/repositories/tds_return_repository.py",
+    "modules/erp/tax/repositories/tds_rule_repository.py",
+    "modules/erp/treasury/repositories/bank_account_repository.py",
+    "modules/erp/treasury/repositories/bank_transaction_repository.py",
+    "modules/erp/treasury/repositories/cash_position_repository.py",
+    "modules/erp/treasury/repositories/forecast_repository.py",
+    "modules/erp/treasury/repositories/liquidity_alert_repository.py",
+    "modules/erp/treasury/repositories/payment_request_repository.py",
+    "modules/erp/treasury/repositories/reconciliation_repository.py",
+    "modules/erp/treasury/repositories/transfer_repository.py",
+    "modules/erp/vouchers/repositories/voucher_line_repository.py",
+    "modules/erp/vouchers/repositories/voucher_repository.py",
+    "modules/erp/vouchers/repositories/voucher_sequence_repository.py",
+    "modules/finance_os/agents/repositories/execution_repository.py",
+    "modules/finance_os/agents/repositories/recommendation_repository.py",
+    "modules/finance_os/analytics/repositories/anomaly_flag_repository.py",
+    "modules/finance_os/analytics/repositories/dashboard_snapshot_repository.py",
+    "modules/finance_os/analytics/repositories/insight_repository.py",
+    "modules/finance_os/analytics/repositories/kpi_snapshot_repository.py",
+    "modules/finance_os/analytics/repositories/kpi_trend_repository.py",
+    "modules/finance_os/analytics/repositories/schema_repository.py",
+    "modules/finance_os/audit_explorer/repositories/ai_decision_repository.py",
+    "modules/finance_os/audit_explorer/repositories/evidence_repository.py",
+    "modules/finance_os/audit_explorer/repositories/schema_repository.py",
+    "modules/finance_os/audit_explorer/repositories/timeline_repository.py",
+    "modules/finance_os/forecasting/repositories/accuracy_repository.py",
+    "modules/finance_os/forecasting/repositories/explanation_repository.py",
+    "modules/finance_os/forecasting/repositories/forecast_repository.py",
+    "modules/finance_os/graph/repositories/sync_audit_repository.py",
+    "modules/finance_os/invoice_ai/repositories/anomaly_repository.py",
+    "modules/finance_os/invoice_ai/repositories/duplicate_repository.py",
+    "modules/finance_os/invoice_ai/repositories/extraction_repository.py",
+    "modules/finance_os/invoice_ai/repositories/prediction_repository.py",
+    "modules/finance_os/memory/repositories/embedding_repository.py",
+    "modules/finance_os/memory/repositories/entry_repository.py",
+    "modules/finance_os/memory/repositories/memory_store_repository.py",
+    "modules/finance_os/memory/repositories/reference_repository.py",
+    "modules/finance_os/platform_ai_runtime/repositories/goal_repository.py",
+    "modules/finance_os/workflow_intelligence/repositories/prediction_repository.py",
+    "modules/finance_os/workflow_intelligence/repositories/recommendation_repository.py",
+    "modules/finance_os/workflow_intelligence/repositories/snapshot_repository.py",
+    "modules/finance_os/workflow_intelligence/repositories/stage_metric_repository.py",
+    "modules/platform/api_gateway/repositories/api_request_log_repository.py",
+    "modules/platform/billing/repositories/billing_repository.py",
+    "modules/platform/documents/repositories/document_repository.py",
+    "modules/platform/documents/repositories/evidence_repository.py",
+    "modules/platform/documents/repositories/extraction_repository.py",
+    "modules/platform/events/repositories/event_repository.py",
+    "modules/platform/events/repositories/outbox_repository.py",
+    "modules/platform/events/repositories/queue_repository.py",
+    "modules/platform/governance/repositories/ai_trace_repository.py",
+    "modules/platform/governance/repositories/approval_matrix_repository.py",
+    "modules/platform/governance/repositories/audit_repository.py",
+    "modules/platform/governance/repositories/compliance_repository.py",
+    "modules/platform/governance/repositories/evidence_repository.py",
+    "modules/platform/governance/repositories/policy_decision_repository.py",
+    "modules/platform/governance/repositories/policy_exception_repository.py",
+    "modules/platform/governance/repositories/policy_repository.py",
+    "modules/platform/governance/repositories/sod_conflict_repository.py",
+    "modules/platform/governance/repositories/violation_repository.py",
+    "modules/platform/integrations/repositories/api_key_repository.py",
+    "modules/platform/integrations/repositories/connector_repository.py",
+    "modules/platform/integrations/repositories/ingestion_repository.py",
+    "modules/platform/integrations/repositories/sync_repository.py",
+    "modules/platform/integrations/repositories/webhook_delivery_repository.py",
+    "modules/platform/integrations/repositories/webhook_repository.py",
+    "modules/platform/notifications/repositories/notification_repository.py",
+    "modules/platform/notifications/repositories/preference_repository.py",
+    "modules/platform/notifications/repositories/template_repository.py",
+    "modules/workflows/repositories/approval_repository.py",
+    "modules/workflows/repositories/escalation_repository.py",
+    "modules/workflows/repositories/latency_repository.py",
+    "modules/workflows/repositories/step_failure_repository.py",
+    "modules/workflows/repositories/workflow_repository.py",
+    "modules/workflows/repositories/workflow_step_repository.py",
+    "modules/workflows/repositories/workflow_task_repository.py",
+    "services/legacy_repos/legacy_repositories.py",
+    "services/repositories.py",
+    "services/repository_pagination.py"
+  ],
+  "worker_named": [
+    "modules/platform/documents/workers/classification_worker.py",
+    "modules/platform/documents/workers/duplicate_detection_worker.py",
+    "modules/platform/documents/workers/extraction_worker.py",
+    "modules/platform/documents/workers/malware_scan_worker.py",
+    "modules/platform/documents/workers/ocr_worker.py",
+    "modules/platform/documents/workers/thumbnail_worker.py",
+    "modules/platform/events/workers/ai_worker.py",
+    "modules/platform/events/workers/notification_worker.py",
+    "modules/platform/events/workers/ocr_worker.py",
+    "modules/platform/events/workers/reconciliation_worker.py",
+    "modules/platform/events/workers/scheduler_worker.py",
+    "modules/platform/events/workers/webhook_worker.py",
+    "modules/platform/events/workers/workflow_worker.py",
+    "modules/platform/integrations/workers/ingestion_worker.py",
+    "modules/platform/notifications/workers/digest_worker.py",
+    "modules/platform/notifications/workers/email_worker.py",
+    "modules/platform/notifications/workers/notification_worker.py",
+    "modules/platform/notifications/workers/realtime_worker.py",
+    "modules/platform/notifications/workers/retry_worker.py",
+    "modules/platform/notifications/workers/whatsapp_worker.py",
+    "modules/workflows/workers/escalation_worker.py",
+    "modules/workflows/workers/retry_worker.py",
+    "modules/workflows/workers/scheduled_workflow_worker.py",
+    "modules/workflows/workers/sla_worker.py",
+    "modules/workflows/workers/timeout_worker.py",
+    "services/embedding_worker_service.py",
+    "services/worker_service.py"
+  ],
+  "route_decorator_count": 768,
+  "route_files": [
+    "api/routes/agents.py",
+    "api/routes/audit.py",
+    "api/routes/auth.py",
+    "api/routes/companies.py",
+    "api/routes/connectors.py",
+    "api/routes/decisions_memory.py",
+    "api/routes/graph.py",
+    "api/routes/ingestion.py",
+    "api/routes/memory_admin.py",
+    "api/routes/observability.py",
+    "api/routes/ops.py",
+    "api/routes/platform_events.py",
+    "api/routes/platform_webhooks.py",
+    "api/routes/queue.py",
+    "api/routes/retrieval.py",
+    "api/routes/retrieval_eval.py",
+    "api/routes/sources.py",
+    "api/routes/training_eval.py",
+    "api/routes/workflows.py",
+    "main.py",
+    "modules/core/iam/routes/admin_routes.py",
+    "modules/core/iam/routes/api_key_routes.py",
+    "modules/core/iam/routes/auth_routes.py",
+    "modules/core/iam/routes/invite_routes.py",
+    "modules/core/iam/routes/mfa_routes.py",
+    "modules/core/iam/routes/oidc_routes.py",
+    "modules/core/iam/routes/organization_routes.py",
+    "modules/core/iam/routes/password_routes.py",
+    "modules/core/iam/routes/permission_routes.py",
+    "modules/core/iam/routes/role_routes.py",
+    "modules/core/iam/routes/session_routes.py",
+    "modules/core/iam/routes/user_routes.py",
+    "modules/erp/accounts_payable/routes/aging_routes.py",
+    "modules/erp/accounts_payable/routes/invoice_routes.py",
+    "modules/erp/accounts_payable/routes/payment_routes.py",
+    "modules/erp/accounts_payable/routes/statement_routes.py",
+    "modules/erp/accounts_payable/routes/vendor_routes.py",
+    "modules/erp/accounts_receivable/routes/aging_routes.py",
+    "modules/erp/accounts_receivable/routes/collection_routes.py",
+    "modules/erp/accounts_receivable/routes/credit_routes.py",
+    "modules/erp/accounts_receivable/routes/customer_routes.py",
+    "modules/erp/accounts_receivable/routes/invoice_routes.py",
+    "modules/erp/accounts_receivable/routes/statement_routes.py",
+    "modules/erp/assets/routes/asset_routes.py",
+    "modules/erp/assets/routes/depreciation_routes.py",
+    "modules/erp/assets/routes/disposal_routes.py",
+    "modules/erp/assets/routes/impairment_routes.py",
+    "modules/erp/assets/routes/register_routes.py",
+    "modules/erp/assets/routes/transfer_routes.py",
+    "modules/erp/banking/routes/banking_routes.py",
+    "modules/erp/coa/routes/account_routes.py",
+    "modules/erp/coa/routes/coa_routes.py",
+    "modules/erp/coa/routes/cost_center_routes.py",
+    "modules/erp/coa/routes/group_routes.py",
+    "modules/erp/coa/routes/import_export_routes.py",
+    "modules/erp/coa/routes/mapping_routes.py",
+    "modules/erp/compliance/routes/compliance_routes.py",
+    "modules/erp/consolidation/routes/branch_routes.py",
+    "modules/erp/consolidation/routes/consolidation_routes.py",
+    "modules/erp/consolidation/routes/elimination_routes.py",
+    "modules/erp/consolidation/routes/entity_routes.py",
+    "modules/erp/consolidation/routes/intercompany_routes.py",
+    "modules/erp/expenses/routes/advance_routes.py",
+    "modules/erp/expenses/routes/analytics_routes.py",
+    "modules/erp/expenses/routes/claim_routes.py",
+    "modules/erp/expenses/routes/policy_routes.py",
+    "modules/erp/expenses/routes/receipt_routes.py",
+    "modules/erp/expenses/routes/reimbursement_routes.py",
+    "modules/erp/fiscal/routes/close_routes.py",
+    "modules/erp/fiscal/routes/fiscal_period_routes.py",
+    "modules/erp/fiscal/routes/fiscal_year_routes.py",
+    "modules/erp/fiscal/routes/reopen_routes.py",
+    "modules/erp/fiscal/routes/year_end_routes.py",
+    "modules/erp/fx/routes/fx_routes.py",
+    "modules/erp/gl/routes/balance_routes.py",
+    "modules/erp/gl/routes/fiscal_period_routes.py",
+    "modules/erp/gl/routes/ledger_routes.py",
+    "modules/erp/gl/routes/parallel_ledger_routes.py",
+    "modules/erp/gl/routes/posting_routes.py",
+    "modules/erp/gl/routes/reversal_routes.py",
+    "modules/erp/gl/routes/trial_balance_routes.py",
+    "modules/erp/import_customs/routes/boe_routes.py",
+    "modules/erp/inventory/routes/adjustment_routes.py",
+    "modules/erp/inventory/routes/issue_routes.py",
+    "modules/erp/inventory/routes/item_routes.py",
+    "modules/erp/inventory/routes/receipt_routes.py",
+    "modules/erp/inventory/routes/router.py",
+    "modules/erp/inventory/routes/valuation_routes.py",
+    "modules/erp/inventory/routes/warehouse_routes.py",
+    "modules/erp/journals/routes/accrual_routes.py",
+    "modules/erp/journals/routes/journal_routes.py",
+    "modules/erp/journals/routes/posting_routes.py",
+    "modules/erp/journals/routes/recurring_routes.py",
+    "modules/erp/journals/routes/reversal_routes.py",
+    "modules/erp/payroll/routes/payroll_routes.py",
+    "modules/erp/procurement/routes/analytics_routes.py",
+    "modules/erp/procurement/routes/grn_routes.py",
+    "modules/erp/procurement/routes/matching_routes.py",
+    "modules/erp/procurement/routes/purchase_order_routes.py",
+    "modules/erp/procurement/routes/requisition_routes.py",
+    "modules/erp/reconciliation/routes/reconciliation_routes.py",
+    "modules/erp/reporting/routes/aging_reports_routes.py",
+    "modules/erp/reporting/routes/export_routes.py",
+    "modules/erp/reporting/routes/financial_reports_routes.py",
+    "modules/erp/reporting/routes/forecast_reports_routes.py",
+    "modules/erp/reporting/routes/gst_reports_routes.py",
+    "modules/erp/reporting/routes/tds_reports_routes.py",
+    "modules/erp/reporting/routes/treasury_reports_routes.py",
+    "modules/erp/security/routes/company_data_quality_routes.py",
+    "modules/erp/tax/routes/compliance_routes.py",
+    "modules/erp/tax/routes/e_invoice_routes.py",
+    "modules/erp/tax/routes/eway_bill_routes.py",
+    "modules/erp/tax/routes/filing_routes.py",
+    "modules/erp/tax/routes/gst_routes.py",
+    "modules/erp/tax/routes/reconciliation_routes.py",
+    "modules/erp/tax/routes/tds_routes.py",
+    "modules/erp/treasury/routes/cash_position_routes.py",
+    "modules/erp/treasury/routes/dashboard_routes.py",
+    "modules/erp/treasury/routes/forecast_routes.py",
+    "modules/erp/treasury/routes/transfer_routes.py",
+    "modules/erp/vouchers/routes/typed_voucher_routes.py",
+    "modules/erp/vouchers/routes/voucher_routes.py",
+    "modules/finance_os/agents/routes/agent_routes.py",
+    "modules/finance_os/agents/routes/shortcut_routes.py",
+    "modules/finance_os/analytics/routes/benchmark_routes.py",
+    "modules/finance_os/analytics/routes/close_analytics_routes.py",
+    "modules/finance_os/analytics/routes/collections_kpi_routes.py",
+    "modules/finance_os/analytics/routes/compliance_kpi_routes.py",
+    "modules/finance_os/analytics/routes/copilot_routes.py",
+    "modules/finance_os/analytics/routes/executive_dashboard_routes.py",
+    "modules/finance_os/analytics/routes/finance_kpi_routes.py",
+    "modules/finance_os/analytics/routes/treasury_kpi_routes.py",
+    "modules/finance_os/audit_explorer/routes/ai_audit_routes.py",
+    "modules/finance_os/audit_explorer/routes/audit_routes.py",
+    "modules/finance_os/audit_explorer/routes/copilot_routes.py",
+    "modules/finance_os/audit_explorer/routes/evidence_routes.py",
+    "modules/finance_os/audit_explorer/routes/timeline_routes.py",
+    "modules/finance_os/audit_explorer/routes/workflow_audit_routes.py",
+    "modules/finance_os/forecasting/routes/cash_forecast_routes.py",
+    "modules/finance_os/forecasting/routes/collections_forecast_routes.py",
+    "modules/finance_os/forecasting/routes/expense_forecast_routes.py",
+    "modules/finance_os/forecasting/routes/forecast_dashboard_routes.py",
+    "modules/finance_os/forecasting/routes/scenario_routes.py",
+    "modules/finance_os/forecasting/routes/tax_forecast_routes.py",
+    "modules/finance_os/forecasting/routes/working_capital_routes.py",
+    "modules/finance_os/graph/routes/causality_routes.py",
+    "modules/finance_os/graph/routes/dependency_routes.py",
+    "modules/finance_os/graph/routes/graph_routes.py",
+    "modules/finance_os/graph/routes/lineage_routes.py",
+    "modules/finance_os/graph/routes/visualization_routes.py",
+    "modules/finance_os/invoice_ai/routes/invoice_ai_routes.py",
+    "modules/finance_os/memory/routes/administration_routes.py",
+    "modules/finance_os/memory/routes/memory_routes.py",
+    "modules/finance_os/memory/routes/retrieval_routes.py",
+    "modules/finance_os/platform_ai_runtime/routes/runtime_routes.py",
+    "modules/finance_os/workflow_intelligence/routes/analytics_routes.py",
+    "modules/finance_os/workflow_intelligence/routes/bottleneck_routes.py",
+    "modules/finance_os/workflow_intelligence/routes/optimization_routes.py",
+    "modules/finance_os/workflow_intelligence/routes/sla_routes.py",
+    "modules/finance_os/workflow_intelligence/routes/workflow_ai_routes.py",
+    "modules/platform/api_gateway/routes/api_keys_routes.py",
+    "modules/platform/api_gateway/routes/event_routes.py",
+    "modules/platform/api_gateway/routes/integration_health_routes.py",
+    "modules/platform/api_gateway/routes/webhook_routes.py",
+    "modules/platform/billing/routes/admin_billing_routes.py",
+    "modules/platform/billing/routes/billing_routes.py",
+    "modules/platform/documents/routes/classification_routes.py",
+    "modules/platform/documents/routes/document_routes.py",
+    "modules/platform/documents/routes/evidence_routes.py",
+    "modules/platform/documents/routes/ocr_routes.py",
+    "modules/platform/documents/routes/pipeline_routes.py",
+    "modules/platform/documents/routes/preview_routes.py",
+    "modules/platform/documents/routes/review_routes.py",
+    "modules/platform/documents/routes/search_routes.py",
+    "modules/platform/documents/routes/upload_routes.py",
+    "modules/platform/governance/routes/audit_routes.py",
+    "modules/platform/governance/routes/compliance_routes.py",
+    "modules/platform/governance/routes/evidence_routes.py",
+    "modules/platform/governance/routes/forensics_routes.py",
+    "modules/platform/governance/routes/governance_routes.py",
+    "modules/platform/governance/routes/policy_engine_routes.py",
+    "modules/platform/governance/routes/policy_routes.py",
+    "modules/platform/integrations/routes/api_key_routes.py",
+    "modules/platform/integrations/routes/connector_routes.py",
+    "modules/platform/integrations/routes/connector_uat_routes.py",
+    "modules/platform/integrations/routes/inbound_webhook_routes.py",
+    "modules/platform/integrations/routes/ingestion_routes.py",
+    "modules/platform/integrations/routes/ops_routes.py",
+    "modules/platform/integrations/routes/registry_routes.py",
+    "modules/platform/integrations/routes/sync_routes.py",
+    "modules/platform/integrations/routes/webhook_delivery_routes.py",
+    "modules/platform/integrations/routes/webhook_routes.py",
+    "modules/platform/notifications/routes/notification_routes.py",
+    "modules/platform/notifications/routes/preference_routes.py",
+    "modules/platform/notifications/routes/realtime_routes.py",
+    "modules/platform/notifications/routes/template_routes.py",
+    "modules/platform/notifications/routes/webhook_routes.py",
+    "modules/workflows/routes/approval_routes.py",
+    "modules/workflows/routes/audit_routes.py",
+    "modules/workflows/routes/definition_routes.py",
+    "modules/workflows/routes/escalation_routes.py",
+    "modules/workflows/routes/realtime_routes.py",
+    "modules/workflows/routes/step_routes.py",
+    "modules/workflows/routes/task_routes.py",
+    "modules/workflows/routes/workflow_routes.py"
+  ],
+  "routes_sample": [
+    {
+      "file": "main.py",
+      "method": "GET",
+      "line": 208,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "main.py",
+      "method": "GET",
+      "line": 213,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/workflows/routes/approval_routes.py",
+      "method": "GET",
+      "line": 16,
+      "prefixes_in_file": [
+        "/approvals"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/approval_routes.py",
+      "method": "POST",
+      "line": 56,
+      "prefixes_in_file": [
+        "/approvals"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/audit_routes.py",
+      "method": "GET",
+      "line": 11,
+      "prefixes_in_file": [
+        "/workflows"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/definition_routes.py",
+      "method": "POST",
+      "line": 21,
+      "prefixes_in_file": [
+        "/workflows/definitions"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/definition_routes.py",
+      "method": "PATCH",
+      "line": 38,
+      "prefixes_in_file": [
+        "/workflows/definitions"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/definition_routes.py",
+      "method": "PATCH",
+      "line": 49,
+      "prefixes_in_file": [
+        "/workflows/definitions"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/escalation_routes.py",
+      "method": "GET",
+      "line": 14,
+      "prefixes_in_file": [
+        "/escalations"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/escalation_routes.py",
+      "method": "POST",
+      "line": 49,
+      "prefixes_in_file": [
+        "/escalations"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/escalation_routes.py",
+      "method": "POST",
+      "line": 69,
+      "prefixes_in_file": [
+        "/escalations"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/realtime_routes.py",
+      "method": "GET",
+      "line": 14,
+      "prefixes_in_file": [
+        "/workflows/events"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/realtime_routes.py",
+      "method": "GET",
+      "line": 24,
+      "prefixes_in_file": [
+        "/workflows/events"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/step_routes.py",
+      "method": "POST",
+      "line": 18,
+      "prefixes_in_file": [
+        "/workflows/steps"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/task_routes.py",
+      "method": "GET",
+      "line": 13,
+      "prefixes_in_file": [
+        "/tasks"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/task_routes.py",
+      "method": "POST",
+      "line": 57,
+      "prefixes_in_file": [
+        "/tasks"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/task_routes.py",
+      "method": "POST",
+      "line": 76,
+      "prefixes_in_file": [
+        "/tasks"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/workflow_routes.py",
+      "method": "POST",
+      "line": 45,
+      "prefixes_in_file": [
+        "/workflows"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/workflow_routes.py",
+      "method": "GET",
+      "line": 79,
+      "prefixes_in_file": [
+        "/workflows"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/workflow_routes.py",
+      "method": "GET",
+      "line": 88,
+      "prefixes_in_file": [
+        "/workflows"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/workflow_routes.py",
+      "method": "GET",
+      "line": 122,
+      "prefixes_in_file": [
+        "/workflows"
+      ]
+    },
+    {
+      "file": "modules/workflows/routes/workflow_routes.py",
+      "method": "POST",
+      "line": 142,
+      "prefixes_in_file": [
+        "/workflows"
+      ]
+    },
+    {
+      "file": "modules/platform/notifications/routes/notification_routes.py",
+      "method": "GET",
+      "line": 14,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/notification_routes.py",
+      "method": "GET",
+      "line": 35,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/notification_routes.py",
+      "method": "POST",
+      "line": 41,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/notification_routes.py",
+      "method": "POST",
+      "line": 47,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/preference_routes.py",
+      "method": "GET",
+      "line": 17,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/preference_routes.py",
+      "method": "POST",
+      "line": 22,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/realtime_routes.py",
+      "method": "POST",
+      "line": 19,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/realtime_routes.py",
+      "method": "GET",
+      "line": 25,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/realtime_routes.py",
+      "method": "GET",
+      "line": 47,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/template_routes.py",
+      "method": "GET",
+      "line": 25,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/template_routes.py",
+      "method": "POST",
+      "line": 30,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/template_routes.py",
+      "method": "PUT",
+      "line": 44,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/webhook_routes.py",
+      "method": "POST",
+      "line": 8,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/notifications/routes/webhook_routes.py",
+      "method": "POST",
+      "line": 15,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/api_key_routes.py",
+      "method": "POST",
+      "line": 12,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/api_key_routes.py",
+      "method": "GET",
+      "line": 22,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/api_key_routes.py",
+      "method": "POST",
+      "line": 28,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/api_key_routes.py",
+      "method": "POST",
+      "line": 34,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/connector_routes.py",
+      "method": "POST",
+      "line": 12,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/connector_routes.py",
+      "method": "GET",
+      "line": 24,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/connector_uat_routes.py",
+      "method": "GET",
+      "line": 12,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/connector_uat_routes.py",
+      "method": "GET",
+      "line": 19,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/inbound_webhook_routes.py",
+      "method": "POST",
+      "line": 55,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/ingestion_routes.py",
+      "method": "POST",
+      "line": 12,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/ingestion_routes.py",
+      "method": "GET",
+      "line": 23,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/ops_routes.py",
+      "method": "GET",
+      "line": 12,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/registry_routes.py",
+      "method": "GET",
+      "line": 10,
+      "prefixes_in_file": []
+    },
+    {
+      "file": "modules/platform/integrations/routes/sync_routes.py",
+      "method": "POST",
+      "line": 12,
+      "prefixes_in_file": []
+    }
+  ],
+  "routes_by_area": {
+    "api/legacy": 83,
+    "modules/erp/tax": 60,
+    "modules/core/iam": 53,
+    "modules/platform/governance": 32,
+    "modules/erp/accounts_payable": 28,
+    "modules/erp/procurement": 26,
+    "modules/erp/coa": 23,
+    "modules/erp/accounts_receivable": 23,
+    "modules/workflows/routes": 20,
+    "modules/platform/integrations": 20,
+    "modules/platform/documents": 20,
+    "modules/finance_os/platform_ai_runtime": 20,
+    "modules/erp/journals": 20,
+    "modules/erp/inventory": 20,
+    "modules/erp/banking": 20,
+    "modules/erp/reconciliation": 18,
+    "modules/erp/compliance": 17,
+    "modules/erp/assets": 17,
+    "modules/erp/vouchers": 16,
+    "modules/erp/gl": 16,
+    "modules/erp/expenses": 16,
+    "modules/finance_os/agents": 15,
+    "modules/erp/treasury": 15,
+    "modules/erp/consolidation": 15,
+    "modules/platform/notifications": 14,
+    "modules/finance_os/memory": 13,
+    "modules/erp/reporting": 13,
+    "modules/finance_os/workflow_intelligence": 12,
+    "modules/erp/fiscal": 12,
+    "modules/finance_os/analytics": 11,
+    "modules/platform/api_gateway": 10,
+    "modules/finance_os/graph": 10,
+    "modules/platform/billing": 9,
+    "modules/finance_os/invoice_ai": 9,
+    "modules/finance_os/audit_explorer": 9,
+    "modules/erp/fx": 9,
+    "modules/finance_os/forecasting": 7,
+    "modules/erp/payroll": 7,
+    "modules/erp/security": 4,
+    "modules/erp/import_customs": 4,
+    "main.py": 2
+  },
+  "migration_count": 84,
+  "table_count": 285,
+  "tables": [
+    "agent_actions",
+    "agent_runs",
+    "approvals",
+    "audit.ai_reasoning_traces",
+    "audit.audit_logs",
+    "audit.audit_logs_archive",
+    "audit.evidence_links",
+    "audit_logs",
+    "billing.ai_usage",
+    "billing.credit_transactions",
+    "billing.org_credit_wallets",
+    "billing.org_entitlements",
+    "billing.org_subscriptions",
+    "billing.plan_features",
+    "billing.plan_limits",
+    "billing.plans",
+    "billing.usage_events",
+    "billing.usage_metrics",
+    "citations",
+    "compliance.compliance_events",
+    "connector_processed_records",
+    "connector_sync_states",
+    "contracts",
+    "core.api_keys",
+    "core.auth_audit_log",
+    "core.branches",
+    "core.business_units",
+    "core.companies",
+    "core.departments",
+    "core.fiscal_periods",
+    "core.org_security_policy",
+    "core.password_history",
+    "core.password_reset_tokens",
+    "core.permissions",
+    "core.recovery_codes",
+    "core.role_permissions",
+    "core.sessions",
+    "core.trusted_devices",
+    "core.user_devices",
+    "core.user_invites",
+    "core.user_mfa_methods",
+    "customers",
+    "data_sources",
+    "decisions",
+    "document_chunks",
+    "documents",
+    "documents.classifications",
+    "documents.document_versions",
+    "documents.documents",
+    "documents.duplicate_candidates",
+    "documents.evidence_links",
+    "documents.extractions",
+    "documents.semantic_chunks",
+    "documents.semantic_embeddings",
+    "erp.account_balances",
+    "erp.account_groups",
+    "erp.account_usage",
+    "erp.accrual_entries",
+    "erp.ap_invoice_lines",
+    "erp.ap_invoices",
+    "erp.ap_payment_allocations",
+    "erp.ap_payments",
+    "erp.ar_invoice_lines",
+    "erp.ar_invoices",
+    "erp.asset_capitalization_candidates",
+    "erp.asset_categories",
+    "erp.asset_depreciation",
+    "erp.asset_disposals",
+    "erp.asset_impairments",
+    "erp.asset_policies",
+    "erp.asset_transfers",
+    "erp.assets",
+    "erp.bank_accounts",
+    "erp.bank_beneficiaries",
+    "erp.bank_reconciliations",
+    "erp.bank_statement_imports",
+    "erp.bank_transactions",
+    "erp.bills_of_entry",
+    "erp.budget_envelopes",
+    "erp.cash_forecasts",
+    "erp.cash_positions",
+    "erp.chart_of_accounts",
+    "erp.closing_entries",
+    "erp.coa_versions",
+    "erp.company_id_data_quality",
+    "erp.compliance_calendar",
+    "erp.compliance_escalations",
+    "erp.compliance_obligations",
+    "erp.compliance_penalties",
+    "erp.compliance_reminders",
+    "erp.compliance_rules",
+    "erp.compliance_types",
+    "erp.consolidation_runs",
+    "erp.corporate_card_transactions",
+    "erp.cost_centers",
+    "erp.customer_addresses",
+    "erp.customer_balances",
+    "erp.customer_receipt_allocations",
+    "erp.customer_receipts",
+    "erp.customers",
+    "erp.e_invoices",
+    "erp.elimination_entries",
+    "erp.employee_advances",
+    "erp.employee_bank_accounts",
+    "erp.entity_hierarchy",
+    "erp.eway_bills",
+    "erp.exchange_rates",
+    "erp.expense_claim_items",
+    "erp.expense_claims",
+    "erp.expense_policies",
+    "erp.expense_policy_violations",
+    "erp.expense_receipts",
+    "erp.financial_statement_mappings",
+    "erp.fiscal_periods",
+    "erp.fiscal_years",
+    "erp.fx_revaluation_runs",
+    "erp.goods_receipt_items",
+    "erp.goods_receipts",
+    "erp.grn_inventory_links",
+    "erp.gst_account_mappings",
+    "erp.gst_reconciliations",
+    "erp.gst_registrations",
+    "erp.gst_returns",
+    "erp.gst_transactions",
+    "erp.gstr2b_imports",
+    "erp.inter_account_transfers",
+    "erp.intercompany_account_mappings",
+    "erp.intercompany_balances",
+    "erp.intercompany_transactions",
+    "erp.inventory_adjustments",
+    "erp.inventory_balances",
+    "erp.inventory_cost_layers",
+    "erp.inventory_items",
+    "erp.inventory_movements",
+    "erp.inventory_policies",
+    "erp.inventory_valuations",
+    "erp.itc_blocked_rules",
+    "erp.itc_ledger",
+    "erp.journal_lines",
+    "erp.journal_reversals",
+    "erp.journals",
+    "erp.ledger_batches",
+    "erp.ledger_entries",
+    "erp.ledger_entries_archive",
+    "erp.liquidity_alerts",
+    "erp.ownership_snapshots",
+    "erp.parallel_ledger_entries",
+    "erp.parallel_ledgers",
+    "erp.payment_requests",
+    "erp.payroll_employees",
+    "erp.payroll_salary_runs",
+    "erp.period_close_checklists",
+    "erp.period_reopen_requests",
+    "erp.procurement_matches",
+    "erp.procurement_policies",
+    "erp.purchase_order_items",
+    "erp.purchase_orders",
+    "erp.purchase_requisition_items",
+    "erp.purchase_requisitions",
+    "erp.reconciliation_adjustments",
+    "erp.reconciliation_exceptions",
+    "erp.reconciliation_match_lines",
+    "erp.reconciliation_rules",
+    "erp.recurring_journals",
+    "erp.subledger_gl_reconciliation_runs",
+    "erp.tax_notices",
+    "erp.tax_rate_master",
+    "erp.tcs_transactions",
+    "erp.tds_certificates",
+    "erp.tds_challans",
+    "erp.tds_reconciliations",
+    "erp.tds_returns",
+    "erp.tds_rules",
+    "erp.tds_sections",
+    "erp.tds_transactions",
+    "erp.vendor_balances",
+    "erp.vendor_bank_accounts",
+    "erp.vendors",
+    "erp.voucher_lines",
+    "erp.voucher_sequences",
+    "erp.vouchers",
+    "erp.warehouses",
+    "erp.year_end_runs",
+    "erp_reporting.ap_aging_mv",
+    "erp_reporting.ar_aging_mv",
+    "erp_reporting.balance_sheet_mv",
+    "erp_reporting.consolidated_trial_balance_mv",
+    "erp_reporting.gst_summary_mv",
+    "erp_reporting.pnl_mv",
+    "erp_reporting.report_runs",
+    "erp_reporting.report_snapshots",
+    "erp_reporting.tds_summary_mv",
+    "erp_reporting.trial_balance_mv",
+    "eval_runs",
+    "feedback_events",
+    "finance_analytics.anomaly_flags",
+    "finance_analytics.dashboard_snapshots",
+    "finance_analytics.executive_insights",
+    "finance_analytics.kpi_snapshots",
+    "finance_analytics.kpi_trends",
+    "finance_audit.ai_decision_trails",
+    "finance_audit.audit_evidence",
+    "finance_audit.audit_timelines",
+    "finance_entities",
+    "finance_os.agent_executions",
+    "finance_os.agent_recommendations",
+    "finance_os.execution_graphs",
+    "finance_os.forecast_accuracy",
+    "finance_os.forecast_explanations",
+    "finance_os.forecasts",
+    "finance_os.goal_runs",
+    "finance_os.goals",
+    "finance_os.graph_sync_events",
+    "finance_os.graph_sync_outbox",
+    "finance_os.invoice_anomalies",
+    "finance_os.invoice_duplicate_scores",
+    "finance_os.invoice_extractions",
+    "finance_os.invoice_predictions",
+    "finance_os.memory_embeddings",
+    "finance_os.memory_entries",
+    "finance_os.memory_references",
+    "finance_os.runtime_observations",
+    "finance_os.workflow_predictions",
+    "finance_os.workflow_recommendations",
+    "finance_os.workflow_snapshots",
+    "finance_os.workflow_stage_metrics",
+    "governance.approval_matrix",
+    "governance.policies",
+    "governance.policy_decisions",
+    "governance.policy_exceptions",
+    "governance.policy_rules",
+    "governance.retention_policies",
+    "governance.sod_conflicts",
+    "governance.violations",
+    "identity_aliases",
+    "identity_profiles",
+    "incidents",
+    "ingestion_runs",
+    "integrations.api_keys",
+    "integrations.connectors",
+    "integrations.ingestion_records",
+    "integrations.sync_jobs",
+    "integrations.webhook_deliveries",
+    "integrations.webhook_subscriptions",
+    "invoices",
+    "journal_entries",
+    "learning_governance_cycles",
+    "learning_labeling_tasks",
+    "memory_records",
+    "notifications.delivery_logs",
+    "notifications.digest_queue",
+    "notifications.notifications",
+    "notifications.preferences",
+    "notifications.subscriptions",
+    "notifications.templates",
+    "organizations",
+    "payments",
+    "platform.api_request_log",
+    "platform.event_outbox",
+    "platform.event_store",
+    "platform.event_stream_adapters",
+    "platform.idempotency_keys",
+    "platform.queue_jobs",
+    "platform.webhook_deliveries",
+    "platform.webhook_subscriptions",
+    "purchase_orders",
+    "qa_gold_examples",
+    "retrieval_judgments",
+    "roles",
+    "safety_events",
+    "user_roles",
+    "users",
+    "vendors",
+    "workflow.approvals",
+    "workflow.escalations",
+    "workflow.latency_samples",
+    "workflow.org_holidays",
+    "workflow.scheduled_workflows",
+    "workflow.step_failures",
+    "workflow.workflow_definitions",
+    "workflow.workflow_instances",
+    "workflow.workflow_steps",
+    "workflow.workflow_tasks",
+    "workflow_steps",
+    "workflows"
+  ],
+  "schemas": [
+    "audit",
+    "billing",
+    "compliance",
+    "core",
+    "documents",
+    "erp",
+    "erp_reporting",
+    "finance_analytics",
+    "finance_audit",
+    "finance_os",
+    "governance",
+    "integrations",
+    "notifications",
+    "platform",
+    "workflow"
+  ],
+  "table_migrations": {
+    "agent_actions": [
+      "001_init.sql"
+    ],
+    "agent_runs": [
+      "001_init.sql"
+    ],
+    "approvals": [
+      "001_init.sql"
+    ],
+    "audit.ai_reasoning_traces": [
+      "016_governance_core.sql"
+    ],
+    "audit.audit_logs": [
+      "017_audit_physical_table.sql"
+    ],
+    "audit.audit_logs_archive": [
+      "078_database_phase6_hardening.sql"
+    ],
+    "audit.evidence_links": [
+      "016_governance_core.sql"
+    ],
+    "audit_logs": [
+      "001_init.sql"
+    ],
+    "billing.ai_usage": [
+      "065_billing_engine.sql"
+    ],
+    "billing.credit_transactions": [
+      "065_billing_engine.sql"
+    ],
+    "billing.org_credit_wallets": [
+      "065_billing_engine.sql"
+    ],
+    "billing.org_entitlements": [
+      "065_billing_engine.sql"
+    ],
+    "billing.org_subscriptions": [
+      "065_billing_engine.sql"
+    ],
+    "billing.plan_features": [
+      "065_billing_engine.sql"
+    ],
+    "billing.plan_limits": [
+      "065_billing_engine.sql"
+    ],
+    "billing.plans": [
+      "065_billing_engine.sql"
+    ],
+    "billing.usage_events": [
+      "065_billing_engine.sql"
+    ],
+    "billing.usage_metrics": [
+      "065_billing_engine.sql"
+    ],
+    "citations": [
+      "001_init.sql"
+    ],
+    "compliance.compliance_events": [
+      "016_governance_core.sql"
+    ],
+    "connector_processed_records": [
+      "003_connector_sync.sql"
+    ],
+    "connector_sync_states": [
+      "003_connector_sync.sql"
+    ],
+    "contracts": [
+      "007_canonical_finance_model.sql"
+    ],
+    "core.api_keys": [
+      "009_core_iam.sql"
+    ],
+    "core.auth_audit_log": [
+      "072_iam_auth_audit.sql"
+    ],
+    "core.branches": [
+      "009_core_iam.sql"
+    ],
+    "core.business_units": [
+      "011_core_iam_hardening.sql"
+    ],
+    "core.companies": [
+      "009_core_iam.sql"
+    ],
+    "core.departments": [
+      "074_iam_departments.sql"
+    ],
+    "core.fiscal_periods": [
+      "011_core_iam_hardening.sql"
+    ],
+    "core.org_security_policy": [
+      "073_iam_mfa_devices.sql"
+    ],
+    "core.password_history": [
+      "072_iam_auth_audit.sql"
+    ],
+    "core.password_reset_tokens": [
+      "072_iam_auth_audit.sql"
+    ],
+    "core.permissions": [
+      "009_core_iam.sql"
+    ],
+    "core.recovery_codes": [
+      "073_iam_mfa_devices.sql"
+    ],
+    "core.role_permissions": [
+      "009_core_iam.sql"
+    ],
+    "core.sessions": [
+      "009_core_iam.sql"
+    ],
+    "core.trusted_devices": [
+      "073_iam_mfa_devices.sql"
+    ],
+    "core.user_devices": [
+      "073_iam_mfa_devices.sql"
+    ],
+    "core.user_invites": [
+      "010_core_iam_extensions.sql"
+    ],
+    "core.user_mfa_methods": [
+      "073_iam_mfa_devices.sql"
+    ],
+    "customers": [
+      "001_init.sql"
+    ],
+    "data_sources": [
+      "001_init.sql"
+    ],
+    "decisions": [
+      "001_init.sql"
+    ],
+    "document_chunks": [
+      "001_init.sql"
+    ],
+    "documents": [
+      "001_init.sql"
+    ],
+    "documents.classifications": [
+      "021_documents_dms.sql"
+    ],
+    "documents.document_versions": [
+      "021_documents_dms.sql"
+    ],
+    "documents.documents": [
+      "021_documents_dms.sql"
+    ],
+    "documents.duplicate_candidates": [
+      "021_documents_dms.sql"
+    ],
+    "documents.evidence_links": [
+      "021_documents_dms.sql"
+    ],
+    "documents.extractions": [
+      "021_documents_dms.sql"
+    ],
+    "documents.semantic_chunks": [
+      "026_documents_semantic_chunks.sql"
+    ],
+    "documents.semantic_embeddings": [
+      "021_documents_dms.sql"
+    ],
+    "erp.account_balances": [
+      "030_erp_gl_engine.sql"
+    ],
+    "erp.account_groups": [
+      "028_erp_coa_foundation.sql"
+    ],
+    "erp.account_usage": [
+      "029_erp_coa_usage_guards.sql"
+    ],
+    "erp.accrual_entries": [
+      "031_erp_journal_engine.sql"
+    ],
+    "erp.ap_invoice_lines": [
+      "033_erp_ap_engine.sql"
+    ],
+    "erp.ap_invoices": [
+      "033_erp_ap_engine.sql"
+    ],
+    "erp.ap_payment_allocations": [
+      "033_erp_ap_engine.sql"
+    ],
+    "erp.ap_payments": [
+      "033_erp_ap_engine.sql"
+    ],
+    "erp.ar_invoice_lines": [
+      "034_erp_ar_engine.sql"
+    ],
+    "erp.ar_invoices": [
+      "034_erp_ar_engine.sql"
+    ],
+    "erp.asset_capitalization_candidates": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.asset_categories": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.asset_depreciation": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.asset_disposals": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.asset_impairments": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.asset_policies": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.asset_transfers": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.assets": [
+      "042_erp_assets_engine.sql"
+    ],
+    "erp.bank_accounts": [
+      "035_erp_treasury_engine.sql"
+    ],
+    "erp.bank_beneficiaries": [
+      "047_erp_banking_engine.sql"
+    ],
+    "erp.bank_reconciliations": [
+      "035_erp_treasury_engine.sql"
+    ],
+    "erp.bank_statement_imports": [
+      "047_erp_banking_engine.sql"
+    ],
+    "erp.bank_transactions": [
+      "035_erp_treasury_engine.sql"
+    ],
+    "erp.bills_of_entry": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "erp.budget_envelopes": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.cash_forecasts": [
+      "049_erp_treasury_m24_engine.sql"
+    ],
+    "erp.cash_positions": [
+      "049_erp_treasury_m24_engine.sql"
+    ],
+    "erp.chart_of_accounts": [
+      "028_erp_coa_foundation.sql"
+    ],
+    "erp.closing_entries": [
+      "030_erp_gl_engine.sql"
+    ],
+    "erp.coa_versions": [
+      "077_erp_phase2_hardening.sql"
+    ],
+    "erp.company_id_data_quality": [
+      "078_database_phase6_hardening.sql"
+    ],
+    "erp.compliance_calendar": [
+      "037_erp_tax_compliance.sql"
+    ],
+    "erp.compliance_escalations": [
+      "046_erp_compliance_engine.sql"
+    ],
+    "erp.compliance_obligations": [
+      "046_erp_compliance_engine.sql"
+    ],
+    "erp.compliance_penalties": [
+      "046_erp_compliance_engine.sql"
+    ],
+    "erp.compliance_reminders": [
+      "046_erp_compliance_engine.sql"
+    ],
+    "erp.compliance_rules": [
+      "046_erp_compliance_engine.sql"
+    ],
+    "erp.compliance_types": [
+      "046_erp_compliance_engine.sql"
+    ],
+    "erp.consolidation_runs": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp.corporate_card_transactions": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.cost_centers": [
+      "028_erp_coa_foundation.sql"
+    ],
+    "erp.customer_addresses": [
+      "034_erp_ar_engine.sql"
+    ],
+    "erp.customer_balances": [
+      "034_erp_ar_engine.sql"
+    ],
+    "erp.customer_receipt_allocations": [
+      "034_erp_ar_engine.sql"
+    ],
+    "erp.customer_receipts": [
+      "034_erp_ar_engine.sql"
+    ],
+    "erp.customers": [
+      "034_erp_ar_engine.sql"
+    ],
+    "erp.e_invoices": [
+      "037_erp_tax_compliance.sql"
+    ],
+    "erp.elimination_entries": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp.employee_advances": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.employee_bank_accounts": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.entity_hierarchy": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp.eway_bills": [
+      "037_erp_tax_compliance.sql"
+    ],
+    "erp.exchange_rates": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "erp.expense_claim_items": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.expense_claims": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.expense_policies": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.expense_policy_violations": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.expense_receipts": [
+      "041_erp_expense_engine.sql"
+    ],
+    "erp.financial_statement_mappings": [
+      "028_erp_coa_foundation.sql"
+    ],
+    "erp.fiscal_periods": [
+      "030_erp_gl_engine.sql"
+    ],
+    "erp.fiscal_years": [
+      "039_erp_fiscal_engine.sql"
+    ],
+    "erp.fx_revaluation_runs": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "erp.goods_receipt_items": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.goods_receipts": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.grn_inventory_links": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.gst_account_mappings": [
+      "028_erp_coa_foundation.sql"
+    ],
+    "erp.gst_reconciliations": [
+      "036_erp_tax_engine.sql"
+    ],
+    "erp.gst_registrations": [
+      "036_erp_tax_engine.sql"
+    ],
+    "erp.gst_returns": [
+      "036_erp_tax_engine.sql"
+    ],
+    "erp.gst_transactions": [
+      "036_erp_tax_engine.sql"
+    ],
+    "erp.gstr2b_imports": [
+      "036_erp_tax_engine.sql"
+    ],
+    "erp.inter_account_transfers": [
+      "049_erp_treasury_m24_engine.sql"
+    ],
+    "erp.intercompany_account_mappings": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp.intercompany_balances": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp.intercompany_transactions": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp.inventory_adjustments": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.inventory_balances": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.inventory_cost_layers": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.inventory_items": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.inventory_movements": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.inventory_policies": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.inventory_valuations": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.itc_blocked_rules": [
+      "036_erp_tax_engine.sql"
+    ],
+    "erp.itc_ledger": [
+      "036_erp_tax_engine.sql"
+    ],
+    "erp.journal_lines": [
+      "031_erp_journal_engine.sql"
+    ],
+    "erp.journal_reversals": [
+      "031_erp_journal_engine.sql"
+    ],
+    "erp.journals": [
+      "031_erp_journal_engine.sql"
+    ],
+    "erp.ledger_batches": [
+      "030_erp_gl_engine.sql"
+    ],
+    "erp.ledger_entries": [
+      "030_erp_gl_engine.sql"
+    ],
+    "erp.ledger_entries_archive": [
+      "078_database_phase6_hardening.sql"
+    ],
+    "erp.liquidity_alerts": [
+      "049_erp_treasury_m24_engine.sql"
+    ],
+    "erp.ownership_snapshots": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp.parallel_ledger_entries": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "erp.parallel_ledgers": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "erp.payment_requests": [
+      "035_erp_treasury_engine.sql"
+    ],
+    "erp.payroll_employees": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "erp.payroll_salary_runs": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "erp.period_close_checklists": [
+      "039_erp_fiscal_engine.sql"
+    ],
+    "erp.period_reopen_requests": [
+      "039_erp_fiscal_engine.sql"
+    ],
+    "erp.procurement_matches": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.procurement_policies": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.purchase_order_items": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.purchase_orders": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.purchase_requisition_items": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.purchase_requisitions": [
+      "040_erp_procurement_engine.sql"
+    ],
+    "erp.reconciliation_adjustments": [
+      "048_erp_reconciliation_engine.sql"
+    ],
+    "erp.reconciliation_exceptions": [
+      "048_erp_reconciliation_engine.sql"
+    ],
+    "erp.reconciliation_match_lines": [
+      "048_erp_reconciliation_engine.sql"
+    ],
+    "erp.reconciliation_rules": [
+      "048_erp_reconciliation_engine.sql"
+    ],
+    "erp.recurring_journals": [
+      "031_erp_journal_engine.sql"
+    ],
+    "erp.subledger_gl_reconciliation_runs": [
+      "078_database_phase6_hardening.sql"
+    ],
+    "erp.tax_notices": [
+      "037_erp_tax_compliance.sql"
+    ],
+    "erp.tax_rate_master": [
+      "038_erp_tax_gap_closure.sql"
+    ],
+    "erp.tcs_transactions": [
+      "044_erp_tds_gap_closure.sql"
+    ],
+    "erp.tds_certificates": [
+      "045_erp_tds_production.sql"
+    ],
+    "erp.tds_challans": [
+      "044_erp_tds_gap_closure.sql"
+    ],
+    "erp.tds_reconciliations": [
+      "044_erp_tds_gap_closure.sql"
+    ],
+    "erp.tds_returns": [
+      "038_erp_tax_gap_closure.sql"
+    ],
+    "erp.tds_rules": [
+      "044_erp_tds_gap_closure.sql"
+    ],
+    "erp.tds_sections": [
+      "037_erp_tax_compliance.sql"
+    ],
+    "erp.tds_transactions": [
+      "037_erp_tax_compliance.sql"
+    ],
+    "erp.vendor_balances": [
+      "033_erp_ap_engine.sql"
+    ],
+    "erp.vendor_bank_accounts": [
+      "033_erp_ap_engine.sql"
+    ],
+    "erp.vendors": [
+      "033_erp_ap_engine.sql"
+    ],
+    "erp.voucher_lines": [
+      "062_erp_voucher_engine.sql"
+    ],
+    "erp.voucher_sequences": [
+      "062_erp_voucher_engine.sql"
+    ],
+    "erp.vouchers": [
+      "062_erp_voucher_engine.sql"
+    ],
+    "erp.warehouses": [
+      "043_erp_inventory_engine.sql"
+    ],
+    "erp.year_end_runs": [
+      "039_erp_fiscal_engine.sql"
+    ],
+    "erp_reporting.ap_aging_mv": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.ar_aging_mv": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.balance_sheet_mv": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.consolidated_trial_balance_mv": [
+      "060_multi_entity_consolidation.sql"
+    ],
+    "erp_reporting.gst_summary_mv": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.pnl_mv": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.report_runs": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.report_snapshots": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.tds_summary_mv": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "erp_reporting.trial_balance_mv": [
+      "056_erp_reporting_engine.sql"
+    ],
+    "eval_runs": [
+      "002_training_eval.sql"
+    ],
+    "feedback_events": [
+      "002_training_eval.sql"
+    ],
+    "finance_analytics.anomaly_flags": [
+      "057_finance_analytics_engine.sql"
+    ],
+    "finance_analytics.dashboard_snapshots": [
+      "057_finance_analytics_engine.sql"
+    ],
+    "finance_analytics.executive_insights": [
+      "057_finance_analytics_engine.sql"
+    ],
+    "finance_analytics.kpi_snapshots": [
+      "057_finance_analytics_engine.sql"
+    ],
+    "finance_analytics.kpi_trends": [
+      "057_finance_analytics_engine.sql"
+    ],
+    "finance_audit.ai_decision_trails": [
+      "058_finance_audit_explorer.sql"
+    ],
+    "finance_audit.audit_evidence": [
+      "058_finance_audit_explorer.sql"
+    ],
+    "finance_audit.audit_timelines": [
+      "058_finance_audit_explorer.sql"
+    ],
+    "finance_entities": [
+      "001_init.sql"
+    ],
+    "finance_os.agent_executions": [
+      "054_finance_os_agent_orchestration.sql"
+    ],
+    "finance_os.agent_recommendations": [
+      "054_finance_os_agent_orchestration.sql"
+    ],
+    "finance_os.execution_graphs": [
+      "069_finance_os_platform_ai_runtime.sql"
+    ],
+    "finance_os.forecast_accuracy": [
+      "055_finance_os_forecasting_engine.sql"
+    ],
+    "finance_os.forecast_explanations": [
+      "055_finance_os_forecasting_engine.sql"
+    ],
+    "finance_os.forecasts": [
+      "055_finance_os_forecasting_engine.sql"
+    ],
+    "finance_os.goal_runs": [
+      "069_finance_os_platform_ai_runtime.sql"
+    ],
+    "finance_os.goals": [
+      "069_finance_os_platform_ai_runtime.sql"
+    ],
+    "finance_os.graph_sync_events": [
+      "053_finance_os_graph_audit.sql"
+    ],
+    "finance_os.graph_sync_outbox": [
+      "080_audit_completion_hardening.sql"
+    ],
+    "finance_os.invoice_anomalies": [
+      "050_finance_os_invoice_ai.sql"
+    ],
+    "finance_os.invoice_duplicate_scores": [
+      "050_finance_os_invoice_ai.sql"
+    ],
+    "finance_os.invoice_extractions": [
+      "050_finance_os_invoice_ai.sql"
+    ],
+    "finance_os.invoice_predictions": [
+      "050_finance_os_invoice_ai.sql"
+    ],
+    "finance_os.memory_embeddings": [
+      "052_finance_os_memory_system.sql"
+    ],
+    "finance_os.memory_entries": [
+      "052_finance_os_memory_system.sql"
+    ],
+    "finance_os.memory_references": [
+      "052_finance_os_memory_system.sql"
+    ],
+    "finance_os.runtime_observations": [
+      "069_finance_os_platform_ai_runtime.sql"
+    ],
+    "finance_os.workflow_predictions": [
+      "051_finance_os_workflow_intelligence.sql"
+    ],
+    "finance_os.workflow_recommendations": [
+      "051_finance_os_workflow_intelligence.sql"
+    ],
+    "finance_os.workflow_snapshots": [
+      "051_finance_os_workflow_intelligence.sql"
+    ],
+    "finance_os.workflow_stage_metrics": [
+      "051_finance_os_workflow_intelligence.sql"
+    ],
+    "governance.approval_matrix": [
+      "059_policy_engine.sql"
+    ],
+    "governance.policies": [
+      "059_policy_engine.sql"
+    ],
+    "governance.policy_decisions": [
+      "059_policy_engine.sql"
+    ],
+    "governance.policy_exceptions": [
+      "059_policy_engine.sql"
+    ],
+    "governance.policy_rules": [
+      "016_governance_core.sql"
+    ],
+    "governance.retention_policies": [
+      "016_governance_core.sql"
+    ],
+    "governance.sod_conflicts": [
+      "075_governance_sod_matrix.sql"
+    ],
+    "governance.violations": [
+      "016_governance_core.sql"
+    ],
+    "identity_aliases": [
+      "001_init.sql"
+    ],
+    "identity_profiles": [
+      "001_init.sql"
+    ],
+    "incidents": [
+      "001_init.sql"
+    ],
+    "ingestion_runs": [
+      "001_init.sql"
+    ],
+    "integrations.api_keys": [
+      "027_integrations_platform.sql"
+    ],
+    "integrations.connectors": [
+      "027_integrations_platform.sql"
+    ],
+    "integrations.ingestion_records": [
+      "027_integrations_platform.sql"
+    ],
+    "integrations.sync_jobs": [
+      "027_integrations_platform.sql"
+    ],
+    "integrations.webhook_deliveries": [
+      "027_integrations_platform.sql"
+    ],
+    "integrations.webhook_subscriptions": [
+      "027_integrations_platform.sql"
+    ],
+    "invoices": [
+      "001_init.sql"
+    ],
+    "journal_entries": [
+      "001_init.sql"
+    ],
+    "learning_governance_cycles": [
+      "008_learning_governance.sql"
+    ],
+    "learning_labeling_tasks": [
+      "008_learning_governance.sql"
+    ],
+    "memory_records": [
+      "001_init.sql"
+    ],
+    "notifications.delivery_logs": [
+      "018_notifications.sql"
+    ],
+    "notifications.digest_queue": [
+      "018_notifications.sql"
+    ],
+    "notifications.notifications": [
+      "018_notifications.sql"
+    ],
+    "notifications.preferences": [
+      "018_notifications.sql"
+    ],
+    "notifications.subscriptions": [
+      "018_notifications.sql"
+    ],
+    "notifications.templates": [
+      "018_notifications.sql"
+    ],
+    "organizations": [
+      "001_init.sql"
+    ],
+    "payments": [
+      "007_canonical_finance_model.sql"
+    ],
+    "platform.api_request_log": [
+      "061_api_gateway_platform.sql"
+    ],
+    "platform.event_outbox": [
+      "084_transactional_outbox.sql"
+    ],
+    "platform.event_store": [
+      "015_platform_event_bus.sql"
+    ],
+    "platform.event_stream_adapters": [
+      "061_api_gateway_platform.sql"
+    ],
+    "platform.idempotency_keys": [
+      "015_platform_event_bus.sql"
+    ],
+    "platform.queue_jobs": [
+      "015_platform_event_bus.sql"
+    ],
+    "platform.webhook_deliveries": [
+      "015_platform_event_bus.sql"
+    ],
+    "platform.webhook_subscriptions": [
+      "015_platform_event_bus.sql"
+    ],
+    "purchase_orders": [
+      "007_canonical_finance_model.sql"
+    ],
+    "qa_gold_examples": [
+      "002_training_eval.sql"
+    ],
+    "retrieval_judgments": [
+      "002_training_eval.sql"
+    ],
+    "roles": [
+      "001_init.sql"
+    ],
+    "safety_events": [
+      "002_training_eval.sql"
+    ],
+    "user_roles": [
+      "001_init.sql"
+    ],
+    "users": [
+      "001_init.sql"
+    ],
+    "vendors": [
+      "001_init.sql"
+    ],
+    "workflow.approvals": [
+      "012_workflow_engine.sql"
+    ],
+    "workflow.escalations": [
+      "012_workflow_engine.sql"
+    ],
+    "workflow.latency_samples": [
+      "014_workflow_engine_v3.sql"
+    ],
+    "workflow.org_holidays": [
+      "013_workflow_engine_extensions.sql"
+    ],
+    "workflow.scheduled_workflows": [
+      "014_workflow_engine_v3.sql"
+    ],
+    "workflow.step_failures": [
+      "014_workflow_engine_v3.sql"
+    ],
+    "workflow.workflow_definitions": [
+      "012_workflow_engine.sql"
+    ],
+    "workflow.workflow_instances": [
+      "012_workflow_engine.sql"
+    ],
+    "workflow.workflow_steps": [
+      "012_workflow_engine.sql"
+    ],
+    "workflow.workflow_tasks": [
+      "012_workflow_engine.sql"
+    ],
+    "workflow_steps": [
+      "001_init.sql"
+    ],
+    "workflows": [
+      "001_init.sql"
+    ]
+  },
+  "event_type_literals": [
+    "agent.action.approved",
+    "agent.action.awaiting_approval",
+    "agent.action.denied",
+    "agent.action.executed",
+    "agent.completed",
+    "agent.run.completed",
+    "agent.run.requested",
+    "agent.run.started",
+    "agent.workflow.launched",
+    "ai.gateway.execution",
+    "ai.ocr.requested",
+    "ai.reconciliation.suggested",
+    "analytics.copilot.asked",
+    "analytics.dashboard.viewed",
+    "analytics.kpi.calculated",
+    "analytics.refresh.requested",
+    "api.key.created",
+    "api.key.revoked",
+    "approval.completed",
+    "approval.rejected",
+    "approval.requested",
+    "asset.candidate.detected",
+    "asset.capitalized",
+    "asset.created",
+    "asset.depreciated",
+    "asset.disposed",
+    "asset.impaired",
+    "asset.transferred",
+    "audit.log.created",
+    "bank.account.created",
+    "bank.statement.imported",
+    "bank.transaction.imported",
+    "cash.forecast.updated",
+    "cash.position.updated",
+    "compliance.alert",
+    "compliance.alert.generated",
+    "compliance.completed",
+    "compliance.due",
+    "compliance.escalated",
+    "compliance.obligation.created",
+    "compliance.overdue",
+    "connector.run.completed",
+    "connector.run.failed",
+    "consolidation.completed",
+    "consolidation.requested",
+    "dashboard.refreshed",
+    "decision.created",
+    "decision.recorded",
+    "document.classified",
+    "document.ingested",
+    "document.malware_scan.completed",
+    "document.malware_scan.requested",
+    "document.retention.expired",
+    "document.uploaded",
+    "duplicate.detected",
+    "elimination.generated",
+    "entity.closed",
+    "entity.resolved",
+    "erp.account.created",
+    "erp.account.updated",
+    "erp.fiscal_period.closed",
+    "erp.fiscal_period.locked",
+    "erp.fiscal_year.closed",
+    "erp.gst.mapping.updated",
+    "erp.gst.return.generated",
+    "erp.invoice.approved",
+    "erp.invoice.created",
+    "erp.invoice.updated",
+    "erp.journal.approved",
+    "erp.journal.created",
+    "erp.journal.posted",
+    "erp.journal.posting.completed",
+    "erp.journal.reversed",
+    "erp.ledger.posted",
+    "erp.ledger.reversed",
+    "erp.payment.completed",
+    "erp.payment.failed",
+    "erp.period.closed",
+    "erp.period.hard_locked",
+    "erp.period.opened",
+    "erp.period.reopened",
+    "erp.period.soft_locked",
+    "erp.po.approved",
+    "erp.po.created",
+    "erp.reconciliation.pending",
+    "erp.trial_balance.generated",
+    "erp.vendor.created",
+    "erp.year_end.completed",
+    "eway.bill.created",
+    "expense.claim.approved",
+    "expense.claim.created",
+    "expense.claim.rejected",
+    "expense.receipt.extracted",
+    "expense.reimbursed",
+    "expense.reimbursement.scheduled",
+    "forecast.cash.read",
+    "forecast.collections.read",
+    "forecast.dashboard.read",
+    "forecast.expenses.read",
+    "forecast.scenarios.read",
+    "forecast.tax.read",
+    "forecast.working_capital.read",
+    "graph.query.entity",
+    "graph.rebuild",
+    "graph.root_cause.generated",
+    "graph.upsert.requested",
+    "grn.confirmed",
+    "grn.created",
+    "gst.deadline.approaching",
+    "gst.mismatch.detected",
+    "gst.response.received",
+    "gst.transaction.recorded",
+    "identity.resolve",
+    "ingestion.embedding.completed",
+    "ingestion.run.completed",
+    "ingestion.run.started",
+    "ingestion.webhook.consumed",
+    "insight.generated",
+    "integration.connected",
+    "integration.ingestion.received",
+    "intercompany.created",
+    "intercompany.mismatch.detected",
+    "inventory.adjusted",
+    "inventory.closed",
+    "inventory.issued",
+    "inventory.received",
+    "inventory.transferred",
+    "inventory.valued",
+    "invoice.ai.reviewed",
+    "invoice.due",
+    "irn.generated",
+    "job.failed",
+    "journal.approved",
+    "journal.created",
+    "journal.posted",
+    "journal.reversed",
+    "kpi.updated",
+    "liquidity_alert.created",
+    "m38.context.retrieved",
+    "m38.goal.completed",
+    "m38.goal.run",
+    "m38.goal.step",
+    "m38.retrieval.failed",
+    "m38.security.firewall",
+    "manual",
+    "memory.archived",
+    "memory.corrected",
+    "memory.created",
+    "memory.manual_write",
+    "memory.summarized",
+    "memory.write",
+    "notification.delivered",
+    "notification.failed",
+    "notification.sent",
+    "ocr.completed",
+    "ops.scheduler.run_once",
+    "ops.worker.run_batch",
+    "ops.worker.run_once",
+    "payment.executed",
+    "payment.failed",
+    "payment.risk.detected",
+    "payment.scheduled",
+    "permission.denied",
+    "po.approved",
+    "po.created",
+    "po.sent",
+    "policy.violation.detected",
+    "pr.approved",
+    "pr.created",
+    "queue.blocked",
+    "queue.enqueue",
+    "queue.process_next",
+    "receipt.received",
+    "reconciliation.adjustment.posted",
+    "reconciliation.adjustment.required",
+    "reconciliation.completed",
+    "reconciliation.exception.created",
+    "reconciliation.suggested",
+    "report.downloaded",
+    "report.exported",
+    "report.generated",
+    "report.snapshot.created",
+    "reports.generate.completed",
+    "reports.generate.requested",
+    "reports.refresh.requested",
+    "retry.exceeded",
+    "risk.detected",
+    "role.assigned",
+    "scheduler.analytics.daily",
+    "scheduler.compliance.daily",
+    "scheduler.escalation.scan",
+    "scheduler.notifications.digest",
+    "scheduler.reconciliation.daily",
+    "scheduler.reports.daily",
+    "scheduler.sla.scan",
+    "scheduler.tick",
+    "session.revoked",
+    "sla.breached",
+    "source.created",
+    "source.sync.completed",
+    "source.sync.requested",
+    "source.sync.started",
+    "suspicious.activity.detected",
+    "tds.calculated",
+    "three_way_match.completed",
+    "three_way_match.exception",
+    "training.eval_run.completed",
+    "training.feedback.created",
+    "training.governance_cycle.approved",
+    "training.governance_cycle.rolled_back",
+    "training.governance_cycle.shadow_eval",
+    "training.governance_cycle.started",
+    "training.qa_gold.created",
+    "training.retrieval_judgment.created",
+    "training.safety_event.created",
+    "treasury.risk.detected",
+    "user.created",
+    "user.invited",
+    "user.login",
+    "user.logout",
+    "vendor.bank_account.changed",
+    "webhook.delivered",
+    "webhook.failed",
+    "webhook.received",
+    "workflow.advance.requested",
+    "workflow.ai_review.requested",
+    "workflow.approval.reminder",
+    "workflow.approved",
+    "workflow.completed",
+    "workflow.created",
+    "workflow.escalated",
+    "workflow.failed",
+    "workflow.intelligence.completed",
+    "workflow.retry.scheduled",
+    "workflow.stage.completed",
+    "workflow.stage.entered",
+    "workflow.started",
+    "workflow.step.notification",
+    "workflow.step.reconciliation",
+    "workflow.step.system_task",
+    "workflow.transition"
+  ],
+  "event_type_count": 241,
+  "streams_literal": [],
+  "queues_literal": [
+    "main"
+  ],
+  "fos_imports_erp": [
+    {
+      "file": "modules/finance_os/platform_ai_runtime/context/entity_resolver.py",
+      "imports": [
+        "app.modules.erp.inventory.repositories.item_repository"
+      ]
+    },
+    {
+      "file": "modules/finance_os/invoice_ai/pipelines/invoice_pipeline.py",
+      "imports": [
+        "app.modules.erp.vouchers.services.voucher_service"
+      ]
+    },
+    {
+      "file": "modules/finance_os/invoice_ai/services/duplicate_service.py",
+      "imports": [
+        "app.modules.erp.accounts_payable.repositories.invoice_repository",
+        "app.modules.erp.accounts_payable.repositories.vendor_repository",
+        "app.modules.erp.accounts_payable.services.duplicate_invoice_service"
+      ]
+    },
+    {
+      "file": "modules/finance_os/invoice_ai/services/ledger_suggestion_service.py",
+      "imports": [
+        "app.modules.erp.accounts_payable.repositories.vendor_repository"
+      ]
+    },
+    {
+      "file": "modules/finance_os/forecasting/jobs/forecast_accuracy_job.py",
+      "imports": [
+        "app.modules.erp.reporting.services.aging_report_service",
+        "app.modules.erp.treasury.services.cash_position_service"
+      ]
+    },
+    {
+      "file": "modules/finance_os/forecasting/pipelines/forecast_refresh_pipeline.py",
+      "imports": [
+        "app.modules.erp.accounts_payable.repositories.invoice_repository",
+        "app.modules.erp.accounts_receivable.repositories.invoice_repository",
+        "app.modules.erp.compliance.repositories.compliance_repository",
+        "app.modules.erp.treasury.repositories.cash_position_repository"
+      ]
+    },
+    {
+      "file": "modules/finance_os/analytics/read_models/compliance_read_models.py",
+      "imports": [
+        "app.modules.erp.compliance.services.compliance_dashboard_service"
+      ]
+    },
+    {
+      "file": "modules/finance_os/analytics/read_models/finance_read_models.py",
+      "imports": [
+        "app.modules.erp.fiscal.repositories.fiscal_period_repository",
+        "app.modules.erp.reporting.repositories.schema_repository",
+        "app.modules.erp.reporting.services.aging_report_service",
+        "app.modules.erp.reporting.services.pnl_service"
+      ]
+    },
+    {
+      "file": "modules/finance_os/analytics/read_models/reconciliation_read_models.py",
+      "imports": [
+        "app.modules.erp.reconciliation.jobs.reconciliation_scan_job"
+      ]
+    },
+    {
+      "file": "modules/finance_os/analytics/read_models/treasury_read_models.py",
+      "imports": [
+        "app.modules.erp.treasury.services.cash_position_service",
+        "app.modules.erp.treasury.services.liquidity_service"
+      ]
+    },
+    {
+      "file": "modules/finance_os/analytics/read_models/workflow_read_models.py",
+      "imports": [
+        "app.modules.erp.fiscal.repositories.fiscal_period_repository"
+      ]
+    },
+    {
+      "file": "modules/finance_os/agents/bridges/m12_bridge.py",
+      "imports": [
+        "app.modules.erp.fiscal.services.fiscal_period_service"
+      ]
+    }
+  ],
+  "erp_imports_fos": [
+    {
+      "file": "modules/erp/vouchers/services/voucher_service.py",
+      "imports": [
+        "app.modules.finance_os.invoice_ai.repositories.prediction_repository",
+        "app.modules.finance_os.invoice_ai.services.extraction_service"
+      ]
+    },
+    {
+      "file": "modules/erp/reporting/engine/aggregation_engine.py",
+      "imports": [
+        "app.modules.finance_os.forecasting.services.forecast_accuracy_service"
+      ]
+    },
+    {
+      "file": "modules/erp/reporting/services/forecast_report_service.py",
+      "imports": [
+        "app.modules.finance_os.forecasting.jobs.forecast_accuracy_job",
+        "app.modules.finance_os.forecasting.services.forecast_accuracy_service",
+        "app.modules.finance_os.forecasting.services.forecast_query_service"
+      ]
+    },
+    {
+      "file": "modules/erp/accounts_receivable/services/ar_invoice_ai_hook.py",
+      "imports": [
+        "app.modules.finance_os.invoice_ai.pipelines.invoice_pipeline"
+      ]
+    },
+    {
+      "file": "modules/erp/accounts_payable/services/ai_invoice_service.py",
+      "imports": [
+        "app.modules.finance_os.invoice_ai.pipelines.invoice_pipeline",
+        "app.modules.finance_os.invoice_ai.services.anomaly_service",
+        "app.modules.finance_os.invoice_ai.services.confidence_service",
+        "app.modules.finance_os.invoice_ai.services.duplicate_service",
+        "app.modules.finance_os.invoice_ai.services.extraction_service",
+        "app.modules.finance_os.invoice_ai.services.prediction_service"
+      ]
+    },
+    {
+      "file": "modules/erp/accounts_payable/services/invoice_service.py",
+      "imports": [
+        "app.modules.finance_os.invoice_ai.repositories.prediction_repository"
+      ]
+    }
+  ],
+  "module_tree": {
+    "__pycache__": {},
+    "core": {
+      "iam": {
+        "py_files": 92
+      }
+    },
+    "erp": {
+      "accounts_payable": {
+        "py_files": 51
+      },
+      "accounts_receivable": {
+        "py_files": 50
+      },
+      "assets": {
+        "py_files": 37
+      },
+      "banking": {
+        "py_files": 31
+      },
+      "coa": {
+        "py_files": 29
+      },
+      "compliance": {
+        "py_files": 31
+      },
+      "consolidation": {
+        "py_files": 33
+      },
+      "expenses": {
+        "py_files": 31
+      },
+      "fiscal": {
+        "py_files": 28
+      },
+      "fx": {
+        "py_files": 12
+      },
+      "gl": {
+        "py_files": 29
+      },
+      "import_customs": {
+        "py_files": 10
+      },
+      "inventory": {
+        "py_files": 38
+      },
+      "journals": {
+        "py_files": 52
+      },
+      "payroll": {
+        "py_files": 12
+      },
+      "procurement": {
+        "py_files": 41
+      },
+      "reconciliation": {
+        "py_files": 39
+      },
+      "reporting": {
+        "py_files": 52
+      },
+      "security": {
+        "py_files": 10
+      },
+      "tax": {
+        "py_files": 81
+      },
+      "treasury": {
+        "py_files": 63
+      },
+      "vouchers": {
+        "py_files": 31
+      }
+    },
+    "finance_os": {
+      "agents": {
+        "py_files": 47
+      },
+      "analytics": {
+        "py_files": 62
+      },
+      "audit_explorer": {
+        "py_files": 49
+      },
+      "forecasting": {
+        "py_files": 48
+      },
+      "graph": {
+        "py_files": 45
+      },
+      "invoice_ai": {
+        "py_files": 32
+      },
+      "memory": {
+        "py_files": 41
+      },
+      "platform_ai_runtime": {
+        "py_files": 65
+      },
+      "workflow_intelligence": {
+        "py_files": 36
+      }
+    },
+    "platform": {
+      "api_gateway": {
+        "py_files": 37
+      },
+      "billing": {
+        "py_files": 19
+      },
+      "documents": {
+        "py_files": 69
+      },
+      "events": {
+        "py_files": 60
+      },
+      "governance": {
+        "py_files": 73
+      },
+      "integrations": {
+        "py_files": 73
+      },
+      "notifications": {
+        "py_files": 59
+      }
+    },
+    "workflows": {
+      "engine": {
+        "py_files": 9
+      },
+      "events": {
+        "py_files": 4
+      },
+      "middleware": {
+        "py_files": 1
+      },
+      "models": {
+        "py_files": 5
+      },
+      "repositories": {
+        "py_files": 9
+      },
+      "routes": {
+        "py_files": 9
+      },
+      "schemas": {
+        "py_files": 3
+      },
+      "services": {
+        "py_files": 17
+      },
+      "tests": {
+        "py_files": 15
+      },
+      "validators": {
+        "py_files": 2
+      },
+      "workers": {
+        "py_files": 5
+      }
+    }
+  },
+  "settings_fields": [
+    "app_name",
+    "api_prefix",
+    "app_env",
+    "default_confidence",
+    "jwt_secret",
+    "jwt_algorithm",
+    "jwt_issuer",
+    "jwt_audience",
+    "jwt_jwks_url",
+    "jwt_require_jwks_in_prod",
+    "jwt_require_exp",
+    "jwt_revocation_fail_closed",
+    "auth_mode",
+    "jwt_tenant_claim",
+    "jwt_roles_claim",
+    "jwt_user_claim",
+    "oidc_enabled",
+    "oidc_provider",
+    "oidc_authorization_endpoint",
+    "oidc_token_endpoint",
+    "oidc_issuer",
+    "oidc_jwks_url",
+    "oidc_client_id",
+    "oidc_client_secret",
+    "oidc_redirect_uri",
+    "oidc_scopes",
+    "oidc_use_pkce",
+    "oidc_state_ttl_seconds",
+    "oidc_org_claim",
+    "oidc_roles_claim",
+    "oidc_user_claim",
+    "api_session_ttl_seconds",
+    "oidc_refresh_ttl_seconds",
+    "oidc_store_prefix",
+    "redis_url",
+    "postgres_dsn",
+    "postgres_require_tls",
+    "postgres_pool_min",
+    "postgres_pool_max",
+    "redis_stream_maxlen",
+    "redis_stream_financial_maxlen",
+    "redis_pool_max_connections",
+    "redis_socket_connect_timeout_seconds",
+    "redis_socket_timeout_seconds",
+    "redis_health_check_interval_seconds",
+    "erp_require_company_id",
+    "worker_service_boundary",
+    "legacy_redis_queue_enabled",
+    "redis_require_tls",
+    "neo4j_require_tls",
+    "queue_main_name",
+    "queue_dlq_name",
+    "queue_ingestion_sync",
+    "queue_ingestion_retry",
+    "queue_processing_chunk",
+    "queue_processing_embed",
+    "queue_processing_extract",
+    "queue_graph_upsert",
+    "queue_memory_write",
+    "queue_retrieval_precompute",
+    "queue_agent_run",
+    "queue_agent_action",
+    "queue_notifications_dispatch",
+    "queue_audit_persist",
+    "queue_workflow_execution",
+    "queue_workflow_approvals",
+    "queue_workflow_escalations",
+    "queue_workflow_sla",
+    "queue_workflow_retries",
+    "queue_ai_ocr",
+    "queue_ai_reconciliation",
+    "queue_ai_risk",
+    "queue_ai_memory",
+    "queue_ai_forecasting",
+    "queue_integration_gst",
+    "queue_integration_bank",
+    "queue_integration_webhooks",
+    "queue_integration_email",
+    "queue_notifications_email",
+    "queue_notifications_whatsapp",
+    "queue_notifications_push",
+    "queue_reports_generate",
+    "queue_reports_refresh",
+    "event_queue_backend",
+    "event_retry_base_seconds",
+    "event_retry_max_attempts",
+    "webhook_max_attempts",
+    "event_publish_rate_limit_per_minute",
+    "neo4j_uri",
+    "neo4j_user",
+    "neo4j_password",
+    "llm_provider",
+    "openai_api_key",
+    "openai_base_url",
+    "openai_model",
+    "llm_timeout_seconds",
+    "llm_max_retries",
+    "llm_retry_base_ms",
+    "llm_circuit_fail_threshold",
+    "llm_circuit_open_seconds",
+    "llm_tokens_per_minute_per_org",
+    "retrieval_embedding_model",
+    "retrieval_chunk_size_tokens",
+    "retrieval_chunk_overlap_ratio",
+    "retrieval_top_k",
+    "retrieval_min_confidence",
+    "integration_timeout_seconds",
+    "integration_max_retries",
+    "slack_webhook_url",
+    "erp_webhook_url",
+    "bank_webhook_url",
+    "crm_webhook_url",
+    "docs_webhook_url",
+    "ticketing_webhook_url",
+    "jira_base_url",
+    "jira_email",
+    "jira_api_token",
+    "jira_project_key",
+    "linear_api_key",
+    "linear_team_id",
+    "smtp_host",
+    "smtp_port",
+    "smtp_user",
+    "smtp_password",
+    "smtp_from_email",
+    "resend_api_key",
+    "resend_from_email",
+    "whatsapp_api_url",
+    "whatsapp_api_token",
+    "sms_api_url",
+    "sms_api_token",
+    "push_api_url",
+    "teams_webhook_url",
+    "notification_retry_max_attempts",
+    "notification_retry_base_seconds",
+    "otel_enabled",
+    "otel_service_name",
+    "otel_exporter_otlp_endpoint",
+    "observability_require_in_prod",
+    "log_level",
+    "log_sink_url",
+    "disable_dev_auth_routes_in_prod",
+    "enable_dev_auth_routes",
+    "enable_worker_routes",
+    "m38_context_engine_enabled",
+    "m38_read_answer_mode",
+    "m38_working_memory",
+    "m38_unified_copilot",
+    "m38_default_runtime",
+    "m38_entity_confidence_threshold",
+    "m38_entity_min_margin",
+    "m38_max_runtime_steps",
+    "m38_retrieval_max_retries",
+    "m38_retrieval_retry_base_ms",
+    "m38_event_max_retries",
+    "m38_step_max_auto_retries",
+    "m38_ai_firewall_enabled",
+    "m38_ai_firewall_block_on_detection",
+    "m38_chat_rate_limit_per_minute",
+    "m38_max_tools_per_run",
+    "m38_max_plan_nodes",
+    "m38_max_context_chars",
+    "m38_max_document_instruction_scan",
+    "m38_autonomy_enabled",
+    "m38_autonomy_start_goals",
+    "m38_default_prep_only",
+    "m38_context_cache_enabled",
+    "m38_context_cache_ttl_seconds",
+    "ai_gateway_enabled",
+    "ai_model_cheap",
+    "ai_model_strong",
+    "ai_model_vision",
+    "ai_model_routes_json",
+    "ai_class_routes_json",
+    "ai_model_prices_json",
+    "ai_default_context_budget_tokens",
+    "ai_prompt_cache_enabled",
+    "ai_prompt_cache_ttl_seconds",
+    "ai_entity_cache_ttl_seconds",
+    "ai_budget_enforcement_enabled",
+    "ai_monthly_budget_usd",
+    "ai_daily_budget_usd",
+    "ai_user_daily_budget_usd",
+    "ai_goal_budget_usd",
+    "ai_budget_soft_ratio",
+    "dev_use_postgres",
+    "allow_direct_ap_execute",
+    "scheduler_org_ids",
+    "event_queue_inflight_seconds",
+    "outbox_publish_dedupe_ttl_seconds",
+    "consumer_dedup_ttl_days",
+    "consumer_dedup_financial_ttl_days",
+    "dlq_alert_threshold",
+    "worker_stream_batch_size",
+    "outbox_publish_batch_size",
+    "billing_fail_open_ai",
+    "iam_use_db_auth",
+    "iam_access_token_ttl_seconds",
+    "iam_refresh_token_ttl_seconds",
+    "iam_skip_mfa_in_dev",
+    "cors_allow_origins",
+    "cors_allow_credentials",
+    "cloudinary_cloud_name",
+    "cloudinary_api_key",
+    "cloudinary_api_secret",
+    "cloudinary_secure",
+    "cloudinary_upload_preset",
+    "storage_provider",
+    "documents_bucket_prefix",
+    "document_confidence_threshold",
+    "document_retention_years",
+    "clamav_enabled",
+    "clamav_mode",
+    "clamav_executable",
+    "clamav_clamd_host",
+    "clamav_clamd_port",
+    "ocr_provider",
+    "ocr_hybrid_validate",
+    "aws_region",
+    "aws_access_key_id",
+    "aws_secret_access_key",
+    "aws_session_token",
+    "textract_s3_bucket",
+    "gcp_project_id",
+    "gcp_location",
+    "gcp_documentai_processor_id",
+    "gcp_credentials_json",
+    "api_key_pepper",
+    "integrations_credentials_key",
+    "oidc_allowed_redirect_uris",
+    "oidc_jit_provisioning_enabled",
+    "oidc_jit_default_role",
+    "allow_password_auth_in_prod",
+    "password_reset_email_enabled",
+    "app_public_base_url",
+    "webauthn_rp_id",
+    "webauthn_rp_name",
+    "webauthn_origin",
+    "webauthn_enabled",
+    "auth_cookie_secure",
+    "sse_token_ttl_seconds",
+    "integrations_api_key_rate_limit_per_minute",
+    "gstn_base_url",
+    "gstn_username",
+    "gstn_password",
+    "gstn_api_key",
+    "irp_base_url",
+    "irp_client_id",
+    "irp_client_secret",
+    "eway_base_url",
+    "eway_username",
+    "eway_password",
+    "gst_connector_provider",
+    "integrations_mode",
+    "documents_s3_bucket",
+    "push_api_token"
+  ],
+  "settings_field_count": 256,
+  "main_include_router_count": 61,
+  "main_middleware": [
+    "IdempotencyMiddleware",
+    "GatewayMiddleware",
+    "AuditCaptureMiddleware",
+    "GovernanceEnforcementMiddleware",
+    "GovernanceTraceMiddleware",
+    "LegacyDeprecationMiddleware",
+    "RequestMiddleware"
+  ]
+}

@@ -46,11 +46,14 @@ def list_journals(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
+    from app.modules.erp.security.branch_scope_sql import branch_ids_from_attrs
+
     items = journal_service.list(
         context.org_id,
         journal_status=journal_status,
         journal_type=journal_type,
         company_id=company_id,
+        branch_ids=branch_ids_from_attrs(context.attrs),
         limit=limit,
         offset=offset,
     )

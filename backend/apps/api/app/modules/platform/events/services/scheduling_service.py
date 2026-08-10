@@ -80,6 +80,9 @@ class SchedulingService:
         )
 
     def run_org_scheduled_emissions(self, org_id: str) -> dict:
+        allowed = [o.strip() for o in settings.scheduler_org_ids.split(",") if o.strip()]
+        if allowed and org_id not in allowed:
+            return {"org_id": org_id, "emitted": [], "skipped": True, "reason": "org_not_scheduled"}
         emitted = {
             "sla": self.emit_sla_scan(org_id),
             "escalation": self.emit_escalation_scan(org_id),
@@ -87,10 +90,6 @@ class SchedulingService:
             "compliance": self.emit_compliance_job(org_id),
             "notification_digest": self.emit_notification_digest(org_id),
         }
-        for org in settings.scheduler_org_ids.split(","):
-            org = org.strip()
-            if org and org != org_id:
-                continue
         return {"org_id": org_id, "emitted": list(emitted.keys())}
 
 

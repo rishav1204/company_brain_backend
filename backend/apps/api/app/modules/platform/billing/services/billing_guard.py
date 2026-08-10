@@ -22,6 +22,25 @@ class BillingGuard:
     def check(self, req: BillingCheckRequest | str, *, feature: str | None = None, **kwargs) -> None:
         if isinstance(req, str):
             req = BillingCheckRequest(org_id=req, feature=feature, **kwargs)
+        try:
+            from app.modules.platform.control_plane.services.access_config_service import (
+                access_config_service,
+            )
+
+            controls = access_config_service.get_org_controls(req.org_id)
+            if not controls.get("api_access_allowed", True):
+                raise BillingDenied("API access disabled for this organization", code="org_api_disabled")
+            if req.feature and not access_config_service.feature_allowed_by_org_controls(
+                req.org_id, req.feature
+            ):
+                raise BillingDenied(
+                    f"Feature disabled by platform controls: {req.feature}",
+                    code="feature_platform_disabled",
+                )
+        except BillingDenied:
+            raise
+        except Exception:
+            pass
         if req.feature:
             entitlement_service.require_feature(req.org_id, req.feature)
         if req.limit_code:

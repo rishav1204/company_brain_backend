@@ -14,9 +14,9 @@ from app.modules.erp.expenses.validators.claim_validator import (
 )
 from app.modules.erp.expenses.workflows.claim_approval_workflow import workflow_metadata
 from app.modules.erp.expenses.events.expense_events import emit_claim_approved, emit_claim_created, emit_claim_rejected
-from app.modules.erp.journals.services.approval_service import approval_service as journal_approval_service
-from app.modules.erp.journals.services.journal_service import journal_service
+from app.modules.erp.journals.services.journal_draft_conn import approve_with_conn, create_draft_with_conn
 from app.modules.erp.journals.services.posting_orchestrator import posting_orchestrator
+from app.services.db import get_db_conn, set_rls_org
 
 
 class ClaimService:
@@ -187,31 +187,58 @@ class ClaimService:
             "line_description": "Employee reimbursement payable",
         })
 
-        journal = journal_service.create_draft(
-            org_id,
-            created_by=approver_id,
-            journal_type="accrual",
-            posting_date=posting_date or datetime.now(timezone.utc).date().isoformat(),
-            description=f"Expense claim {claim.get('claim_number')}",
-            source_type="expense_claim",
-            source_id=claim_id,
-            company_id=claim.get("company_id"),
-            lines=lines,
-            idempotency_key=f"expense-claim:{claim_id}",
-        )
-        jid = str(journal["journal"]["id"])
-        journal_approval_service.approve(org_id, journal_id=jid, approver_id=approver_id, skip_maker_checker=True)
-        if auto_post:
-            posting_orchestrator.post_journal(org_id, journal_id=jid, posted_by=approver_id)
+        journal = None
+        post_result = None
+        jid = None
+        updated = None
 
-        from app.modules.erp.expenses.services.advance_service import advance_service
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            journal = create_draft_with_conn(
+                conn,
+                org_id,
+                created_by=approver_id,
+                journal_type="accrual",
+                posting_date=posting_date or datetime.now(timezone.utc).date().isoformat(),
+                description=f"Expense claim {claim.get('claim_number')}",
+                source_type="expense_claim",
+                source_id=claim_id,
+                company_id=claim.get("company_id"),
+                lines=lines,
+                idempotency_key=f"expense-claim:{claim_id}",
+            )
+            jid = str(journal["journal"]["id"])
+            approve_with_conn(conn, org_id, journal_id=jid, approver_id=approver_id, skip_maker_checker=True)
+            if auto_post:
+                post_result = posting_orchestrator.post_journal_with_conn(
+                    conn, org_id, journal_id=jid, posted_by=approver_id, defer_side_effects=True
+                )
 
-        advance_service.settle_against_claim(org_id, employee_id=str(claim["employee_id"]), claim_amount=total)
+            from app.modules.erp.expenses.services.advance_service import advance_service
 
-        updated = claim_repository.set_status(
-            org_id, claim_id=claim_id, status="approved", approved_by=approver_id,
-            workflow_approved=True, journal_id=jid,
-        )
+            advance_service.settle_against_claim_conn(
+                conn, org_id, employee_id=str(claim["employee_id"]), claim_amount=total
+            )
+
+            updated = claim_repository.set_status_conn(
+                conn,
+                org_id,
+                claim_id=claim_id,
+                status="approved",
+                approved_by=approver_id,
+                workflow_approved=True,
+                journal_id=jid,
+            )
+
+        if auto_post and journal:
+            posting_orchestrator._emit_post_side_effects(
+                org_id,
+                journal_id=jid,
+                journal=journal["journal"],
+                batch_id=str((post_result or {}).get("ledger_batch_id") or ""),
+                posted_by=approver_id,
+            )
+
         emit_claim_approved(org_id, claim_id=claim_id, claim_number=str(claim.get("claim_number")))
         self._audit(org_id, action="expense.claim.approved", claim_id=claim_id, actor_id=approver_id, details={"journal_id": jid})
 

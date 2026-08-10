@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.modules.erp.banking.repositories.bank_account_repository import bank_account_repository
 from app.modules.erp.banking.repositories.bank_transaction_repository import bank_transaction_repository
 from app.modules.erp.gl.repositories.ledger_query_repository import ledger_query_repository
-from app.modules.erp.reconciliation.ai.suggestion_engine import suggest_matches
+from app.modules.erp.ports.intelligence_registry import intelligence_registry
 from app.modules.erp.reconciliation.repositories.rules_repository import rules_repository
 
 
@@ -24,7 +24,13 @@ class BankMatchService:
     def rank_for_transaction(self, org_id: str, bank_tx: dict, *, limit: int = 5) -> list[dict]:
         ledger_entries, subledger = self.collect_candidates(org_id, bank_tx)
         rules = rules_repository.list_active(org_id)
-        return suggest_matches(bank_tx, ledger_entries, subledger_candidates=subledger, rules=rules, limit=limit)
+        return intelligence_registry.reconciliation().suggest_matches(
+            bank_tx,
+            ledger_entries,
+            subledger_candidates=subledger,
+            rules=rules,
+            limit=limit,
+        )
 
     def list_workbench(self, org_id: str, *, bank_account_id: str | None = None, limit: int = 100) -> dict:
         unreconciled = bank_transaction_repository.list(

@@ -32,6 +32,10 @@ class VoucherProjectionService:
             journal_lines = journal_line_repository.list_by_journal(org_id, journal_id=journal_id)
             if not journal_lines:
                 return None
+            from app.modules.erp.journals.repositories.journal_repository import journal_repository
+
+            journal = journal_repository.get(org_id, journal_id=journal_id) or {}
+            journal_branch_id = journal.get("branch_id")
             if total_amount is None:
                 total_amount = max(
                     sum(float(l.get("debit_amount") or 0) for l in journal_lines),
@@ -48,7 +52,7 @@ class VoucherProjectionService:
                 total_amount=float(total_amount or 0),
                 narration=narration,
                 company_id=company_id,
-                branch_id=None,
+                branch_id=str(journal_branch_id) if journal_branch_id else None,
                 reference_type=reference_type,
                 reference_id=reference_id,
                 source_module=source_module,

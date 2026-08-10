@@ -7,7 +7,8 @@ from app.modules.core.iam.events.role_events import emit_role_assigned
 from app.modules.core.iam.events.user_events import emit_user_created
 from app.modules.core.iam.repositories import role_repo, user_repo
 from app.modules.core.iam.schemas.user_schema import AssignRoleRequest, UserListResponse, UserResponse
-from app.modules.core.iam.services.rbac_service import assert_can_assign_role, has_permission
+from app.modules.core.iam.middleware.mutation_guard import require_db_mutation
+from app.modules.core.iam.services.rbac_service import assert_can_assign_role
 from app.modules.core.iam.routes.idempotency_helper import check_idempotency, mark_idempotency
 from app.modules.core.iam.services.api_key_auth_service import scope_allows
 from app.modules.core.iam.validators.password_validator import validate_password_strength
@@ -32,10 +33,12 @@ def _require_manage_users(context) -> None:
         if not scope_allows(scopes, "user.manage"):
             raise HTTPException(status_code=403, detail="API key missing scope: user.manage")
         return
-    if "tenant_admin" in {r.lower() for r in context.roles}:
-        return
-    if not has_permission(context.org_id, context.user_id, "user.manage"):
-        raise HTTPException(status_code=403, detail="user.manage permission required")
+    require_db_mutation(
+        context,
+        ["user.manage"],
+        detail="user.manage permission required",
+        allow_tenant_admin=True,
+    )
 
 
 @router.get("/users", response_model=UserListResponse)

@@ -28,15 +28,10 @@ class GrnService:
         except Exception:
             pass
 
-    def maybe_accrue(self, org_id: str, *, grn_id: str) -> dict:
-        """Delegate GRN inventory receipt when M18 module is active."""
-        try:
-            from app.modules.erp.inventory.services.receipt_service import receipt_service
+    def maybe_accrue(self, org_id: str, *, grn_id: str, actor_id: str | None = None) -> list[dict]:
+        from app.modules.erp.inventory.services.receipt_service import receipt_service
 
-            movements = receipt_service.receive_from_grn(org_id, grn_id=grn_id)
-            return {"accrual_required": bool(movements), "grn_id": grn_id, "movement_count": len(movements)}
-        except Exception:
-            return {"accrual_required": False, "grn_id": grn_id}
+        return receipt_service.receive_from_grn(org_id, grn_id=grn_id, actor_id=actor_id)
 
     def create(
         self,
@@ -123,7 +118,7 @@ class GrnService:
         grn = grn_repository.get(org_id, grn_id=grn_id)
         if not grn:
             raise ValueError("GRN not found")
-        ensure_confirmable(str(gr.get("status")))
+        ensure_confirmable(str(grn.get("status")))
         if not skip_workflow_check and not grn.get("workflow_approved"):
             raise ValueError("GRN workflow confirmation required")
         po_id = str(grn.get("po_id"))
@@ -135,10 +130,38 @@ class GrnService:
                 new_received = float(pi.get("received_quantity") or 0) + float(item.get("accepted_quantity") or 0)
                 po_repository.update_received_qty(org_id, po_item_id=str(pi["id"]), received_quantity=new_received)
         po_repository.rollup_receipt_status(org_id, po_id=po_id)
+        movements = self.maybe_accrue(org_id, grn_id=grn_id, actor_id=actor_id)
+        from app.modules.erp.procurement.services.grn_accrual_service import grn_accrual_service
+
+        grn_accrual_service.accrue_service_lines(org_id, grn_id=grn_id, actor_id=actor_id)
+        po_items = {str(i["id"]): i for i in po_repository.list_items(org_id, po_id=po_id)}
+        has_inventory_qty = False
+        for item in grn_repository.list_items(org_id, grn_id=grn_id):
+            po_item = po_items.get(str(item.get("po_item_id"))) or {}
+            if po_item.get("inventory_item_id") and float(item.get("accepted_quantity") or 0) > 0:
+                has_inventory_qty = True
+                break
+        if has_inventory_qty and not movements:
+            raise ValueError("Inventory GRN lines require stock receipt/GRNI accrual on confirm")
         updated = grn_repository.set_status(org_id, grn_id=grn_id, status="confirmed", workflow_approved=True)
-        self.maybe_accrue(org_id, grn_id=grn_id)
         emit_grn_confirmed(org_id, grn_id=grn_id, grn_number=str(grn.get("grn_number")), po_id=po_id)
         self._audit(org_id, action="grn.confirmed", entity_id=grn_id, actor_id=actor_id, details={"po_id": po_id})
+        return updated
+
+    def cancel(self, org_id: str, *, grn_id: str, actor_id: str) -> dict:
+        """Compensating cancel for draft GRNs only (AI-05). Confirmed receipts require reverse inventory flow."""
+        grn = grn_repository.get(org_id, grn_id=grn_id)
+        if not grn:
+            raise ValueError("GRN not found")
+        status = str(grn.get("status") or "")
+        if status == "confirmed":
+            raise ValueError(
+                "Confirmed GRN cannot be cancelled automatically; use inventory reverse + compensating journal workflow"
+            )
+        if status not in {"draft", "cancelled"}:
+            raise ValueError(f"GRN cannot be cancelled from status {status}")
+        updated = grn_repository.set_status(org_id, grn_id=grn_id, status="cancelled")
+        self._audit(org_id, action="grn.cancelled", entity_id=grn_id, actor_id=actor_id, details={})
         return updated
 
 

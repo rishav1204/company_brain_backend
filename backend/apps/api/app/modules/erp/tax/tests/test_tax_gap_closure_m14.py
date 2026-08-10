@@ -1,4 +1,4 @@
-from app.modules.erp.tax.ai.mismatch_detector import detect_mismatches
+from app.modules.finance_os.domain_intelligence.tax.mismatch_detector import detect_mismatches
 from app.modules.erp.tax.engine.gst_engine import build_gst_transaction, split_gst_amount
 from app.modules.erp.tax.engine.tds_engine import calculate_tds
 from app.modules.erp.tax.services.gst_transaction_service import _resolve_gst_type

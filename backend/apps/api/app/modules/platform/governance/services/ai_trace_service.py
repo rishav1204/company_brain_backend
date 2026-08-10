@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+
 from typing import Any
 
+from app.core.prompt_sanitizer import detect_adversarial_patterns, sanitize_user_prompt
 from app.modules.platform.governance.explainability.ai_reasoning_tracker import track_ai_reasoning
 from app.modules.platform.governance.repositories.ai_trace_repository import ai_trace_repository
 from app.modules.platform.governance.services.audit_service import audit_service
@@ -22,13 +25,20 @@ class AITraceService:
         workflow_id: str | None = None,
         step_id: str | None = None,
     ) -> dict[str, Any]:
+        adversarial_flags = detect_adversarial_patterns(prompt)
+        sanitized_prompt = sanitize_user_prompt(prompt)
+        ctx = dict(retrieved_context or {})
+        ctx["raw_prompt_sha256"] = hashlib.sha256((prompt or "").encode("utf-8")).hexdigest()
+        if adversarial_flags:
+            ctx["adversarial_input_flags"] = adversarial_flags
+            ctx["raw_prompt_length"] = len(prompt or "")
         return track_ai_reasoning(
             org_id,
-            prompt=prompt,
+            prompt=sanitized_prompt,
             reasoning_summary=reasoning_summary,
             confidence_score=confidence_score,
             decision=decision,
-            retrieved_context=retrieved_context,
+            retrieved_context=ctx,
             policy_checks=policy_checks,
             agent_run_id=agent_run_id,
             workflow_id=workflow_id,

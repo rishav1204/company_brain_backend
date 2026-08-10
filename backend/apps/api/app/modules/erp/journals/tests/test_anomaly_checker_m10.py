@@ -1,4 +1,4 @@
-from app.modules.erp.journals.ai.anomaly_checker import detect_journal_anomalies
+from app.modules.finance_os.domain_intelligence.journals.anomaly_checker import detect_journal_anomalies
 
 
 def test_detect_zero_total() -> None:

@@ -1,6 +1,6 @@
 import pytest
 
-from app.modules.erp.journals.ai.confidence_engine import requires_finance_review
+from app.modules.finance_os.domain_intelligence.journals.confidence_engine import requires_finance_review
 from app.modules.erp.journals.services.journal_validation_service import journal_validation_service
 
 

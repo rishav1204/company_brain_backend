@@ -7,12 +7,24 @@ import redis
 from redis.exceptions import RedisError
 
 from app.core.config import settings
+from app.modules.platform.events.services.retry_classifier import classify_exception
 from app.modules.platform.events.services.retry_service import is_ready_for_retry, schedule_retry, should_retry
 from app.services.event_topology import queue_dlq_name, route_for_envelope
 from app.services.metrics import metrics_store
 from app.services.redis_client import get_redis_client
 
-CONSUMER_DEDUP_TTL_SECONDS = 7 * 24 * 3600
+def _dedup_ttl_seconds(queue: str) -> int:
+    # RQ-06: longer dedup window for financial queues.
+    financial = {
+        settings.queue_workflow_execution,
+        settings.queue_workflow_approvals,
+        settings.queue_integration_bank,
+        settings.queue_integration_gst,
+    }
+    days = int(getattr(settings, "consumer_dedup_financial_ttl_days", 30)) if queue in financial else int(
+        getattr(settings, "consumer_dedup_ttl_days", 7)
+    )
+    return max(1, days * 24 * 3600)
 
 
 @dataclass
@@ -40,6 +52,7 @@ class QueueManager:
     def __init__(self) -> None:
         self.client: redis.Redis | None = get_redis_client()
         self.use_streams = settings.event_queue_backend.lower() == "redis_streams"
+        self._ensured_groups: set[str] = set()
 
     def _stream_key(self, queue: str) -> str:
         return f"stream:{queue}"
@@ -50,13 +63,18 @@ class QueueManager:
     def _ensure_group(self, queue: str) -> None:
         if self.client is None:
             return
+        if queue in self._ensured_groups:
+            return
         stream = self._stream_key(queue)
         group = self._consumer_group(queue)
         try:
             self.client.xgroup_create(stream, group, id="0", mkstream=True)
+            self._ensured_groups.add(queue)
         except RedisError as exc:
             if "BUSYGROUP" not in str(exc):
                 pass
+            else:
+                self._ensured_groups.add(queue)
 
     def publish(self, envelope: dict, *, priority: str = "normal") -> QueuePublishResult:
         queue = route_for_envelope(envelope)
@@ -66,15 +84,27 @@ class QueueManager:
             queue = apply_priority_route(queue)
         if self.client is None:
             return QueuePublishResult(status="skipped", queue=queue, detail="redis_unconfigured", envelope=envelope)
-        payload = json.dumps(envelope)
+        # Compact JSON reduces Redis memory + network bytes.
+        payload = json.dumps(envelope, separators=(",", ":"), default=str)
         try:
             if self.use_streams:
                 self._ensure_group(queue)
+                financial = {
+                    settings.queue_workflow_execution,
+                    settings.queue_workflow_approvals,
+                    settings.queue_integration_bank,
+                    settings.queue_integration_gst,
+                }
+                maxlen = settings.redis_stream_maxlen
+                approximate = True
+                if queue in financial:
+                    maxlen = int(getattr(settings, "redis_stream_financial_maxlen", maxlen))
+                    approximate = False  # RQ-01 / RQ-18: never approximate-trim financial streams
                 self.client.xadd(
                     self._stream_key(queue),
                     {"data": payload},
-                    maxlen=settings.redis_stream_maxlen,
-                    approximate=True,
+                    maxlen=maxlen,
+                    approximate=approximate,
                 )
             else:
                 self.client.rpush(queue, payload)
@@ -89,6 +119,32 @@ class QueueManager:
         if self.use_streams:
             return self._claim_stream(queue, consumer_name)
         return self._claim_list(queue)
+
+    def claim_batch(
+        self,
+        queue: str,
+        *,
+        consumer_name: str,
+        count: int = 10,
+        block_ms: int = 0,
+    ) -> list[QueueClaimResult]:
+        """RQ-02/RQ-19: Batch claim to reduce Redis round trips.
+
+        ``block_ms`` defaults to 0 (non-blocking). The multi-queue worker scans
+        every queue each loop; a positive block here multiplies wait time by
+        queue count and makes the worker look hung when most queues are empty.
+        """
+        count = max(1, min(int(count or 10), 100))
+        if self.client is None:
+            return [QueueClaimResult(status="skipped", queue=queue, detail="redis_unconfigured")]
+        if self.use_streams:
+            return self._claim_stream_batch(queue, consumer_name, count=count, block_ms=block_ms)
+        out: list[QueueClaimResult] = []
+        for _ in range(count):
+            out.append(self._claim_list(queue))
+            if out[-1].status in {"empty", "error", "skipped"}:
+                break
+        return out
 
     def _claim_list(self, queue: str) -> QueueClaimResult:
         assert self.client is not None
@@ -146,19 +202,71 @@ class QueueManager:
             return QueueClaimResult(status="delayed", queue=queue, envelope=envelope, detail="retry_not_due")
         return QueueClaimResult(status="claimed", queue=queue, envelope=envelope, claim_token=msg_id)
 
+    def _claim_stream_batch(
+        self, queue: str, consumer_name: str, *, count: int, block_ms: int = 0
+    ) -> list[QueueClaimResult]:
+        assert self.client is not None
+        stream = self._stream_key(queue)
+        group = self._consumer_group(queue)
+        self._ensure_group(queue)
+        self.reclaim_stale(queue, consumer_name)
+        try:
+            kwargs: dict = {
+                "groupname": group,
+                "consumername": consumer_name,
+                "streams": {stream: ">"},
+                "count": count,
+            }
+            # redis-py: omit block for non-blocking; positive block waits in ms.
+            if int(block_ms or 0) > 0:
+                kwargs["block"] = int(block_ms)
+            messages = self.client.xreadgroup(**kwargs)
+        except RedisError as exc:
+            return [QueueClaimResult(status="error", queue=queue, detail=str(exc))]
+        if not messages:
+            return [QueueClaimResult(status="empty", queue=queue)]
+        _, entries = messages[0]
+        results: list[QueueClaimResult] = []
+        for msg_id, fields in entries:
+            raw = fields.get("data") or "{}"
+            envelope = json.loads(raw)
+            event_id = str(envelope.get("event_id", "")).strip()
+            if event_id:
+                dedupe_key = f"{queue}:processed:{event_id}"
+                try:
+                    if self.client.get(dedupe_key):
+                        self.client.xack(stream, group, msg_id)
+                        results.append(
+                            QueueClaimResult(status="deduped", queue=queue, envelope=envelope, idempotent_replay=True)
+                        )
+                        continue
+                except RedisError as exc:
+                    results.append(QueueClaimResult(status="error", queue=queue, detail=str(exc)))
+                    continue
+            if not is_ready_for_retry(envelope):
+                # Leave unacked so reclaim_stale redelivers after inflight idle;
+                # re-check is_ready_for_retry on next claim.
+                results.append(QueueClaimResult(status="delayed", queue=queue, envelope=envelope, detail="retry_not_due"))
+                continue
+            results.append(QueueClaimResult(status="claimed", queue=queue, envelope=envelope, claim_token=msg_id))
+        return results
+
     def complete_claim(self, queue: str, envelope: dict, claim_token: str | None) -> None:
         if self.client is None:
             return
         event_id = str(envelope.get("event_id", "")).strip()
+        # RQ-02: pipeline ack + dedupe to cut round trips.
+        pipe = self.client.pipeline(transaction=False)
         if self.use_streams and claim_token:
             stream = self._stream_key(queue)
             group = self._consumer_group(queue)
-            self.client.xack(stream, group, claim_token)
+            pipe.xack(stream, group, claim_token)
         elif claim_token:
             processing_queue = f"{queue}:processing"
-            self.client.lrem(processing_queue, 1, claim_token)
+            pipe.lrem(processing_queue, 1, claim_token)
         if event_id:
-            self.client.setex(f"{queue}:processed:{event_id}", CONSUMER_DEDUP_TTL_SECONDS, "1")
+            pipe.setex(f"{queue}:processed:{event_id}", _dedup_ttl_seconds(queue), "1")
+        pipe.execute()
         metrics_store.incr_event_processed()
 
     def fail_claim(self, queue: str, envelope: dict, claim_token: str | None, error: str) -> QueuePublishResult:
@@ -166,10 +274,15 @@ class QueueManager:
         if envelope is None:
             return QueuePublishResult(status="error", queue=queue, detail="no envelope")
         envelope["_last_error"] = error[:500]
-        envelope = schedule_retry(envelope)
+        # RQ-03: deterministic retry classification based on error type.
+        decision = classify_exception(RuntimeError(error))
+        envelope["_error_category"] = decision.category
+        envelope["_retryable"] = bool(decision.retryable)
+        if decision.retryable:
+            envelope = schedule_retry(envelope)
         attempts = int(envelope.get("_attempts", 0))
         force_fail = bool((envelope.get("payload") or {}).get("force_fail"))
-        retryable = force_fail or True
+        retryable = force_fail or bool(decision.retryable)
 
         if retryable and should_retry(attempts):
             self._release_claim_for_retry(queue, envelope, claim_token)
@@ -300,6 +413,26 @@ class QueueManager:
             if self.use_streams:
                 return int(self.client.xlen(self._stream_key(queue)))
             return int(self.client.llen(queue))
+        except RedisError:
+            return -1
+
+    def consumer_group_lag(self, queue: str) -> int:
+        """
+        Best-effort consumer lag estimate for Redis Streams.
+        Uses XINFO GROUPS `lag` when available (Redis 7+).
+        """
+        if self.client is None or not self.use_streams:
+            return self.lag(queue)
+        stream = self._stream_key(queue)
+        group = self._consumer_group(queue)
+        try:
+            groups = self.client.xinfo_groups(stream)
+            for g in groups:
+                name = g.get("name") if isinstance(g, dict) else None
+                if name == group:
+                    lag = g.get("lag")
+                    return int(lag) if lag is not None else -1
+            return -1
         except RedisError:
             return -1
 

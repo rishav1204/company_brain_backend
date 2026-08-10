@@ -46,7 +46,10 @@ class ProductionNsdlTdsConnector(_HttpTdsMixin):
                 filed_at=str(result.get("filed_at") or datetime.now(timezone.utc).isoformat()),
                 raw=result,
             )
-        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError):
+        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+            from app.modules.platform.integrations.connectors.connector_errors import fail_closed_in_prod
+
+            fail_closed_in_prod(exc, operation="nsdl.submit_return")
             return StubTdsConnector().submit_return(idempotency_key=idempotency_key, payload=payload)
 
     def generate_fvu(self, *, payload: dict) -> dict:

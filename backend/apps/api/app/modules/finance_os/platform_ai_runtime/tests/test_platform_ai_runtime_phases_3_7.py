@@ -23,10 +23,17 @@ def test_self_correction_apply_alternative() -> None:
 
 
 def test_rollback_forensics_context() -> None:
-    with patch("app.modules.platform.governance.services.forensics_service.forensics_service") as mock_f:
-        mock_f.rollback_analysis.return_value = {"chain": []}
-        out = rollback_manager.forensics_context("org", entity_type="procurement", entity_id="po-1")
-        assert out == {"chain": []}
+    with patch(
+        "app.modules.platform.governance.services.forensics_service.forensics_service.rollback_analysis",
+        return_value={"chain": []},
+    ):
+        out = rollback_manager.forensics_context(
+            "11111111-1111-4111-8111-111111111111",
+            entity_type="procurement",
+            entity_id="po-1",
+        )
+        assert out.get("chain") == []
+        assert out.get("available") is True
 
 
 @patch("app.modules.finance_os.platform_ai_runtime.services.runtime_service.billing_ai_operation")
@@ -53,15 +60,21 @@ def test_resume_run(mock_repo, mock_billing) -> None:
         mock_loop.assert_called_once()
 
 
+@patch("app.modules.finance_os.platform_ai_runtime.goals.goal_manager.goal_memory")
 @patch("app.modules.finance_os.platform_ai_runtime.goals.goal_manager.goal_repository")
-def test_goal_manager_create_or_resume_new(mock_repo) -> None:
+def test_goal_manager_create_or_resume_new(mock_repo, mock_memory) -> None:
     from app.modules.finance_os.platform_ai_runtime.goals.goal_manager import goal_manager
 
     mock_repo.list_goals.return_value = []
+    mock_memory.find_matching_goal.return_value = None
     with patch("app.modules.finance_os.platform_ai_runtime.goals.goal_manager.runtime_service") as mock_rt:
         mock_rt.schema_ready.return_value = True
         mock_rt.chat.return_value = MagicMock(model_dump=lambda: {"status": "plan_pending_approval"})
-        out = goal_manager.create_or_resume("org", title="Daily collections", message="List overdue AR")
+        out = goal_manager.create_or_resume(
+            "11111111-1111-4111-8111-111111111111",
+            title="Daily collections",
+            message="List overdue AR",
+        )
         assert out is not None
         mock_rt.chat.assert_called_once()
 
@@ -104,7 +117,7 @@ def test_m29_delegate_to_m38(mock_rt) -> None:
         "org",
         "collections_agent",
         "api",
-        {"entity_id": "inv-1"},
+        {"entity_id": "inv-1", "use_legacy_langgraph": True},
         user_id="u1",
         principal_roles=["tenant_admin"],
         principal_attrs={},
@@ -120,7 +133,10 @@ def test_langgraph_m38_delegate_flag() -> None:
         mock_rt.chat.return_value = MagicMock(
             status="completed",
             goal_run_id="r1",
-            model_dump=lambda: {},
+            goal_id="g1",
+            mode="completed",
+            progress_percent=100.0,
+            model_dump=lambda: {"status": "completed"},
             plan=None,
         )
         from app.services.langgraph_runner import run_langgraph_flow
@@ -129,7 +145,7 @@ def test_langgraph_m38_delegate_flag() -> None:
             "org",
             "collections_agent",
             "api",
-            {"use_m38_runtime": True, "user_message": "List overdue"},
+            {"user_message": "List overdue"},
         )
         assert result.get("graph_runtime", {}).get("delegated_to") == "m38"
 

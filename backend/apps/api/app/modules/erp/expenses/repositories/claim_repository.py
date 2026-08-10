@@ -101,28 +101,51 @@ class ClaimRepository:
     ) -> dict:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE erp.expense_claims
-                    SET status = %s,
-                        workflow_approved = COALESCE(%s, workflow_approved),
-                        approved_by = COALESCE(%s::uuid, approved_by),
-                        journal_id = COALESCE(%s::uuid, journal_id),
-                        reimbursement_payment_id = COALESCE(%s::uuid, reimbursement_payment_id),
-                        submitted_at = CASE WHEN %s = 'submitted' THEN NOW() ELSE submitted_at END,
-                        approved_at = CASE WHEN %s = 'approved' THEN NOW() ELSE approved_at END,
-                        updated_at = NOW()
-                    WHERE org_id = %s::uuid AND id = %s::uuid
-                    RETURNING id::text, status, workflow_approved, journal_id::text
-                    """,
-                    (
-                        status, workflow_approved, approved_by, journal_id, reimbursement_payment_id,
-                        status, status, org_id, claim_id,
-                    ),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else {}
+            return self.set_status_conn(
+                conn,
+                org_id,
+                claim_id=claim_id,
+                status=status,
+                workflow_approved=workflow_approved,
+                approved_by=approved_by,
+                journal_id=journal_id,
+                reimbursement_payment_id=reimbursement_payment_id,
+            )
+
+    def set_status_conn(
+        self,
+        conn,
+        org_id: str,
+        *,
+        claim_id: str,
+        status: str,
+        workflow_approved: bool | None = None,
+        approved_by: str | None = None,
+        journal_id: str | None = None,
+        reimbursement_payment_id: str | None = None,
+    ) -> dict:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE erp.expense_claims
+                SET status = %s,
+                    workflow_approved = COALESCE(%s, workflow_approved),
+                    approved_by = COALESCE(%s::uuid, approved_by),
+                    journal_id = COALESCE(%s::uuid, journal_id),
+                    reimbursement_payment_id = COALESCE(%s::uuid, reimbursement_payment_id),
+                    submitted_at = CASE WHEN %s = 'submitted' THEN NOW() ELSE submitted_at END,
+                    approved_at = CASE WHEN %s = 'approved' THEN NOW() ELSE approved_at END,
+                    updated_at = NOW()
+                WHERE org_id = %s::uuid AND id = %s::uuid
+                RETURNING id::text, status, workflow_approved, journal_id::text
+                """,
+                (
+                    status, workflow_approved, approved_by, journal_id, reimbursement_payment_id,
+                    status, status, org_id, claim_id,
+                ),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else {}
 
     def add_item(
         self,

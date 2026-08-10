@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from app.modules.erp.assets.ai.useful_life_recommender import recommend_useful_life
-
-
 def suggest_from_category(category: dict | None) -> dict:
     if not category:
         return {"useful_life_months": 36, "salvage_percent": 5}

@@ -19,6 +19,9 @@ router = APIRouter()
 
 @router.post("/payments/schedule")
 def schedule_payment(request: PaymentScheduleRequest, context=Depends(require_ap_admin)) -> dict:
+    from app.modules.erp.security.branch_scope_sql import resolve_branch_id_for_write
+
+    branch_id = resolve_branch_id_for_write(context.attrs, explicit_branch_id=request.branch_id)
     enforce_ap_action(
         context,
         action="ap.payment.schedule",
@@ -36,6 +39,7 @@ def schedule_payment(request: PaymentScheduleRequest, context=Depends(require_ap
             invoice_allocations=request.invoice_allocations,
             bank_account_id=request.bank_account_id,
             company_id=request.company_id,
+            branch_id=branch_id,
             created_by=context.user_id,
         )
         emit_payment_scheduled(
@@ -92,7 +96,13 @@ def execute_payment(
 
 @router.get("/payments")
 def list_payments(context=Depends(require_ap_read), status: str | None = Query(default=None)) -> dict:
-    items = payment_service.list_payments(context.org_id, status=status)
+    from app.modules.erp.security.branch_scope_sql import branch_ids_from_attrs
+
+    items = payment_service.list_payments(
+        context.org_id,
+        status=status,
+        branch_ids=branch_ids_from_attrs(context.attrs),
+    )
     return {"request_id": context.request_id, "items": items}
 
 

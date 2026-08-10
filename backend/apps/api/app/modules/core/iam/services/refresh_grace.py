@@ -1,28 +1,36 @@
-"""Short-lived cache so duplicate concurrent refresh requests succeed after rotation."""
+"""Short-lived cache so duplicate concurrent refresh requests succeed after rotation (SEC-05)."""
+
 from __future__ import annotations
 
 import hashlib
-import time
+import json
 from typing import Any
 
+from app.services.redis_client import get_redis_client
+
 _GRACE_SECONDS = 30
-_cache: dict[str, tuple[dict[str, Any], float]] = {}
+_PREFIX = "iam:refresh_grace"
 
 
 def _key(raw_refresh_token: str) -> str:
-    return hashlib.sha256(raw_refresh_token.encode("utf-8")).hexdigest()
+    return f"{_PREFIX}:{hashlib.sha256(raw_refresh_token.encode('utf-8')).hexdigest()}"
 
 
 def store_grace_result(raw_refresh_token: str, result: dict[str, Any]) -> None:
-    _cache[_key(raw_refresh_token)] = (result, time.time() + _GRACE_SECONDS)
+    client = get_redis_client()
+    if client is None:
+        return
+    client.setex(_key(raw_refresh_token), _GRACE_SECONDS, json.dumps(result))
 
 
 def get_grace_result(raw_refresh_token: str) -> dict[str, Any] | None:
-    entry = _cache.get(_key(raw_refresh_token))
-    if not entry:
+    client = get_redis_client()
+    if client is None:
         return None
-    result, expires_at = entry
-    if expires_at < time.time():
-        _cache.pop(_key(raw_refresh_token), None)
+    stored = client.get(_key(raw_refresh_token))
+    if not stored:
         return None
-    return result
+    try:
+        return json.loads(str(stored))
+    except json.JSONDecodeError:
+        return None

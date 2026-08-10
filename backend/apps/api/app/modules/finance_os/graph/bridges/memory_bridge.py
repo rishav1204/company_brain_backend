@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.logger import log_event
+
 
 def write_causal_summary(org_id: str, entity_id: str, chain: dict) -> None:
     try:
@@ -23,5 +25,5 @@ def write_causal_summary(org_id: str, entity_id: str, chain: dict) -> None:
             source_event_type="graph.root_cause.generated",
             force=True,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        log_event("memory.write_failed", org_id=org_id, entity_id=entity_id, detail=str(exc))

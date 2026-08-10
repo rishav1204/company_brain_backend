@@ -121,6 +121,20 @@ class FiscalPeriodRepository:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
                 cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
+                    (org_id, period_id),
+                )
+                cur.execute(
+                    """
+                    SELECT id FROM erp.fiscal_periods
+                    WHERE org_id = %s::uuid AND id = %s::uuid
+                    FOR UPDATE
+                    """,
+                    (org_id, period_id),
+                )
+                if not cur.fetchone():
+                    raise ValueError("Fiscal period not found")
+                cur.execute(
                     """
                     UPDATE erp.fiscal_periods
                     SET lock_status = %s, status = %s, is_locked = %s,

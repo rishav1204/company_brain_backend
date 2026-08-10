@@ -41,36 +41,71 @@ class EventRepository:
         status: str = "published",
     ) -> dict[str, Any]:
         with get_db_conn() as conn:
-            set_rls_org(conn, org_id)
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO platform.event_store (
-                        org_id, event_id, event_type, event_version, entity_type, entity_id,
-                        source, trace_id, actor_id, payload, metadata, status
-                    )
-                    VALUES (
-                        %s::uuid, %s::uuid, %s, %s, %s, %s::uuid,
-                        %s, %s::uuid, %s::uuid, %s::jsonb, %s::jsonb, %s
-                    )
-                    RETURNING id::text AS id, created_at
-                    """,
-                    (
-                        org_id,
-                        event_id,
-                        event_type,
-                        event_version,
-                        entity_type,
-                        entity_id,
-                        source,
-                        trace_id,
-                        actor_id,
-                        Json(payload),
-                        Json(metadata or {}),
-                        status,
-                    ),
+            out = self.append_with_conn(
+                conn,
+                org_id=org_id,
+                event_id=event_id,
+                event_type=event_type,
+                source=source,
+                payload=payload,
+                metadata=metadata,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                trace_id=trace_id,
+                actor_id=actor_id,
+                event_version=event_version,
+                status=status,
+            )
+            conn.commit()
+            return out
+
+    def append_with_conn(
+        self,
+        conn,
+        *,
+        org_id: str,
+        event_id: str,
+        event_type: str,
+        source: str,
+        payload: dict,
+        metadata: dict | None = None,
+        entity_type: str | None = None,
+        entity_id: str | None = None,
+        trace_id: str | None = None,
+        actor_id: str | None = None,
+        event_version: str = "v1",
+        status: str = "published",
+    ) -> dict[str, Any]:
+        set_rls_org(conn, org_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO platform.event_store (
+                    org_id, event_id, event_type, event_version, entity_type, entity_id,
+                    source, trace_id, actor_id, payload, metadata, status
                 )
-                return cur.fetchone() or {}
+                VALUES (
+                    %s::uuid, %s::uuid, %s, %s, %s, %s::uuid,
+                    %s, %s::uuid, %s::uuid, %s::jsonb, %s::jsonb, %s
+                )
+                RETURNING id::text AS id, created_at
+                """,
+                (
+                    org_id,
+                    event_id,
+                    event_type,
+                    event_version,
+                    entity_type,
+                    entity_id,
+                    source,
+                    trace_id,
+                    actor_id,
+                    Json(payload),
+                    Json(metadata or {}),
+                    status,
+                ),
+            )
+            return cur.fetchone() or {}
 
     def mark_processed(self, org_id: str, event_id: str) -> None:
         with get_db_conn() as conn:

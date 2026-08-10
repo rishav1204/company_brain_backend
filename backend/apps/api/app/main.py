@@ -8,6 +8,8 @@ from app.modules.platform.documents.routes.router import documents_router
 from app.modules.platform.governance.routes.router import governance_router
 from app.modules.platform.billing.routes.router import billing_router
 from app.modules.platform.notifications.routes.router import notifications_router
+from app.modules.platform.operator.routes.router import operator_router
+from app.modules.platform.control_plane.routes.router import control_plane_router
 from app.modules.platform.integrations.routes.router import integrations_router
 from app.modules.platform.integrations import connectors as _integrations_connectors  # noqa: F401
 from app.modules.erp.coa.routes.router import erp_coa_router
@@ -16,9 +18,9 @@ from app.modules.erp.journals.routes.router import erp_journals_router
 from app.modules.erp.vouchers.routes.router import erp_vouchers_router
 from app.modules.erp.accounts_payable.routes.router import erp_ap_router
 from app.modules.erp.accounts_receivable.routes.router import erp_ar_router
-from app.modules.erp.banking.routes.router import erp_m22_banking_router, legacy_banking_router
-from app.modules.erp.reconciliation.routes.router import erp_m23_reconciliation_router, legacy_reconciliation_alias
-from app.modules.erp.treasury.routes.treasury_router import erp_m24_treasury_router, erp_treasury_router, legacy_treasury_router
+from app.modules.erp.banking.routes.router import erp_m22_banking_router
+from app.modules.erp.reconciliation.routes.router import erp_m23_reconciliation_router
+from app.modules.erp.treasury.routes.treasury_router import erp_m24_treasury_router
 from app.modules.erp.tax.routes.tax_router import erp_gst_router, erp_tds_router, erp_tax_compliance_router
 from app.modules.erp.compliance.routes.router import erp_compliance_alias_router, erp_m21_compliance_router
 from app.modules.erp.fiscal.routes.router import erp_fiscal_router
@@ -38,6 +40,10 @@ from app.modules.finance_os.analytics.routes.router import router as finance_os_
 from app.modules.finance_os.audit_explorer.routes.router import router as finance_os_audit_explorer_router
 from app.modules.erp.reporting.routes.router import router as erp_reporting_router
 from app.modules.erp.consolidation.routes.router import router as erp_consolidation_router
+from app.modules.erp.fx.routes.router import erp_fx_router
+from app.modules.erp.import_customs.routes.router import erp_import_customs_router
+from app.modules.erp.payroll.routes.router import erp_payroll_router
+from app.modules.erp.security.routes.company_data_quality_routes import router as erp_company_dq_router
 from app.modules.platform.api_gateway.routes.router import api_gateway_router
 from app.modules.platform.api_gateway.middleware.gateway_middleware import GatewayMiddleware
 from app.modules.platform.api_gateway.middleware.idempotency_middleware import IdempotencyMiddleware
@@ -79,6 +85,10 @@ async def lifespan(_app: FastAPI):
     from app.core.security_validation import assert_prod_security
 
     assert_prod_security()
+    # Phase 1 Wave 1 — ERP ACL bootstrap (command allowlists + intelligence ports)
+    from app.modules.finance_os.bridges.erp_command_bridge.bootstrap import bootstrap_wave1_boundaries
+
+    bootstrap_wave1_boundaries()
     if settings.postgres_dsn:
         from app.services.schema_registry import set_core_ready, warm_common_tables
 
@@ -138,19 +148,21 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Org-Id", "X-Request-Id", "X-Idempotency-Key"],
 )
 
-app.include_router(auth.router, prefix=settings.api_prefix)
+app.include_router(auth.router, prefix=settings.api_prefix)  # legacy/compat auth surface + dual with iam_router
 app.include_router(iam_router, prefix=settings.api_prefix)
-app.include_router(sources.router, prefix=settings.api_prefix)
-app.include_router(retrieval.router, prefix=settings.api_prefix)
-app.include_router(workflows.router, prefix=settings.api_prefix)
-app.include_router(workflows_router, prefix=settings.api_prefix)
-app.include_router(decisions_memory.router, prefix=settings.api_prefix)
-app.include_router(agents.router, prefix=settings.api_prefix)
+app.include_router(sources.router, prefix=settings.api_prefix)  # legacy ops → prefer integrations
+app.include_router(retrieval.router, prefix=settings.api_prefix)  # no modular twin yet
+app.include_router(workflows.router, prefix=settings.api_prefix)  # legacy v1 workflows (deprecated headers)
+app.include_router(workflows_router, prefix=settings.api_prefix)  # canonical modular workflows
+app.include_router(decisions_memory.router, prefix=settings.api_prefix)  # legacy → finance-os/memory
+app.include_router(agents.router, prefix=settings.api_prefix)  # legacy → finance-os/agents
 app.include_router(governance_router, prefix=settings.api_prefix)
 app.include_router(billing_router, prefix=settings.api_prefix)
 app.include_router(notifications_router, prefix=settings.api_prefix)
 app.include_router(documents_router, prefix=settings.api_prefix)
 app.include_router(integrations_router, prefix=settings.api_prefix)
+app.include_router(operator_router, prefix=settings.api_prefix)
+app.include_router(control_plane_router, prefix=settings.api_prefix)
 app.include_router(api_gateway_router, prefix=settings.api_prefix)
 app.include_router(erp_coa_router, prefix=settings.api_prefix)
 app.include_router(erp_gl_router, prefix=settings.api_prefix)
@@ -158,17 +170,14 @@ app.include_router(erp_journals_router, prefix=settings.api_prefix)
 app.include_router(erp_vouchers_router, prefix=settings.api_prefix)
 app.include_router(erp_ap_router, prefix=settings.api_prefix)
 app.include_router(erp_ar_router, prefix=settings.api_prefix)
-app.include_router(erp_m22_banking_router, prefix=settings.api_prefix)
-app.include_router(legacy_banking_router, prefix=settings.api_prefix)
-app.include_router(erp_m23_reconciliation_router, prefix=settings.api_prefix)
-app.include_router(legacy_reconciliation_alias, prefix=settings.api_prefix)
-app.include_router(erp_m24_treasury_router, prefix=settings.api_prefix)
-app.include_router(legacy_treasury_router, prefix=settings.api_prefix)
+app.include_router(erp_m22_banking_router, prefix=settings.api_prefix)  # canonical /erp/banking only
+app.include_router(erp_m23_reconciliation_router, prefix=settings.api_prefix)  # canonical /erp/reconciliation only
+app.include_router(erp_m24_treasury_router, prefix=settings.api_prefix)  # canonical /erp/treasury only
 app.include_router(erp_gst_router, prefix=settings.api_prefix)
 app.include_router(erp_tds_router, prefix=settings.api_prefix)
 app.include_router(erp_tax_compliance_router, prefix=settings.api_prefix)
-app.include_router(erp_compliance_alias_router, prefix=settings.api_prefix)
-app.include_router(erp_m21_compliance_router, prefix=settings.api_prefix)
+app.include_router(erp_compliance_alias_router, prefix=settings.api_prefix)  # alias /compliance → same M21 handlers
+app.include_router(erp_m21_compliance_router, prefix=settings.api_prefix)  # canonical /erp/compliance
 app.include_router(erp_fiscal_router, prefix=settings.api_prefix)
 app.include_router(erp_procurement_router, prefix=settings.api_prefix)
 app.include_router(erp_expenses_router, prefix=settings.api_prefix)
@@ -186,6 +195,10 @@ app.include_router(finance_os_analytics_router, prefix=settings.api_prefix)
 app.include_router(finance_os_audit_explorer_router, prefix=settings.api_prefix)
 app.include_router(erp_reporting_router, prefix=settings.api_prefix)
 app.include_router(erp_consolidation_router, prefix=settings.api_prefix)
+app.include_router(erp_fx_router, prefix=settings.api_prefix)
+app.include_router(erp_import_customs_router, prefix=settings.api_prefix)
+app.include_router(erp_payroll_router, prefix=settings.api_prefix)
+app.include_router(erp_company_dq_router, prefix=settings.api_prefix)
 app.include_router(companies.router, prefix=settings.api_prefix)
 app.include_router(observability.router, prefix=settings.api_prefix)
 app.include_router(ingestion.router, prefix=settings.api_prefix)
