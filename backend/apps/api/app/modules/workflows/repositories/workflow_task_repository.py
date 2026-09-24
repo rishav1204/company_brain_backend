@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.services.repository_pagination import clamp_limit
+
 from typing import Any
 from uuid import uuid4
 
@@ -46,6 +48,7 @@ class WorkflowTaskRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         clauses = ["t.org_id = %s::uuid"]
         params: list[Any] = [org_id]
         if assigned_to:

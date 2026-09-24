@@ -1,14 +1,21 @@
-import secrets
+import base64
+import io
 import uuid
+from datetime import datetime, timedelta, timezone
 
+import jwt
 import pyotp
 
+from app.core.config import settings
 from app.modules.core.iam.repositories import user_repo
 from app.modules.core.iam.repositories.mfa_repository import mfa_repo
 from app.modules.core.iam.services.email_otp_service import verify_email_otp
 from app.modules.core.iam.services.sms_otp_service import verify_sms_otp
 from app.modules.core.iam.services.secrets_crypto import decrypt_secret, encrypt_secret
 from app.modules.core.iam.services.webauthn_service import finish_authentication
+
+_MFA_CHALLENGE_TTL_SECONDS = 300
+_MFA_CHALLENGE_TYP = "mfa_challenge"
 
 
 class MfaRequired(Exception):
@@ -32,6 +39,67 @@ def verify_totp(secret: str, code: str) -> bool:
         return False
     totp = pyotp.TOTP(secret)
     return totp.verify(str(code).strip(), valid_window=1)
+
+
+def user_has_mfa_enabled(org_id: str, user_id: str) -> bool:
+    """True when the user has completed MFA enrollment (TOTP or other methods)."""
+    enabled = mfa_repo.list_enabled_methods(org_id, user_id)
+    if enabled:
+        return True
+    user = user_repo.get_by_id(org_id, user_id)
+    return bool(user and user.get("mfa_enabled"))
+
+
+def issue_mfa_challenge_token(*, org_id: str, user_id: str, email: str | None = None) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "typ": _MFA_CHALLENGE_TYP,
+        "org_id": org_id,
+        "user_id": user_id,
+        "email": email,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=_MFA_CHALLENGE_TTL_SECONDS)).timestamp()),
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def parse_mfa_challenge_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
+        )
+    except jwt.PyJWTError as exc:
+        raise MfaInvalid("Invalid or expired MFA challenge") from exc
+    if payload.get("typ") != _MFA_CHALLENGE_TYP:
+        raise MfaInvalid("Invalid MFA challenge")
+    org_id = str(payload.get("org_id") or "")
+    user_id = str(payload.get("user_id") or "")
+    if not org_id or not user_id:
+        raise MfaInvalid("Invalid MFA challenge")
+    return {"org_id": org_id, "user_id": user_id, "email": payload.get("email")}
+
+
+def qr_code_data_url(content: str) -> str | None:
+    """PNG data URL for authenticator app scan (Microsoft Authenticator, Google, etc.)."""
+    try:
+        import qrcode
+    except ImportError:
+        return None
+    img = qrcode.make(content)
+    buf = io.BytesIO()
+    try:
+        img.save(buf, format="PNG")
+    except Exception:
+        # Some qrcode builds need PIL; fall back silently.
+        return None
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
 
 
 def _totp_secret(org_id: str, user_id: str) -> str | None:
@@ -61,9 +129,13 @@ def enroll_mfa(org_id: str, user_id: str) -> dict:
     user = user_repo.get_by_id(org_id, user_id)
     if not user:
         raise ValueError("User not found")
+    uri = provisioning_uri(email=user["email"], secret=secret)
     return {
         "secret": secret,
-        "provisioning_uri": provisioning_uri(email=user["email"], secret=secret),
+        "provisioning_uri": uri,
+        "qr_code_data_url": qr_code_data_url(uri),
+        "issuer": "FinanceOS",
+        "account_name": user["email"],
     }
 
 
@@ -117,35 +189,25 @@ def assert_mfa_gate(
     *,
     org_id: str,
     user_id: str,
-    attrs: dict | None,
-    mfa_code: str | None,
+    attrs: dict | None = None,
+    mfa_code: str | None = None,
     device_fingerprint: str | None = None,
     webauthn_assertion: dict | None = None,
+    only_if_enrolled: bool = True,
 ) -> None:
-    from app.core.config import settings
+    """Require a valid code only when the user already has MFA enabled.
 
-    if settings.app_env.lower() == "dev" and settings.iam_skip_mfa_in_dev:
-        return
+    Enrollment is optional; password-only login is allowed when MFA is not enabled.
+    """
+    del attrs  # role attrs no longer force MFA at login; enrollment is explicit
     if device_fingerprint and mfa_repo.is_device_trusted(org_id, user_id, device_fingerprint):
         return
-    if not (attrs or {}).get("mfa_required"):
-        enabled = mfa_repo.list_enabled_methods(org_id, user_id)
-        policy = mfa_repo.get_org_security_policy(org_id) or {}
-        required = policy.get("required_methods") or []
-        if not required:
-            return
-        if not enabled:
-            raise MfaRequired("MFA enrollment required for this organization")
-    else:
-        user = user_repo.get_by_id(org_id, user_id)
-        enabled_legacy = user and user.get("mfa_enabled")
-        enabled_methods = mfa_repo.list_enabled_methods(org_id, user_id)
-        if not enabled_legacy and not enabled_methods:
-            raise MfaRequired("MFA enrollment required for this role")
+    if only_if_enrolled and not user_has_mfa_enabled(org_id, user_id):
+        return
     if not mfa_code and not webauthn_assertion:
         raise MfaRequired("Valid MFA code required")
     if not verify_mfa_code(org_id, user_id, mfa_code or "", webauthn_assertion=webauthn_assertion):
-        raise MfaRequired("Valid MFA code required")
+        raise MfaInvalid("Invalid MFA code")
 
 
 def admin_reset_mfa(org_id: str, user_id: str) -> None:

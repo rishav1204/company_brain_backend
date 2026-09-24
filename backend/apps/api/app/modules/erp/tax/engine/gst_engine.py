@@ -1,20 +1,27 @@
 from __future__ import annotations
 
 from app.modules.erp.tax.validators.gstin_validator import state_from_gstin
-
-DEFAULT_GST_RATES = {0, 0.25, 3, 5, 12, 18, 28}
+from app.modules.platform.regulatory.services.regulatory_resolver import (
+    RegulatoryConfigError,
+    regulatory_resolver,
+)
 
 
 def _valid_rates(org_id: str | None) -> set[float]:
-    if not org_id:
-        return DEFAULT_GST_RATES
-    try:
-        from app.modules.erp.tax.repositories.tax_rate_repository import tax_rate_repository
+    # Prefer org tax_rate_master; fall back to platform allowed-rates catalog.
+    if org_id:
+        try:
+            from app.modules.erp.tax.repositories.tax_rate_repository import tax_rate_repository
 
-        rates = {float(r["gst_rate"]) for r in tax_rate_repository.list_active(org_id)}
-        return rates or DEFAULT_GST_RATES
-    except Exception:
-        return DEFAULT_GST_RATES
+            rates = {float(r["gst_rate"]) for r in tax_rate_repository.list_active(org_id)}
+            if rates:
+                return rates
+        except Exception:
+            pass
+    try:
+        return regulatory_resolver.resolve_allowed_gst_rates(org_id=org_id)
+    except RegulatoryConfigError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def determine_place_of_supply(*, supplier_state: str, customer_state: str) -> str:
@@ -32,17 +39,34 @@ def split_gst_amount(
     supplier_state: str,
     place_of_supply: str,
     org_id: str | None = None,
+    cess_rate: float = 0.0,
 ) -> dict:
     valid = _valid_rates(org_id)
     if gst_rate not in valid and gst_rate > 0:
         raise ValueError(f"Unsupported GST rate: {gst_rate}")
     total_tax = round(taxable_value * gst_rate / 100, 2)
+    cess_amount = round(taxable_value * float(cess_rate or 0) / 100, 2) if cess_rate else 0.0
     if total_tax <= 0:
-        return {"cgst_amount": 0.0, "sgst_amount": 0.0, "igst_amount": 0.0, "cess_amount": 0.0}
+        return {
+            "cgst_amount": 0.0,
+            "sgst_amount": 0.0,
+            "igst_amount": 0.0,
+            "cess_amount": cess_amount,
+        }
     if is_intra_state(supplier_state, place_of_supply):
         half = round(total_tax / 2, 2)
-        return {"cgst_amount": half, "sgst_amount": round(total_tax - half, 2), "igst_amount": 0.0, "cess_amount": 0.0}
-    return {"cgst_amount": 0.0, "sgst_amount": 0.0, "igst_amount": total_tax, "cess_amount": 0.0}
+        return {
+            "cgst_amount": half,
+            "sgst_amount": round(total_tax - half, 2),
+            "igst_amount": 0.0,
+            "cess_amount": cess_amount,
+        }
+    return {
+        "cgst_amount": 0.0,
+        "sgst_amount": 0.0,
+        "igst_amount": total_tax,
+        "cess_amount": cess_amount,
+    }
 
 
 def components_from_tax_code(tax_code: str, amount: float) -> dict:
@@ -67,6 +91,7 @@ def build_gst_transaction(
     export_zero_rated: bool = False,
     line_components: list[dict] | None = None,
     org_id: str | None = None,
+    cess_rate: float = 0.0,
 ) -> dict:
     pos = place_of_supply or state_from_gstin(party_gstin) or supplier_state
     if export_zero_rated or gst_type == "export":
@@ -84,13 +109,14 @@ def build_gst_transaction(
         cgst = sum(float(c.get("cgst_amount") or 0) for c in line_components)
         sgst = sum(float(c.get("sgst_amount") or 0) for c in line_components)
         igst = sum(float(c.get("igst_amount") or 0) for c in line_components)
+        cess = sum(float(c.get("cess_amount") or 0) for c in line_components)
         return {
             "gst_type": gst_type,
             "taxable_value": taxable_value,
             "cgst_amount": round(cgst, 2),
             "sgst_amount": round(sgst, 2),
             "igst_amount": round(igst, 2),
-            "cess_amount": 0.0,
+            "cess_amount": round(cess, 2),
             "gst_rate": gst_rate,
             "place_of_supply": pos,
         }
@@ -99,5 +125,13 @@ def build_gst_transaction(
         gst_rate=gst_rate,
         supplier_state=supplier_state,
         place_of_supply=pos,
+        org_id=org_id,
+        cess_rate=cess_rate,
     )
-    return {"gst_type": gst_type, "taxable_value": taxable_value, "gst_rate": gst_rate, "place_of_supply": pos, **split}
+    return {
+        "gst_type": gst_type,
+        "taxable_value": taxable_value,
+        "gst_rate": gst_rate,
+        "place_of_supply": pos,
+        **split,
+    }

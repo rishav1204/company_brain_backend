@@ -416,7 +416,12 @@ class RuntimeService:
             approval_required=False,
             progress_percent=100.0,
             sources=answer_out.get("sources") or {},
-            context_summary={"summaries": list(platform_ctx.summaries.keys()), "intent": platform_ctx.intent.intent},
+            context_summary={
+                "summaries": list(platform_ctx.summaries.keys()),
+                "intent": platform_ctx.intent.intent,
+                "facts": answer_out.get("facts") or [],
+                "data_gaps": answer_out.get("data_gaps") or [],
+            },
         )
 
     def resume_run(

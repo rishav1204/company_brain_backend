@@ -41,7 +41,18 @@ class EwayBillService:
         return row
 
     def maybe_auto_generate(self, org_id: str, *, source_type: str, source_id: str, taxable_value: float) -> dict | None:
-        if taxable_value < 50000:
+        from app.modules.platform.regulatory.services.regulatory_resolver import (
+            RegulatoryConfigError,
+            regulatory_resolver,
+        )
+
+        try:
+            min_amount = regulatory_resolver.resolve_threshold_amount(
+                "gst.eway_bill_min", org_id=org_id, required=True
+            )
+        except RegulatoryConfigError as exc:
+            raise ValueError(str(exc)) from exc
+        if taxable_value < min_amount:
             return None
         return self.generate(org_id, source_type=source_type, source_id=source_id)
 

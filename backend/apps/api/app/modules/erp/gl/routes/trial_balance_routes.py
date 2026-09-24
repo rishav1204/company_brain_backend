@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import build_request_context
-from app.modules.erp.gl.security.gl_guard import require_finance_gl_admin
+from app.modules.erp.gl.security.gl_guard import require_gl_read
 from app.modules.erp.gl.services.trial_balance_service import trial_balance_service
 
 router = APIRouter()
@@ -12,7 +12,7 @@ router = APIRouter()
 @router.get("/trial-balance")
 def generate_trial_balance(
     fiscal_period_id: str = Query(...),
-    context=Depends(require_finance_gl_admin),
+    context=Depends(require_gl_read),
 ) -> dict:
     item = trial_balance_service.generate(context.org_id, fiscal_period_id=fiscal_period_id)
     try:

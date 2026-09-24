@@ -145,6 +145,23 @@ def create_role(body: CreateRoleRequest, context=Depends(build_request_context))
     return {"request_id": context.request_id, "role": row, "verification_status": "iam_role_created"}
 
 
+@router.get("/roles/{role_id}")
+def get_role(role_id: str, context=Depends(build_request_context)) -> dict:
+    row = role_repo.get_role_by_id(context.org_id, role_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Role not found")
+    return {
+        "request_id": context.request_id,
+        "id": row["id"],
+        "org_id": row["org_id"],
+        "name": row["name"],
+        "description": row.get("description"),
+        "system_role": bool(row.get("system_role")),
+        "policy_context": row.get("policy_context") or {},
+        "verification_status": "iam_role_fetched",
+    }
+
+
 @router.patch("/roles/{role_id}")
 def update_role(role_id: str, body: UpdateRoleRequest, context=Depends(build_request_context)) -> dict:
     _require_admin(context)

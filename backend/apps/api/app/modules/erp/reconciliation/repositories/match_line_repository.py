@@ -38,6 +38,7 @@ class MatchLineRepository:
         return created
 
     def list_for_reconciliation(self, org_id: str, *, reconciliation_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -50,7 +51,7 @@ class MatchLineRepository:
                     ORDER BY created_at
                     LIMIT %s
                     """,
-                    (org_id, reconciliation_id),
+                    (org_id, reconciliation_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

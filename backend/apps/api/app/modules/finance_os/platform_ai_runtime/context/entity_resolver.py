@@ -31,6 +31,8 @@ _ENTITY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "period": ("fiscal period", "financial year", "fy "),
     "asset": ("asset", "fixed asset"),
     "employee": ("employee", "staff", "payroll"),
+    "voucher": ("voucher", "journal voucher"),
+    "claim": ("expense claim", "reimbursement"),
 }
 
 _ALIASES: dict[str, tuple[str, ...]] = {
@@ -218,11 +220,13 @@ class EntityResolver:
         if id_match:
             token = id_match.group(1)
             etype = self._infer_type_from_token(token)
+            # Structured document codes (INV-001, PO-ACME-001, …) are strong exact refs
+            structured = bool(re.match(r"^(inv|po|grn|ap|ar)[-_]", token, re.I))
             add_candidate(
                 entity_type=etype,
                 entity_id=token,
-                label=token,
-                score=0.72,
+                label=token.upper() if structured else token,
+                score=0.95 if structured else 0.78,
                 match_type="exact",
                 source="nlp_id",
             )
@@ -276,18 +280,55 @@ class EntityResolver:
                 prev = unique.get(eid)
                 if not prev or c.score > prev.score:
                     unique[eid] = c
-            group = sorted(unique.values(), key=lambda c: c.score, reverse=True)
+            group = list(unique.values())
+            # Also collapse document-code vs UUID for the same label (INV-001 vs uuid)
+            by_label: dict[str, EntityCandidate] = {}
+            for c in group:
+                lab = (c.label or "").strip().lower() or str(c.entity_id).lower()
+                prev = by_label.get(lab)
+                if not prev:
+                    by_label[lab] = c
+                    continue
+                prefer = c
+                # Prefer real UUID ids over raw document codes when labels match
+                c_uuid = self._looks_uuid(c.entity_id)
+                p_uuid = self._looks_uuid(prev.entity_id)
+                if c_uuid and not p_uuid:
+                    prefer = c
+                elif p_uuid and not c_uuid:
+                    prefer = prev
+                elif c.score > prev.score:
+                    prefer = c
+                else:
+                    prefer = prev
+                by_label[lab] = prefer
+            group = sorted(by_label.values(), key=lambda c: c.score, reverse=True)
             top = group[0]
             second = group[1] if len(group) > 1 else None
             margin = (top.score - second.score) if second else 1.0
-            if top.score < threshold or (second and margin < min_margin and second.score >= threshold * 0.9):
+            # Exact single document-code match: bind even if slightly under global threshold
+            exact_solo = (
+                len(group) == 1
+                and top.match_type == "exact"
+                and top.score >= min(threshold, 0.70)
+            )
+            ambiguous = bool(second and margin < min_margin and second.score >= threshold * 0.9)
+            below = top.score < threshold and not exact_solo
+            if below or ambiguous:
                 needs_clarification = True
-                clarification_prompt = (
-                    f"Multiple {etype} candidates found. "
-                    f"Please clarify which {etype} you mean (top scores: "
-                    + ", ".join(f"{g.label or g.entity_id}:{g.score:.2f}" for g in group[:3])
-                    + ")."
-                )
+                if len(group) == 1:
+                    clarification_prompt = (
+                        f"I found a possible {etype} reference “{top.label or top.entity_id}” "
+                        f"(confidence {top.score:.2f}). Reply with the exact document number "
+                        f"to continue (for example: INV-001)."
+                    )
+                else:
+                    clarification_prompt = (
+                        f"Multiple {etype} candidates found. "
+                        f"Please clarify which {etype} you mean (top scores: "
+                        + ", ".join(f"{g.label or g.entity_id}:{g.score:.2f}" for g in group[:3])
+                        + ")."
+                    )
                 # Do not bind entity_id below threshold / when ambiguous
                 entities.append(
                     ResolvedEntity(
@@ -382,24 +423,94 @@ class EntityResolver:
             return "po"
         if t.startswith("grn"):
             return "grn"
+        if t.startswith("vch") or t.startswith("jv") or t.startswith("pv") or t.startswith("rv"):
+            return "voucher"
         if t.startswith("inv") or t.startswith("ap") or t.startswith("ar"):
             return "invoice"
         if t.startswith("ven") or t.startswith("sup"):
             return "vendor"
         return "entity"
 
+    @staticmethod
+    def _looks_uuid(value: str | None) -> bool:
+        if not value:
+            return False
+        return bool(
+            re.match(
+                r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                str(value),
+                re.I,
+            )
+        )
+
     def _enrich_from_erp(self, org_id: str, candidates: list[EntityCandidate], *, token: str, message: str) -> None:
         """Best-effort exact code lookups (org-isolated). Failures are non-fatal."""
+        code = (token or "").strip()
+        if not code:
+            return
+        # AP / AR invoice number → real UUID (so get_invoice can bind)
+        try:
+            from app.services.db import get_db_conn, set_rls_org
+
+            with get_db_conn() as conn:
+                set_rls_org(conn, org_id)
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT id::text, invoice_number, 'ap' AS src
+                        FROM erp.ap_invoices
+                        WHERE org_id = %s::uuid AND lower(invoice_number) = lower(%s)
+                        LIMIT 2
+                        """,
+                        (org_id, code),
+                    )
+                    ap_rows = cur.fetchall() or []
+                    if len(ap_rows) == 1:
+                        row = dict(ap_rows[0])
+                        candidates.append(
+                            EntityCandidate(
+                                entity_type="invoice",
+                                entity_id=str(row["id"]),
+                                label=str(row.get("invoice_number") or code),
+                                score=0.98,
+                                match_type="exact",
+                                source="erp_ap_invoice",
+                            )
+                        )
+                    cur.execute(
+                        """
+                        SELECT id::text, invoice_number
+                        FROM erp.ar_invoices
+                        WHERE org_id = %s::uuid AND lower(invoice_number) = lower(%s)
+                        LIMIT 2
+                        """,
+                        (org_id, code),
+                    )
+                    ar_rows = cur.fetchall() or []
+                    if len(ar_rows) == 1 and not ap_rows:
+                        row = dict(ar_rows[0])
+                        candidates.append(
+                            EntityCandidate(
+                                entity_type="invoice",
+                                entity_id=str(row["id"]),
+                                label=str(row.get("invoice_number") or code),
+                                score=0.98,
+                                match_type="exact",
+                                source="erp_ar_invoice",
+                            )
+                        )
+        except Exception:
+            pass
         try:
             from app.modules.erp.query_services import inventory_queries
 
-            item = inventory_queries.get_item_by_code(org_id, item_code=token.upper())
+            item = inventory_queries.get_item_by_code(org_id, item_code=code.upper())
             if item:
                 candidates.append(
                     EntityCandidate(
                         entity_type="item",
                         entity_id=str(item.get("id")),
-                        label=str(item.get("item_name") or token),
+                        label=str(item.get("item_name") or code),
                         score=0.92,
                         match_type="exact",
                         source="erp_code",

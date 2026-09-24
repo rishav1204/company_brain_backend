@@ -33,8 +33,8 @@ def aggregate_trial_balance(org_id: str, *, fiscal_period_id: str, company_id: s
                 f"""
                 SELECT
                   le.account_id::text AS account_id,
-                  a.code AS account_code,
-                  a.name AS account_name,
+                  a.account_code AS account_code,
+                  a.account_name AS account_name,
                   COALESCE(SUM(le.debit_amount), 0)::numeric(18,2) AS debit_total,
                   COALESCE(SUM(le.credit_amount), 0)::numeric(18,2) AS credit_total,
                   (COALESCE(SUM(le.debit_amount), 0) - COALESCE(SUM(le.credit_amount), 0))::numeric(18,2) AS balance
@@ -43,8 +43,8 @@ def aggregate_trial_balance(org_id: str, *, fiscal_period_id: str, company_id: s
                 LEFT JOIN erp.journals j ON j.id = le.journal_id
                 WHERE le.org_id = %s::uuid AND le.fiscal_period_id = %s::uuid
                 {company_clause}
-                GROUP BY le.account_id, a.code, a.name
-                ORDER BY a.code ASC
+                GROUP BY le.account_id, a.account_code, a.account_name
+                ORDER BY a.account_code ASC
                 """,
                 tuple(params),
             )

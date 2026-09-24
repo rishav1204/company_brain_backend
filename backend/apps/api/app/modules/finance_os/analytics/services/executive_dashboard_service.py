@@ -8,6 +8,18 @@ from app.services.cache.redis_cache import cache_hit_metric, cache_miss_metric, 
 from app.services.db import get_db_conn, set_rls_org
 
 
+def _normalize_kpi_row(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    out = dict(row)
+    if out.get("kpi_value") is not None:
+        try:
+            out["kpi_value"] = float(out["kpi_value"])
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
 class ExecutiveDashboardService:
     def get(self, org_id: str, *, snapshot_date: str | None = None) -> dict:
         if not analytics_schema_repository.schema_ready():
@@ -23,11 +35,16 @@ class ExecutiveDashboardService:
         cached = dashboard_snapshot_repository.get_latest(org_id, snapshot_date=snap if snapshot_date else None)
         if cached:
             payload = cached.get("payload") or {}
-            result = {
-                "snapshot_date": cached.get("snapshot_date"),
-                "refreshed_at": cached.get("refreshed_at"),
-                **payload,
-            }
+            widgets = payload.get("widgets") if isinstance(payload, dict) else {}
+            # Stale empty cache after seed — rebuild from live KPI rows
+            if isinstance(widgets, dict) and widgets and all(v is None for v in widgets.values()):
+                result = self._build_live(org_id, snapshot_date=snap)
+            else:
+                result = {
+                    "snapshot_date": cached.get("snapshot_date"),
+                    "refreshed_at": cached.get("refreshed_at"),
+                    **payload,
+                }
             set_cached(org_id, "analytics.dashboard", result, cache_params)
             return result
         result = self._build_live(org_id, snapshot_date=snap)
@@ -48,7 +65,7 @@ class ExecutiveDashboardService:
                     """,
                     (org_id, snapshot_date, 50),
                 )
-                kpis = [dict(row) for row in cur.fetchall()]
+                kpis = [_normalize_kpi_row(dict(row)) for row in cur.fetchall()]
                 cur.execute(
                     """
                     SELECT kpi_code, trend_direction, trend_percent, period_key, created_at::text
@@ -81,7 +98,19 @@ class ExecutiveDashboardService:
                     (org_id, 10),
                 )
                 anomalies = [dict(row) for row in cur.fetchall()]
-        by_code = {k["kpi_code"]: k for k in kpis}
+        by_code = {k["kpi_code"]: k for k in kpis if k}
+        # Alias seed/legacy codes onto canonical widget codes
+        if "finance.gross_profit_margin" not in by_code and "finance.gross_margin" in by_code:
+            gm = dict(by_code["finance.gross_margin"])
+            # Seed stored ratio (0.34); widget expects percent-like value when < 1
+            try:
+                val = float(gm.get("kpi_value") or 0)
+                if 0 < val <= 1:
+                    gm["kpi_value"] = round(val * 100, 2)
+            except (TypeError, ValueError):
+                pass
+            gm["kpi_code"] = "finance.gross_profit_margin"
+            by_code["finance.gross_profit_margin"] = gm
         return {
             "snapshot_date": snapshot_date,
             "widgets": {
@@ -93,7 +122,12 @@ class ExecutiveDashboardService:
                 "compliance_health": by_code.get("compliance.filing_pct"),
                 "close_status": by_code.get("close.efficiency_score"),
                 "forecast_accuracy": by_code.get("forecast.accuracy_avg"),
+                "gross_profit_margin": by_code.get("finance.gross_profit_margin"),
+                "net_profit_margin": by_code.get("finance.net_profit_margin"),
+                "ebitda_margin": by_code.get("finance.ebitda_margin") or by_code.get("finance.gross_profit_margin"),
+                "days_sales_outstanding": by_code.get("collections.dso"),
             },
+            "kpis": list(by_code.values()),
             "trends": trends[:10],
             "top_risks": [i for i in insights if i.get("severity") in {"high", "warning"}][:5],
             "top_opportunities": [i for i in insights if i.get("severity") == "info"][:5],

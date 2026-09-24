@@ -42,7 +42,14 @@ def require_asset_read(context: RequestContext = Depends(build_request_context))
     enforce_billing(context.org_id, "assets")
     require_erp_read_access(
         context,
-        permission_keys=['erp.assets.admin', 'assets.read', 'assets.admin'],
+        permission_keys=[
+            "asset.read",
+            "assets.read",
+            "erp.assets.read",
+            "erp.assets.admin",
+            "assets.admin",
+            "asset.admin",
+        ],
         detail="Asset read required",
     )
     return context

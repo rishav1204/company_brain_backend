@@ -47,6 +47,7 @@ class VoucherLineRepository:
                 return out
 
     def list_by_voucher(self, org_id: str, *, voucher_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -61,7 +62,7 @@ class VoucherLineRepository:
                     ORDER BY line_number
                     LIMIT %s
                     """,
-                    (org_id, voucher_id),
+                    (org_id, voucher_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

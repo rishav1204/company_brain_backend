@@ -66,6 +66,7 @@ class OwnershipSnapshotRepository:
                 return {"id": row[0], "subsidiary_company_id": row[1]}
 
     def list_for_run(self, org_id: str, consolidation_run_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not self.schema_ready():
             limit = clamp_limit(limit)
             return []
@@ -81,7 +82,7 @@ class OwnershipSnapshotRepository:
                     ORDER BY created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, consolidation_run_id),
+                    (org_id, consolidation_run_id, limit),
                 )
                 cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, row)) for row in cur.fetchall()]

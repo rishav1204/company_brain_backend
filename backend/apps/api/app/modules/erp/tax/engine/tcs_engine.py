@@ -9,12 +9,18 @@ def calculate_tcs(
     threshold: float,
     prior_ytd: float = 0,
     pan_present: bool = True,
+    org_id: str | None = None,
 ) -> dict:
     from app.modules.erp.tax.engine.tds_engine import resolve_effective_rate
 
     if gross_amount <= 0:
         return {"tcs_amount": 0.0, "total_collected": 0.0, "applicable": False, "rate": 0.0}
-    rate = resolve_effective_rate(rate_pan=rate_pan, rate_no_pan=rate_no_pan, pan_present=pan_present)
+    rate = resolve_effective_rate(
+        rate_pan=rate_pan,
+        rate_no_pan=rate_no_pan,
+        pan_present=pan_present,
+        org_id=org_id,
+    )
     if threshold > 0 and (prior_ytd + gross_amount) < threshold:
         return {"tcs_amount": 0.0, "total_collected": gross_amount, "applicable": False, "rate": rate}
     tcs = round(gross_amount * rate / 100, 2)

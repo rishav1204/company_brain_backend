@@ -22,9 +22,24 @@ class TcsService:
         if not section:
             raise ValueError(f"TCS section not found: {section_code}")
         rate_pan = float(section.get("rate_pan") if section.get("rate_pan") is not None else section["rate"])
-        rate_no_pan = float(
-            section.get("rate_no_pan") if section.get("rate_no_pan") is not None else max(rate_pan * 2, 20)
-        )
+        if section.get("rate_no_pan") is not None:
+            rate_no_pan = float(section["rate_no_pan"])
+        else:
+            from app.modules.platform.regulatory.services.regulatory_resolver import (
+                RegulatoryConfigError,
+                regulatory_resolver,
+            )
+
+            try:
+                mult = regulatory_resolver.resolve_param_numeric(
+                    "tds.no_pan_multiplier", org_id=org_id, required=False, default=2
+                )
+                floor = regulatory_resolver.resolve_param_numeric(
+                    "tds.no_pan_floor_pct", org_id=org_id, required=True
+                )
+            except RegulatoryConfigError as exc:
+                raise ValueError(str(exc)) from exc
+            rate_no_pan = max(rate_pan * float(mult), float(floor))
         threshold = float(section.get("threshold_amount") or 0)
         result = calculate_tcs(
             gross_amount=gross_amount,
@@ -33,6 +48,7 @@ class TcsService:
             threshold=threshold,
             prior_ytd=prior_ytd,
             pan_present=pan_present,
+            org_id=org_id,
         )
         return {**result, "section_code": section_code}
 

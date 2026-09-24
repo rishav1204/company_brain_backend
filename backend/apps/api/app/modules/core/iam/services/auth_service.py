@@ -12,7 +12,13 @@ from app.modules.core.iam.services.password_service import verify_password
 from app.modules.core.iam.services.rbac_service import list_role_names, merge_policy_context, merge_policy_context_from_rows
 from app.modules.core.iam.services.iam_schema_service import require_core_schema
 from app.modules.core.iam.services.login_lockout_service import clear_failures, is_locked, record_failure
-from app.modules.core.iam.services.mfa_service import MfaRequired, assert_mfa_gate
+from app.modules.core.iam.services.mfa_service import (
+    MfaInvalid,
+    issue_mfa_challenge_token,
+    parse_mfa_challenge_token,
+    user_has_mfa_enabled,
+    verify_mfa_code,
+)
 from app.modules.core.iam.services.auth_audit_service import record_auth_event
 from app.modules.core.iam.services.session_policy_service import enforce_concurrent_session_limit
 from app.modules.core.iam.services.token_revocation import revoke_access_token_jti
@@ -147,12 +153,101 @@ def _login_inner(
 
     permissions = bundle.get("permissions") or []
     attrs = merge_policy_context_from_rows(bundle.get("role_rows") or [])
+
+    # Two-step login: if MFA is enrolled and no code yet, return challenge (no session).
+    if user_has_mfa_enabled(org_id, user_id):
+        code = (mfa_code or "").strip() or None
+        if not code:
+            return {
+                "mfa_required": True,
+                "mfa_challenge_token": issue_mfa_challenge_token(
+                    org_id=org_id, user_id=user_id, email=user.get("email")
+                ),
+                "user_id": user_id,
+                "org_id": org_id,
+            }
+        if not verify_mfa_code(org_id, user_id, code):
+            metrics_store.incr_iam_login_failure()
+            record_auth_event(
+                event="login",
+                success=False,
+                org_id=org_id,
+                user_id=user_id,
+                reason="mfa_invalid",
+                ip_address=ip_address,
+            )
+            raise AuthError("Invalid MFA code")
+
+    return _issue_session(
+        org_id=org_id,
+        user_id=user_id,
+        user=user,
+        roles=roles,
+        permissions=permissions,
+        attrs=attrs,
+        device_info=device_info,
+        ip_address=ip_address,
+    )
+
+
+def complete_mfa_login(
+    *,
+    mfa_challenge_token: str,
+    code: str,
+    device_info: dict | None = None,
+    ip_address: str | None = None,
+) -> dict:
+    """Finish login after password challenge by verifying authenticator code."""
+    require_core_schema()
     try:
-        assert_mfa_gate(org_id=org_id, user_id=user_id, attrs=attrs, mfa_code=mfa_code)
-    except MfaRequired as exc:
-        metrics_store.incr_iam_login_failure()
-        record_auth_event(event="login", success=False, org_id=org_id, user_id=user_id, reason="mfa_required", ip_address=ip_address)
+        challenge = parse_mfa_challenge_token(mfa_challenge_token)
+    except MfaInvalid as exc:
         raise AuthError(str(exc)) from exc
+    org_id = challenge["org_id"]
+    user_id = challenge["user_id"]
+    if not verify_mfa_code(org_id, user_id, code):
+        metrics_store.incr_iam_login_failure()
+        record_auth_event(
+            event="login",
+            success=False,
+            org_id=org_id,
+            user_id=user_id,
+            reason="mfa_invalid",
+            ip_address=ip_address,
+        )
+        raise AuthError("Invalid MFA code")
+
+    user = user_repo.get_by_id(org_id, user_id)
+    if not user or user.get("status") != "active":
+        raise AuthError("Invalid credentials")
+    roles = list_role_names(org_id, user_id)
+    if not roles:
+        raise AuthError("No roles assigned")
+    permissions = permission_repo.list_permissions_for_user(org_id, user_id)
+    attrs = merge_policy_context(org_id, user_id)
+    return _issue_session(
+        org_id=org_id,
+        user_id=user_id,
+        user=user,
+        roles=roles,
+        permissions=permissions,
+        attrs=attrs,
+        device_info=device_info,
+        ip_address=ip_address,
+    )
+
+
+def _issue_session(
+    *,
+    org_id: str,
+    user_id: str,
+    user: dict,
+    roles: list,
+    permissions: list,
+    attrs: dict,
+    device_info: dict | None,
+    ip_address: str | None,
+) -> dict:
     enforce_concurrent_session_limit(org_id, user_id)
     raw_refresh, session_id = create_refresh_session(
         org_id=org_id,
@@ -179,6 +274,7 @@ def _login_inner(
     metrics_store.incr_iam_login_success()
 
     return {
+        "mfa_required": False,
         "access_token": access_token,
         "refresh_token": raw_refresh,
         "expires_in": expires_in,
@@ -236,10 +332,8 @@ def refresh(*, refresh_token: str, mfa_code: str | None = None, rate_limit_key: 
         roles = list_role_names(org_id, user_id)
         permissions = permission_repo.list_permissions_for_user(org_id, user_id)
         attrs = merge_policy_context(org_id, user_id)
-        try:
-            assert_mfa_gate(org_id=org_id, user_id=user_id, attrs=attrs, mfa_code=mfa_code)
-        except MfaRequired as exc:
-            raise AuthError(str(exc)) from exc
+        # Session was already MFA-gated at login; do not re-prompt on refresh.
+        del mfa_code
         raw_refresh, new_session_id = create_refresh_session(
             org_id=org_id,
             user_id=user_id,

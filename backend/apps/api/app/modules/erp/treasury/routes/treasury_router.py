@@ -15,5 +15,5 @@ legacy_treasury_router.include_router(dashboard_routes.router)
 legacy_treasury_router.include_router(forecast_routes.router)
 
 # Wave 4: canonical name must point at /erp/treasury router (was accidentally aliasing legacy).
-# legacy_treasury_router remains unmounted — keep for optional BC window docs only.
+# legacy_treasury_router remounted in main for FE fallback paths (/treasury/position, etc.).
 erp_treasury_router = erp_m24_treasury_router

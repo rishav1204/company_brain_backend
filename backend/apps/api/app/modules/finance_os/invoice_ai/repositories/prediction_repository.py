@@ -44,6 +44,7 @@ class PredictionRepository:
                 return dict(cur.fetchone() or {})
 
     def list_for_extraction(self, org_id: str, extraction_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -58,7 +59,7 @@ class PredictionRepository:
                     ORDER BY created_at DESC
                     LIMIT %s
                     """,
-                    (org_id, extraction_id),
+                    (org_id, extraction_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

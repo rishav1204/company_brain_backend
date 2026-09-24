@@ -16,6 +16,16 @@ from app.modules.finance_os.analytics.services.executive_dashboard_service impor
 def run_refresh(org_id: str, *, fiscal_period_id: str | None = None, trace_id: str | None = None) -> dict:
     if not analytics_schema_repository.schema_ready():
         return {"status": "skipped", "reason": "schema_not_ready"}
+    try:
+        from app.modules.finance_os.bridges.erp_command_bridge.bootstrap import (
+            bootstrap_wave1_boundaries,
+            is_bootstrapped,
+        )
+
+        if not is_bootstrapped():
+            bootstrap_wave1_boundaries()
+    except Exception:
+        pass
     emit_analytics_refresh_requested(org_id, reason="pipeline", trace_id=trace_id)
     result = analytics_engine.refresh_kpis(org_id, fiscal_period_id=fiscal_period_id)
     emit_kpi_updated(org_id, count=int(result.get("kpis") or 0), trace_id=trace_id)

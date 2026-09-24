@@ -103,14 +103,27 @@ def get_duplicates(
     )
 
 
+@router.get("/review-queue")
+def review_queue(
+    context=Depends(build_request_context),
+    limit: int = Query(default=50, ge=1, le=500),
+) -> dict:
+    require_invoice_ai_read(context.user)
+    items = extraction_service.list_review_queue(str(context.org_id), limit=limit)
+    return {"request_id": context.request_id, "items": items, "count": len(items)}
+
+
 @router.get("/anomalies", response_model=AnomalyListResponse)
 def list_anomalies(
     context=Depends(build_request_context),
-    extraction_id: str = Query(...),
+    extraction_id: str | None = Query(default=None),
 ) -> AnomalyListResponse:
     require_invoice_ai_read(context.user)
     org_id = str(context.org_id)
-    rows = anomaly_service.list_for_extraction(org_id, extraction_id)
+    if extraction_id:
+        rows = anomaly_service.list_for_extraction(org_id, extraction_id)
+    else:
+        rows = anomaly_service.list_recent(org_id)
     return AnomalyListResponse(
         extraction_id=extraction_id,
         anomalies=[

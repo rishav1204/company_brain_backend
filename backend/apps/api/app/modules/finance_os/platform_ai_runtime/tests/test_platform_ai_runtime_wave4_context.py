@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+import json
 
 import pytest
 
@@ -450,6 +451,44 @@ def test_platform_context_engine_build_wires_quality(monkeypatch) -> None:
     assert ctx.intent.intent in {"read", "analysis", "mixed", "action", "workflow"}
 
 
+def test_id_aliases_applied_before_validation() -> None:
+    from app.modules.finance_os.platform_ai_runtime.tools.tool_spec import ToolSpec, _apply_id_aliases
+
+    spec = ToolSpec(
+        tool="ap",
+        method="get_invoice",
+        module="m",
+        service="s",
+        fn="f",
+        required=("invoice_id",),
+        id_aliases=("entity_id",),
+    )
+    out = _apply_id_aliases(spec, {"entity_id": "inv-uuid-1"})
+    assert out["invoice_id"] == "inv-uuid-1"
+
+
+def test_primary_snapshot_miss_is_soft(monkeypatch) -> None:
+    orch = RetrievalOrchestrator()
+    plan = RetrievalPlan(query="Why hasn't INV-001 been paid?", sources=[])
+
+    def fake_run(*args, **kwargs):
+        return {"status": "error", "detail": "Invoice not found", "target": "ap"}
+
+    monkeypatch.setattr(
+        "app.modules.finance_os.platform_ai_runtime.context.retrieval_orchestrator.executor.run",
+        fake_run,
+    )
+    with patch("app.modules.finance_os.platform_ai_runtime.context.retrieval_orchestrator.log_event"):
+        out = orch.fetch(
+            "org-1",
+            plan=plan,
+            world_state=WorldState(),
+            entities=[ResolvedEntity(entity_type="invoice", entity_id="INV-001", confidence=0.98)],
+            use_cache=False,
+        )
+    assert not any(f.get("source") == "primary_entity_snapshot" for f in out.get("retrieval_failures") or [])
+
+
 def test_prompt_assembler_fallback_stable() -> None:
     ctx = PlatformContext(
         intent=IntentResult(intent="read"),
@@ -459,7 +498,67 @@ def test_prompt_assembler_fallback_stable() -> None:
     t1 = prompt_assembler.fallback_text(ctx)
     t2 = prompt_assembler.fallback_text(ctx)
     assert t1 == t2
-    assert t1.index("ui_location") < t1.index("z_last")
+    assert "enough structured" in t1.lower() or "confirm from platform" in t1.lower()
+
+
+def test_fallback_invoice_payment_no_tool_limitations() -> None:
+    ctx = PlatformContext(
+        intent=IntentResult(intent="read"),
+        world_state=WorldState(),
+        summaries={
+            "primary_entity_snapshot": json.dumps(
+                {
+                    "status": "completed",
+                    "result": {
+                        "invoice": {
+                            "invoice_number": "INV-001",
+                            "status": "approved",
+                            "total_amount": "118000.00",
+                            "paid_amount": "0.00",
+                            "ai_confidence": {},
+                        },
+                        "lines": [],
+                    },
+                }
+            ),
+            "erp:ap.get_vendor": '{"status": "error", "detail": "Missing required params: vendor_id"}',
+        },
+    )
+    text = prompt_assembler.fallback_text(ctx, "Why hasn't INV-001 been paid?")
+    assert "INV-001" in text
+    assert "118000" in text or "outstanding" in text.lower()
+    assert "Limitations" not in text
+    assert "primary_entity_snapshot" not in text
+
+
+def test_planner_voucher_uses_voucher_tools_not_all_erp() -> None:
+    screen = WorldStateScreen(module="dashboard", route="/dashboard")
+    plan = context_planner.plan(
+        intent=IntentResult(intent="read", confidence=0.9),
+        entities=[],
+        world_state=WorldState(screen=screen),
+        message="Show my open vouchers",
+    )
+    methods = {(s.tool, s.method) for s in plan.sources}
+    assert "voucher" in plan.module_hints or "vouchers" in plan.module_hints
+    assert ("vouchers", "list") in methods
+    assert ("ap", "list_outstanding") not in methods
+    assert ("ar", "list_outstanding") not in methods
+    assert ("analytics", "executive_dashboard") not in methods
+
+
+def test_planner_inv_payment_uses_ap_not_ar() -> None:
+    screen = WorldStateScreen(module="dashboard", route="/dashboard")
+    plan = context_planner.plan(
+        intent=IntentResult(intent="read", confidence=0.9),
+        entities=[ResolvedEntity(entity_type="invoice", entity_id="e1", label="INV-001", confidence=0.98)],
+        world_state=WorldState(screen=screen),
+        message="Why hasn't INV-001 been paid?",
+    )
+    methods = {(s.tool, s.method) for s in plan.sources}
+    assert "ap" in plan.module_hints
+    assert ("ap", "get_invoice") in methods or ("ap", "list_outstanding") in methods
+    assert not any(t == "ar" for t, _ in methods), methods
 
 
 def test_cross_module_invoice_chain_in_planner() -> None:

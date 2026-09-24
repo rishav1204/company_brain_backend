@@ -141,10 +141,21 @@ class Settings(BaseModel):
     neo4j_uri: str = _env_or_yaml("NEO4J_URI", "databases", "neo4j", "uri", default="bolt://localhost:7687")
     neo4j_user: str = _env_or_yaml("NEO4J_USER", "databases", "neo4j", "user", default="neo4j")
     neo4j_password: str = _env_or_yaml("NEO4J_PASSWORD", "databases", "neo4j", "password", default="password")
+    # Master switch: false disables all chat/embeddings LLM calls regardless of provider keys.
+    ai_enabled: bool = os.getenv("AI_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+    # Active chat provider: openai | anthropic | none (none/off/disabled also turn LLM off).
     llm_provider: str = _env_or_yaml("LLM_PROVIDER", "llm", "provider", default="openai")
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "")
     openai_model: str = _env_or_yaml("OPENAI_MODEL", "llm", "model", default="gpt-4.1")
+    # Anthropic (Messages API). Default chat model = Haiku family.
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    anthropic_base_url: str = os.getenv("ANTHROPIC_BASE_URL", "")
+    anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+    anthropic_model_cheap: str = os.getenv("ANTHROPIC_MODEL_CHEAP", "")
+    anthropic_model_strong: str = os.getenv("ANTHROPIC_MODEL_STRONG", "")
+    # Optional generic overrides (used when set; else provider defaults apply via model_router).
+    ai_chat_model: str = os.getenv("AI_CHAT_MODEL", "")
     llm_timeout_seconds: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     llm_max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
     llm_retry_base_ms: int = int(os.getenv("LLM_RETRY_BASE_MS", "300"))
@@ -152,6 +163,8 @@ class Settings(BaseModel):
     llm_circuit_open_seconds: int = int(os.getenv("LLM_CIRCUIT_OPEN_SECONDS", "60"))
     llm_tokens_per_minute_per_org: int = int(os.getenv("LLM_TOKENS_PER_MINUTE_PER_ORG", "30000"))
     retrieval_embedding_model: str = os.getenv("RETRIEVAL_EMBEDDING_MODEL", "text-embedding-3-small")
+    # Embeddings provider independent of chat when OpenAI key is present (Anthropic has no embed API).
+    embedding_provider: str = os.getenv("EMBEDDING_PROVIDER", "openai")
     retrieval_chunk_size_tokens: int = _env_or_yaml_int(
         "RETRIEVAL_CHUNK_SIZE_TOKENS", "retrieval", "chunk_size_tokens", default=800
     )

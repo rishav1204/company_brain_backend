@@ -89,7 +89,7 @@ def test_get_login_bundle_ambiguous_email_requires_org(mock_get_db) -> None:
 @patch("app.modules.core.iam.services.auth_service.verify_password", return_value=True)
 @patch("app.modules.core.iam.services.auth_service.create_refresh_session", return_value=("refresh", "sess-1"))
 @patch("app.modules.core.iam.services.auth_service.issue_access_token", return_value=("token", 3600))
-@patch("app.modules.core.iam.services.auth_service.assert_mfa_gate")
+@patch("app.modules.core.iam.services.auth_service.user_has_mfa_enabled", return_value=False)
 @patch("app.modules.core.iam.services.auth_service.enforce_concurrent_session_limit")
 @patch("app.modules.core.iam.services.auth_service.clear_failures")
 @patch("app.modules.core.iam.services.auth_service.require_core_schema")

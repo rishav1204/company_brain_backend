@@ -53,6 +53,7 @@ class EvidenceRepository:
                 return dict(cur.fetchone() or {})
 
     def list_for_entity(self, org_id: str, *, entity_type: str, entity_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not self.schema_ready():
             limit = clamp_limit(limit)
             return []
@@ -67,7 +68,7 @@ class EvidenceRepository:
                     ORDER BY created_at DESC
                     LIMIT %s
                     """,
-                    (org_id, entity_type, entity_id),
+                    (org_id, entity_type, entity_id, limit),
                 )
                 return [dict(row) for row in cur.fetchall()]
 

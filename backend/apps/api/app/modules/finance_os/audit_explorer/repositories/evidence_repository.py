@@ -41,6 +41,7 @@ class AuditEvidenceRepository:
                 return dict(cur.fetchone() or {})
 
     def list_for_timeline(self, org_id: str, timeline_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not self.schema_ready():
             limit = clamp_limit(limit)
             return []
@@ -56,11 +57,12 @@ class AuditEvidenceRepository:
                     ORDER BY created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, timeline_id),
+                    (org_id, timeline_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 
     def list_for_object(self, org_id: str, *, object_type: str, object_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not self.schema_ready():
             limit = clamp_limit(limit)
             return []
@@ -77,7 +79,7 @@ class AuditEvidenceRepository:
                     ORDER BY e.created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, object_type, object_id),
+                    (org_id, object_type, object_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

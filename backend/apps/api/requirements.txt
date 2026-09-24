@@ -6,10 +6,12 @@ PyJWT==2.10.1
 redis==5.2.1
 neo4j==5.28.1
 openai==1.84.0
+anthropic>=0.40.0
 python-dotenv==1.0.1
 psycopg[binary,pool]
 argon2-cffi==23.1.0
 pyotp==2.9.0
+qrcode[pil]==8.0
 httpx
 opentelemetry-api
 opentelemetry-sdk

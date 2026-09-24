@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.modules.platform.governance.repositories.policy_repository import policy_repository
 from app.modules.platform.governance.engine import policy_cache_engine
+from app.modules.platform.governance.engine.risk_engine import requires_open_fiscal_period
 
 
 def load_rules(org_id: str) -> list[dict]:
@@ -25,7 +26,8 @@ def rule_applies(rule: dict, action: str, attrs: dict) -> bool:
     if "amount_gt" in conditions and amount <= float(conditions["amount_gt"]):
         return False
     if conditions.get("closed_period") and attrs.get("fiscal_period_open") is False:
-        return True
+        # Org-level fiscal_period_lock seeds often omit action — never block inbox/read APIs.
+        return requires_open_fiscal_period(action)
     if conditions.get("enforce"):
         return True
     if conditions.get("day_of_month_gt"):

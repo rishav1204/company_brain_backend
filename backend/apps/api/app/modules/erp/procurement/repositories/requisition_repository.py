@@ -157,6 +157,7 @@ class RequisitionRepository:
                 return item
 
     def list_items(self, org_id: str, *, pr_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -169,7 +170,7 @@ class RequisitionRepository:
                     ORDER BY created_at
                     LIMIT %s
                     """,
-                    (org_id, pr_id),
+                    (org_id, pr_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

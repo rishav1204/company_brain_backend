@@ -22,32 +22,120 @@ from app.services.logger import log_event
 from app.services.retrieval_service import retrieve_context
 
 
-def _primary_entity(entities: list[ResolvedEntity]) -> tuple[str | None, str | None]:
+def _looks_uuid(value: str | None) -> bool:
+    if not value:
+        return False
+    import re
+
+    return bool(
+        re.match(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            str(value),
+            re.I,
+        )
+    )
+
+
+def _looks_entity_ref(value: str | None) -> bool:
+    """True for UUIDs or document codes (INV-001) — not bare words like 'invoice'."""
+    if not value:
+        return False
+    import re
+
+    s = str(value).strip()
+    if _looks_uuid(s):
+        return True
+    if re.match(r"^(inv|po|grn|ap|ar|je|jv)[-_][\w-]+$", s, re.I):
+        return True
+    # Reject type nouns accidentally bound as ids
+    if s.lower() in {
+        "invoice",
+        "vendor",
+        "customer",
+        "journal",
+        "po",
+        "ap",
+        "ar",
+        "none",
+        "null",
+        "undefined",
+    }:
+        return False
+    return len(s) >= 6
+
+
+def _typed_id_fields(etype: str | None, eid: str | None) -> dict:
+    """Map resolved entity type + id onto tool required param names."""
+    if not etype or not eid:
+        return {}
+    t = etype.lower()
+    mapping = {
+        "invoice": "invoice_id",
+        "ap_invoice": "invoice_id",
+        "ar_invoice": "invoice_id",
+        "sales_invoice": "invoice_id",
+        "vendor": "vendor_id",
+        "customer": "customer_id",
+        "po": "po_id",
+        "journal": "journal_id",
+        "grn": "grn_id",
+        "asset": "asset_id",
+        "voucher": "voucher_id",
+        "bank": "account_id",
+        "item": "item_id",
+        "account": "account_id",
+        "claim": "claim_id",
+        "return": "return_id",
+    }
+    key = mapping.get(t)
+    return {key: eid} if key else {}
+
+
+def _primary_entity(entities: list[ResolvedEntity]) -> tuple[str | None, str | None, str | None]:
+    """Return (entity_type, entity_id, source). Prefer bound ids; fall back to document labels."""
     ranked = sorted(
-        [e for e in entities if e.entity_id and not e.needs_clarification],
+        [e for e in entities if e.entity_id and not e.needs_clarification and _looks_entity_ref(e.entity_id)],
         key=lambda e: e.confidence,
         reverse=True,
     )
     if ranked:
-        return ranked[0].entity_type, ranked[0].entity_id
+        return ranked[0].entity_type, ranked[0].entity_id, ranked[0].source
+    # Clarification / unbound: still allow document-code lookup via label (INV-001)
+    for e in entities:
+        label = (e.label or "").strip()
+        if label and _looks_entity_ref(label) and e.entity_type in {
+            "invoice",
+            "ap_invoice",
+            "ar_invoice",
+            "sales_invoice",
+            "po",
+            "vendor",
+            "customer",
+        }:
+            return e.entity_type, label, e.source
     if entities:
-        return entities[0].entity_type, entities[0].entity_id
-    return None, None
+        eid = entities[0].entity_id
+        if _looks_entity_ref(eid):
+            return entities[0].entity_type, eid, entities[0].source
+        return entities[0].entity_type, None, entities[0].source
+    return None, None, None
 
 
 def _build_payload(world_state: WorldState | None, entities: list[ResolvedEntity], query: str) -> dict:
     payload: dict = {"query": query}
-    etype, eid = _primary_entity(entities)
+    etype, eid, _src = _primary_entity(entities)
     if world_state and world_state.screen:
         if world_state.screen.entity_type:
             payload["entity_type"] = world_state.screen.entity_type
         if world_state.screen.entity_id:
             payload["entity_id"] = world_state.screen.entity_id
-            payload["invoice_id"] = world_state.screen.entity_id
     if etype and not payload.get("entity_type"):
         payload["entity_type"] = etype
     if eid and not payload.get("entity_id"):
         payload["entity_id"] = eid
+    # Typed IDs from resolved entity (critical for chat-only asks like INV-001)
+    for k, v in _typed_id_fields(etype, eid).items():
+        payload.setdefault(k, v)
     # Convenience ERP IDs from world state
     if world_state:
         if world_state.current_invoice_id:
@@ -60,6 +148,9 @@ def _build_payload(world_state: WorldState | None, entities: list[ResolvedEntity
             payload.setdefault("po_id", world_state.current_po_id)
         if world_state.current_journal_id:
             payload.setdefault("journal_id", world_state.current_journal_id)
+        if world_state.screen and world_state.screen.entity_id and world_state.screen.entity_type:
+            for k, v in _typed_id_fields(world_state.screen.entity_type, world_state.screen.entity_id).items():
+                payload.setdefault(k, v)
     if world_state and world_state.org and world_state.org.fiscal_period_id:
         payload["period_id"] = world_state.org.fiscal_period_id
     if world_state and world_state.selection:
@@ -98,7 +189,7 @@ class RetrievalOrchestrator:
             world_state=world_state,
             attrs=attrs,
         )
-        etype, eid = _primary_entity(entities)
+        etype, eid, esource = _primary_entity(entities)
         as_of = datetime.now(timezone.utc).isoformat()
         entity_key = f"{etype or ''}:{eid or (world_state.screen.entity_id if world_state and world_state.screen else '')}"
         sig = _plan_sig(plan)
@@ -234,7 +325,7 @@ class RetrievalOrchestrator:
                 from app.modules.finance_os.agents.bridges import m28_bridge
 
                 target = eid or (world_state.screen.entity_id if world_state and world_state.screen else None)
-                paths = m28_bridge.lineage(org_id, target) if target else []
+                paths = m28_bridge.lineage(org_id, target) if target and _looks_entity_ref(str(target)) else []
                 return "graph", paths if isinstance(paths, list) else ([paths] if paths else [])
             if source.source_type == "bridge" and source.tool == "agent":
                 ctx = context_service.build(org_id, "platform_runtime", payload)
@@ -256,6 +347,26 @@ class RetrievalOrchestrator:
                 ]
                 return "documents", docs
             if source.source_type == "erp" and source.tool and source.method:
+                # Skip detail getters when required id is still missing after payload merge
+                detail_required = {
+                    ("ap", "get_invoice"): "invoice_id",
+                    ("ap", "get_vendor"): "vendor_id",
+                    ("ar", "get_invoice"): "invoice_id",
+                    ("ar", "get_customer"): "customer_id",
+                    ("journals", "get"): "journal_id",
+                    ("procurement", "get_po"): "po_id",
+                    ("vouchers", "get"): "voucher_id",
+                    ("coa", "get_account"): "account_id",
+                    ("banking", "get_account"): "account_id",
+                }
+                need = detail_required.get((source.tool, source.method))
+                merged = {**source.params, **{k: v for k, v in payload.items() if k != "query"}}
+                if need and not merged.get(need) and not merged.get("entity_id"):
+                    return f"erp:{source.tool}.{source.method}", {
+                        "status": "skipped",
+                        "detail": f"missing_{need}",
+                        "target": source.tool,
+                    }
                 result = executor.run(
                     org_id,
                     tool=source.tool,
@@ -263,6 +374,7 @@ class RetrievalOrchestrator:
                     params={**source.params, "query": plan.query, **{k: v for k, v in payload.items() if k != "query"}},
                     actor_id=user_id,
                     roles=roles,
+                    attrs=attrs,
                     human_approved=True,
                 )
                 return f"erp:{source.tool}.{source.method}", result
@@ -339,9 +451,63 @@ class RetrievalOrchestrator:
                     if hasattr(ctx, "policy_flags"):
                         policies.extend(ctx.policy_flags or [])
                 elif key.startswith("erp:"):
-                    erp_facts[key] = data
+                    # Never promote tool errors into usable ERP facts (they pollute answer fallbacks)
+                    # Skipped (missing id) and missing-param errors are soft — not user-facing failures
+                    if isinstance(data, dict) and data.get("status") == "skipped":
+                        pass
+                    elif isinstance(data, dict) and data.get("status") in {"error", "pending_approval"}:
+                        detail = str(data.get("detail") or data.get("status") or "")
+                        # Soft: missing params, and non-critical analytics KPI dumps
+                        if "Missing required params" in detail:
+                            pass
+                        elif source.tool == "analytics" and detail in {
+                            "tool_execution_failed",
+                            "Invoice not found",
+                        }:
+                            log_event(
+                                "m38.context.analytics_soft_miss",
+                                org_id=org_id,
+                                tool=source.tool,
+                                method=source.method,
+                                detail=detail,
+                            )
+                        else:
+                            failures.append(
+                                {
+                                    "source": key,
+                                    "tool": source.tool,
+                                    "method": source.method,
+                                    "attempt": 0,
+                                    "failure": {
+                                        "failure_class": "tool_error",
+                                        "message": detail,
+                                    },
+                                    "at": datetime.now(timezone.utc).isoformat(),
+                                }
+                            )
+                    else:
+                        erp_facts[key] = data
                 elif key in {"invoice", "gst"}:
-                    erp_facts[key] = data
+                    if isinstance(data, dict) and data.get("status") in {"error", "skipped"}:
+                        detail = str(data.get("detail") or data.get("status") or "")
+                        if data.get("status") == "skipped" or "Missing required" in detail:
+                            pass
+                        else:
+                            failures.append(
+                                {
+                                    "source": key,
+                                    "tool": source.tool,
+                                    "method": source.method,
+                                    "attempt": 0,
+                                    "failure": {
+                                        "failure_class": "tool_error",
+                                        "message": detail,
+                                    },
+                                    "at": datetime.now(timezone.utc).isoformat(),
+                                }
+                            )
+                    else:
+                        erp_facts[key] = data
 
         # Authoritative ERP snapshot for primary entity
         try:
@@ -354,21 +520,61 @@ class RetrievalOrchestrator:
                     "journal": ("journals", "get"),
                     "vendor": ("ap", "get_vendor"),
                     "customer": ("ar", "get_customer"),
+                    "po": ("procurement", "get_po"),
                 }
-                t = tool_map.get(str(etype).lower())
+                # Prefer AR get when enrichment came from AR ledger
+                if str(etype).lower() == "invoice" and (esource or "").startswith("erp_ar"):
+                    t = ("ar", "get_invoice")
+                else:
+                    t = tool_map.get(str(etype).lower())
                 if t:
                     tool, method = t
+                    snap_params = {"entity_id": eid, **_typed_id_fields(etype, eid)}
                     primary = executor.run(
                         org_id,
                         tool=tool,
                         method=method,
-                        params={"entity_id": eid},
+                        params=snap_params,
                         actor_id=user_id,
                         roles=roles,
-                        attrs={"as_of": as_of},
+                        attrs=attrs,
                         human_approved=True,
                     )
-                    erp_facts["primary_entity_snapshot"] = primary
+                    # If AP miss for generic invoice, try AR once (and vice versa)
+                    if isinstance(primary, dict) and primary.get("status") == "error":
+                        alt = None
+                        if tool == "ap" and str(etype).lower() in {"invoice", "ap_invoice"}:
+                            alt = ("ar", "get_invoice")
+                        elif tool == "ar" and str(etype).lower() in {"invoice", "ar_invoice", "sales_invoice"}:
+                            alt = ("ap", "get_invoice")
+                        if alt:
+                            primary = executor.run(
+                                org_id,
+                                tool=alt[0],
+                                method=alt[1],
+                                params=snap_params,
+                                actor_id=user_id,
+                                roles=roles,
+                                attrs=attrs,
+                                human_approved=True,
+                            )
+                            if isinstance(primary, dict) and primary.get("status") != "error":
+                                tool, method = alt
+                    if isinstance(primary, dict) and primary.get("status") in {"error", "pending_approval"}:
+                        # Soft-miss after ledger fallback: log only — do not mark retrieval failed
+                        # (list tools / other facts can still answer; "not found" is data, not a tool crash)
+                        detail = str(primary.get("detail") or primary.get("status"))
+                        log_event(
+                            "m38.context.primary_snapshot_miss",
+                            org_id=org_id,
+                            tool=tool,
+                            method=method,
+                            detail=detail,
+                            entity_type=str(etype or ""),
+                            entity_id=str(eid or "")[:64],
+                        )
+                    elif isinstance(primary, dict) and primary.get("status") != "skipped":
+                        erp_facts["primary_entity_snapshot"] = primary
         except Exception as exc:
             classified = classify_exception(exc, context="retrieval")
             failures.append({"source": "primary_entity_snapshot", "failure": classified.to_dict()})

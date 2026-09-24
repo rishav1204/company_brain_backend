@@ -52,6 +52,7 @@ class JournalLineRepository:
             return out
 
     def list_by_journal_conn(self, conn, org_id: str, *, journal_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -63,7 +64,7 @@ class JournalLineRepository:
                 ORDER BY created_at ASC
                     LIMIT %s
                 """,
-                (org_id, journal_id),
+                (org_id, journal_id, limit),
             )
             return [dict(r) for r in (cur.fetchall() or [])]
 
@@ -73,6 +74,7 @@ class JournalLineRepository:
             return self.replace_lines_conn(conn, org_id, journal_id=journal_id, lines=lines)
 
     def list_by_journal(self, org_id: str, *, journal_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -86,7 +88,7 @@ class JournalLineRepository:
                     ORDER BY created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, journal_id),
+                    (org_id, journal_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

@@ -43,6 +43,7 @@ class AnomalyRepository:
                 return dict(cur.fetchone() or {})
 
     def list_for_extraction(self, org_id: str, extraction_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -55,6 +56,24 @@ class AnomalyRepository:
                     ORDER BY created_at DESC
                     LIMIT %s
                     """,
-                    (org_id, extraction_id),
+                    (org_id, extraction_id, limit),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def list_recent(self, org_id: str, limit: int = 200) -> list[dict]:
+        limit = clamp_limit(limit)
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id::text, extraction_id::text AS extraction_id, anomaly_type,
+                           anomaly_score::float8 AS anomaly_score, severity, description, status
+                    FROM finance_os.invoice_anomalies
+                    WHERE org_id = %s::uuid
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (org_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]

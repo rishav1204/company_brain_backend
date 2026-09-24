@@ -122,7 +122,21 @@ def test_should_not_escalate_completed() -> None:
     assert not should_escalate(status="completed", due_date=date.today() - __import__("datetime").timedelta(days=2), today=date.today())
 
 
-def test_penalty_overdue_gst() -> None:
+def test_penalty_overdue_gst(monkeypatch) -> None:
+    from app.modules.platform.regulatory.services import regulatory_resolver as rr_mod
+
+    monkeypatch.setattr(
+        rr_mod.regulatory_resolver,
+        "resolve_penalty_formula",
+        lambda code, **k: {
+            "formula_code": "gst_late_fee",
+            "daily_fee": 100,
+            "nil_daily_fee": 20,
+            "fee_cap": 5000,
+            "interest_annual_pct": 18,
+            "cap_by_turnover_json": [],
+        },
+    )
     est = estimate_penalty(
         obligation={
             "id": "x",

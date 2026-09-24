@@ -296,6 +296,7 @@ class ControlPlaneRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not table_ready("support", "tickets"):
             return []
         clauses: list[str] = []
@@ -459,6 +460,7 @@ class ControlPlaneRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not table_ready("platform", "activity_events"):
             return []
         clauses: list[str] = []
@@ -528,6 +530,7 @@ class ControlPlaneRepository:
     def list_recycle(
         self, *, org_id: str | None = None, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not table_ready("platform", "recycle_bin"):
             return []
         clauses = ["restore_status = 'available'"]

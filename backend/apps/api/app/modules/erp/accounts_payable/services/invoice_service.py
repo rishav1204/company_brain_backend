@@ -154,7 +154,9 @@ class InvoiceService:
         invoice = invoice_repository.get(org_id, invoice_id=invoice_id)
         if not invoice:
             raise ValueError("Invoice not found")
-        lines = invoice_line_repository.list_by_invoice(org_id, invoice_id=invoice_id)
+        # Use resolved UUID — invoice_id may be a document number (INV-001)
+        resolved_id = str(invoice.get("id") or invoice_id)
+        lines = invoice_line_repository.list_by_invoice(org_id, invoice_id=resolved_id)
         return {"invoice": invoice, "lines": lines}
 
     def list_invoices(

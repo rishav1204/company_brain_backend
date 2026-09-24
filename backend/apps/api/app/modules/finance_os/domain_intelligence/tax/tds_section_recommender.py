@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from app.modules.platform.regulatory.services.regulatory_resolver import (
+    RegulatoryConfigError,
+    regulatory_resolver,
+)
+
 
 def recommend_section(
     *,
@@ -8,6 +13,7 @@ def recommend_section(
     vendor_metadata: dict | None = None,
     amount: float = 0,
     rules: list[dict] | None = None,
+    org_id: str | None = None,
 ) -> dict:
     vendor_meta = vendor_metadata or {}
     if vendor_meta.get("tds_section"):
@@ -34,18 +40,45 @@ def recommend_section(
                 "reason": f"Expense category match: {category}",
             }
 
-    defaults = {
-        "professional": "194J",
-        "contract": "194C",
-        "contractor": "194C",
-        "commission": "194H",
-        "rent": "194I",
-        "goods": "194Q",
-        "interest": "194A",
-    }
-    if ptype in defaults:
-        return {"section_code": defaults[ptype], "confidence": 0.7, "reason": f"Default map for {ptype}"}
+    # Prefer platform TDS templates payment_type mapping when rules empty
+    try:
+        from app.modules.platform.regulatory.repositories.regulatory_repository import (
+            regulatory_repository,
+        )
 
-    if amount >= 5_000_000:
-        return {"section_code": "194Q", "confidence": 0.55, "reason": "High value — consider 194Q goods purchase"}
-    return {"section_code": "194C", "confidence": 0.5, "reason": "Default contractor section"}
+        for tmpl in regulatory_repository.list_tds_templates():
+            tpay = str(tmpl.get("payment_type") or "").lower()
+            if ptype and tpay == ptype:
+                return {
+                    "section_code": tmpl["section_code"],
+                    "confidence": 0.7,
+                    "reason": f"Template map for {ptype}",
+                }
+        try:
+            hint = regulatory_resolver.resolve_threshold_amount(
+                "tds.194q_amount_hint", org_id=org_id, required=False, default=None
+            )
+        except RegulatoryConfigError:
+            hint = None
+        if hint is not None and amount >= float(hint):
+            return {
+                "section_code": "194Q",
+                "confidence": 0.55,
+                "reason": "High value — consider 194Q goods purchase",
+            }
+        # Default first contractor template
+        for tmpl in regulatory_repository.list_tds_templates():
+            if tmpl.get("section_code") == "194C":
+                return {
+                    "section_code": "194C",
+                    "confidence": 0.5,
+                    "reason": "Default contractor section from template",
+                }
+    except Exception:
+        pass
+
+    return {
+        "section_code": "194C",
+        "confidence": 0.4,
+        "reason": "Fallback when regulatory templates unavailable",
+    }

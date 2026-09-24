@@ -44,6 +44,7 @@ class CustomerAddressRepository:
                 return dict(cur.fetchone() or {"id": aid})
 
     def list_by_customer(self, org_id: str, *, customer_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -56,7 +57,7 @@ class CustomerAddressRepository:
                     ORDER BY is_primary DESC, address_type ASC
                     LIMIT %s
                     """,
-                    (org_id, customer_id),
+                    (org_id, customer_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

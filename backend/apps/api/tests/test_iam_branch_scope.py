@@ -19,3 +19,13 @@ def test_branch_scope_allowed() -> None:
         object_company_id=None,
     )
     assert decision is None
+
+
+def test_branch_scope_skipped_when_object_unscoped() -> None:
+    """List/inbox routes pass no object branch — must not deny scoped users."""
+    decision = evaluate_branch_scope(
+        attrs={"allowed_branch_ids": ["branch-a"], "allowed_company_ids": ["co-a"]},
+        object_branch_id=None,
+        object_company_id=None,
+    )
+    assert decision is None

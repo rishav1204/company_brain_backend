@@ -53,6 +53,7 @@ class GrnRepository:
                 return dict(row) if row else None
 
     def list_for_po(self, org_id: str, *, po_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -65,7 +66,7 @@ class GrnRepository:
                     LIMIT %s
 
                     """,
-                    (org_id, po_id),
+                    (org_id, po_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 
@@ -122,6 +123,7 @@ class GrnRepository:
                 return dict(cur.fetchone() or {"id": iid})
 
     def list_items(self, org_id: str, *, grn_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -133,7 +135,7 @@ class GrnRepository:
                     LIMIT %s
 
                     """,
-                    (org_id, grn_id),
+                    (org_id, grn_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

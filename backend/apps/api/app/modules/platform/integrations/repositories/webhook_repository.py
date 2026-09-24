@@ -50,6 +50,7 @@ class WebhookRepository:
                 return dict(cur.fetchone() or {"id": sub_id})
 
     def list_subscriptions(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -62,11 +63,12 @@ class WebhookRepository:
                     LIMIT %s
 
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 
     def list_subscriptions_with_secrets(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -78,7 +80,7 @@ class WebhookRepository:
                     LIMIT %s
 
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

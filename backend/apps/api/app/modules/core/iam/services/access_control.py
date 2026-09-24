@@ -67,7 +67,13 @@ def _evaluate_access_inner(
 ) -> PolicyDecision:
     attrs = attrs or merge_policy_context(org_id, user_id) if iam_db_enabled() else (attrs or {})
 
-    fiscal_open = is_fiscal_period_open(org_id, object_context.company_id)
+    company_id = object_context.company_id or object_company_id
+    if not company_id:
+        allowed = attrs.get("allowed_company_ids") if isinstance(attrs.get("allowed_company_ids"), list) else None
+        if allowed:
+            company_id = str(allowed[0]) if allowed[0] else None
+
+    fiscal_open = is_fiscal_period_open(org_id, company_id)
     gov_attrs = dict(attrs)
     gov_attrs.setdefault("fiscal_period_open", fiscal_open)
 

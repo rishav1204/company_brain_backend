@@ -329,6 +329,46 @@ def test_executive_copilot_fallback(mock_ctx, mock_llm) -> None:
     assert result["confidence_band"] == "review"
 
 
+def test_executive_copilot_unpaid_ap_uses_ledger() -> None:
+    from unittest.mock import patch
+
+    from app.modules.finance_os.analytics.ai import executive_copilot as ec
+
+    class _Inv:
+        @staticmethod
+        def list_outstanding(org_id: str, limit: int = 500):
+            return [
+                {
+                    "id": "1",
+                    "vendor_id": "v1",
+                    "invoice_number": "INV-001",
+                    "due_date": "2020-01-01",
+                    "total_amount": 118000,
+                    "paid_amount": 0,
+                    "outstanding": 118000,
+                }
+            ]
+
+    class _Vend:
+        @staticmethod
+        def list(org_id: str, limit: int = 200):
+            return [{"id": "v1", "vendor_name": "ACME"}]
+
+    with (
+        patch(
+            "app.modules.erp.accounts_payable.repositories.invoice_repository.invoice_repository",
+            _Inv(),
+        ),
+        patch(
+            "app.modules.erp.accounts_payable.repositories.vendor_repository.vendor_repository",
+            _Vend(),
+        ),
+    ):
+        result = ec.answer("org", "Show my unpaid AP invoices")
+    assert "INV-001" in result["answer"]
+    assert result["sources"].get("live_ledger") is True
+
+
 @patch("app.modules.finance_os.analytics.ai.insight_generator.llm_provider")
 @patch("app.modules.finance_os.analytics.ai.insight_generator.kpi_snapshot_repository")
 @patch("app.modules.finance_os.analytics.ai.insight_generator.insight_engine")

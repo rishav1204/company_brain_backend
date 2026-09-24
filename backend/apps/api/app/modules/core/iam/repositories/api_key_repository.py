@@ -40,6 +40,7 @@ class ApiKeyRepository:
                 return cur.fetchone(), raw_key
 
     def list_keys(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -51,7 +52,7 @@ class ApiKeyRepository:
                     ORDER BY created_at DESC
                     LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return list(cur.fetchall())
 

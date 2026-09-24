@@ -30,6 +30,25 @@ def _resolve(module: str, service: str, fn: str) -> Callable[..., Any]:
     if key in _HANDLER_CACHE:
         return _HANDLER_CACHE[key]
     if key not in _READ_ALLOWLIST:
+        # Lazy bootstrap so workers/scripts/tests never hit an empty allowlist
+        try:
+            from app.modules.finance_os.bridges.erp_command_bridge.bootstrap import (
+                bootstrap_wave1_boundaries,
+                is_bootstrapped,
+            )
+
+            if not is_bootstrapped():
+                bootstrap_wave1_boundaries()
+            elif key not in _READ_ALLOWLIST:
+                # Bootstrapped earlier without this target — register catalog reads once more
+                from app.modules.finance_os.platform_ai_runtime.tools.catalog_read import READ_SPECS
+
+                for spec in READ_SPECS:
+                    if str(spec.module).startswith("app.modules.erp."):
+                        register_read_target(spec.module, spec.service, spec.fn)
+        except Exception:
+            pass
+    if key not in _READ_ALLOWLIST:
         raise PermissionError(f"erp_read_not_allowlisted:{module}.{service}.{fn}")
     mod = importlib.import_module(module)
     svc = getattr(mod, service)

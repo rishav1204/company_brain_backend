@@ -96,6 +96,7 @@ class ApprovalRepository:
                 return cur.fetchone()
 
     def list_for_instance(self, org_id: str, workflow_instance_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -112,6 +113,6 @@ class ApprovalRepository:
                     ORDER BY level ASC, created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, workflow_instance_id),
+                    (org_id, workflow_instance_id, limit),
                 )
                 return list(cur.fetchall())

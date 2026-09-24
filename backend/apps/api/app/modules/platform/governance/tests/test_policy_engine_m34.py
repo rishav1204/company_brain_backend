@@ -81,6 +81,24 @@ def test_risk_critical_fiscal_closed() -> None:
     assert risk_engine.assess_risk(action="journal.post", attrs={"fiscal_period_open": False}) == "CRITICAL"
 
 
+def test_risk_read_action_ignores_fiscal_closed() -> None:
+    assert risk_engine.assess_risk(action="approval.read", attrs={"fiscal_period_open": False}) == "LOW"
+    assert risk_engine.requires_open_fiscal_period("approval.read") is False
+    assert risk_engine.requires_open_fiscal_period("journal.post") is True
+
+
+def test_evaluate_read_allowed_when_fiscal_closed() -> None:
+    result = evaluate(
+        ORG,
+        action="approval.read",
+        attrs={"fiscal_period_open": False},
+        roles=["tenant_admin", "cfo"],
+        dry_run=True,
+    )
+    assert result.allowed is True
+    assert result.decision == "allowed"
+
+
 def test_risk_critical_blacklisted_vendor() -> None:
     assert risk_engine.assess_risk(action="payment.execute", attrs={"vendor_risk": "blacklisted"}) == "CRITICAL"
 

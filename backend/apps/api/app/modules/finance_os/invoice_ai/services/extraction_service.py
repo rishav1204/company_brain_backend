@@ -70,5 +70,8 @@ class ExtractionService:
     def latest_for_document(self, org_id: str, document_id: str) -> dict | None:
         return extraction_repository.latest_for_document(org_id, document_id)
 
+    def list_review_queue(self, org_id: str, *, limit: int = 50) -> list[dict]:
+        return extraction_repository.list_review_queue(org_id, limit=limit)
+
 
 extraction_service = ExtractionService()

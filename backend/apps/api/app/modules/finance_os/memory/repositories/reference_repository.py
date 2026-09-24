@@ -30,6 +30,7 @@ class ReferenceRepository:
                     )
 
     def list_for_memory(self, org_id: str, memory_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -41,7 +42,7 @@ class ReferenceRepository:
                     LIMIT %s
 
                     """,
-                    (org_id, memory_id),
+                    (org_id, memory_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

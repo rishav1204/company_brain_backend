@@ -12,7 +12,7 @@ class PenaltyService:
         ob = compliance_obligation_repository.get(org_id, obligation_id)
         if not ob:
             raise ValueError("Obligation not found")
-        est = estimate_penalty(obligation=ob)
+        est = estimate_penalty(obligation=ob, org_id=org_id)
         return compliance_penalty_repository.upsert_estimate(
             org_id,
             obligation_id=obligation_id,

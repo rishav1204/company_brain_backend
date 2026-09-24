@@ -24,6 +24,7 @@ _PUBLIC_PATHS = {
     f"{settings.api_prefix}/auth/oidc/callback",
     f"{settings.api_prefix}/auth/oidc/refresh",
     f"{settings.api_prefix}/auth/login",
+    f"{settings.api_prefix}/auth/mfa/verify",
     f"{settings.api_prefix}/auth/refresh",
     f"{settings.api_prefix}/auth/invite/accept",
 }
@@ -40,6 +41,7 @@ _PUBLIC_PATH_SUFFIXES = {
     "/auth/oidc/callback",
     "/auth/oidc/refresh",
     "/auth/login",
+    "/auth/mfa/verify",
     "/auth/refresh",
     "/auth/invite/accept",
 }
@@ -65,8 +67,15 @@ def _is_public_path(path: str) -> bool:
 
 
 def _is_sse_stream_path(path: str) -> bool:
+    """True for EventSource endpoints (cannot send Authorization headers in browsers)."""
     normalized = path.rstrip("/")
-    return "/realtime/" in normalized or normalized.endswith("/events/stream")
+    return (
+        "/realtime/" in normalized
+        or normalized.endswith("/events/stream")
+        or normalized.endswith("/events/stream/sse")
+        or normalized.endswith("/stream/sse")
+        or normalized.endswith("/sse")
+    )
 
 
 class RequestMiddleware(BaseHTTPMiddleware):
@@ -84,6 +93,16 @@ class RequestMiddleware(BaseHTTPMiddleware):
                 cookie_token = request.cookies.get("cb_access_token") or request.cookies.get("access_token")
                 if cookie_token and str(cookie_token).strip():
                     authorization = f"Bearer {str(cookie_token).strip()}"
+            # EventSource: token may only be available as query param
+            if not authorization.lower().startswith("bearer ") and _is_sse_stream_path(request.url.path):
+                q_token = (
+                    request.query_params.get("access_token")
+                    or request.query_params.get("accessToken")
+                    or request.query_params.get("sse_token")
+                    or request.query_params.get("sseToken")
+                )
+                if q_token and str(q_token).strip():
+                    authorization = f"Bearer {str(q_token).strip()}"
             if not authorization.lower().startswith("bearer "):
                 sse_token = request.headers.get("x-sse-token") or request.headers.get("X-SSE-Token")
                 if sse_token and _is_sse_stream_path(request.url.path):

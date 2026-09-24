@@ -1,4 +1,9 @@
-"""Domain policy seed definitions for M34 bootstrap."""
+"""Bootstrap-only policy templates (not runtime authority).
+
+Runtime evaluation reads rows from governance.policies / approval_matrix only.
+Amount thresholds in these Python files are defaults; prefer platform.regulatory_param
+keys governance.* when present (see bootstrap_governance_policies).
+"""
 
 from app.modules.platform.governance.policies.agent_policies import AGENT_POLICIES
 from app.modules.platform.governance.policies.ap_policies import AP_POLICIES

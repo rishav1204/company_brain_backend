@@ -69,6 +69,17 @@ def test_entity_resolver_alias_match() -> None:
     )
 
 
+def test_entity_resolver_inv_code_auto_binds() -> None:
+    resolver = EntityResolver()
+    result = resolver.resolve_v2("Why hasn't INV-001 been paid?", world_state=WorldState(), org_id=None)
+    inv = next((e for e in result.entities if e.entity_type == "invoice"), None)
+    assert inv is not None
+    assert inv.needs_clarification is False
+    assert inv.entity_id is not None
+    assert "INV-001" in str(inv.entity_id).upper() or "INV-001" in str(inv.label or "").upper()
+    assert inv.confidence >= 0.75
+
+
 # ── AI-04 Retrieval reliability ───────────────────────────────────────────
 
 

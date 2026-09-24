@@ -1,5 +1,18 @@
+import pytest
+
 from app.modules.erp.tax.engine.gst_engine import build_gst_transaction, is_intra_state, split_gst_amount
 from app.modules.erp.tax.validators.gstin_validator import validate_gstin
+
+
+@pytest.fixture(autouse=True)
+def _mock_gst_rates(monkeypatch):
+    from app.modules.platform.regulatory.services import regulatory_resolver as rr_mod
+
+    monkeypatch.setattr(
+        rr_mod.regulatory_resolver,
+        "resolve_allowed_gst_rates",
+        lambda **k: {0.0, 0.25, 3.0, 5.0, 12.0, 18.0, 28.0},
+    )
 
 
 def test_validate_gstin_valid() -> None:

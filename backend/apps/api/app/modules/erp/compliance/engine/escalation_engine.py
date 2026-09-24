@@ -1,10 +1,33 @@
 from __future__ import annotations
 
-DEFAULT_LEVELS = ["assignee", "manager", "finance_head", "cfo"]
 
+def next_escalation_level(
+    current_level: int,
+    levels: list[str] | None = None,
+    *,
+    org_id: str | None = None,
+) -> tuple[int, str | None]:
+    chain = levels
+    if not chain:
+        try:
+            from app.modules.platform.regulatory.services.regulatory_resolver import (
+                regulatory_resolver,
+            )
 
-def next_escalation_level(current_level: int, levels: list[str] | None = None) -> tuple[int, str | None]:
-    chain = levels or DEFAULT_LEVELS
+            raw = regulatory_resolver.resolve_param(
+                "compliance.escalation_levels",
+                org_id=org_id,
+                required=False,
+                default=["assignee", "manager", "finance_head", "cfo"],
+            )
+            if isinstance(raw, list):
+                chain = [str(x) for x in raw]
+            elif isinstance(raw, dict) and isinstance(raw.get("levels"), list):
+                chain = [str(x) for x in raw["levels"]]
+            else:
+                chain = ["assignee", "manager", "finance_head", "cfo"]
+        except Exception:
+            chain = ["assignee", "manager", "finance_head", "cfo"]
     if current_level >= len(chain):
         return current_level, None
     idx = min(current_level, len(chain) - 1)

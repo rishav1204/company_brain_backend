@@ -15,17 +15,26 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
+    """Full session, or MFA challenge after password OK."""
+
     request_id: str
-    access_token: str
-    refresh_token: str
+    mfa_required: bool = False
+    mfa_challenge_token: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
     token_type: str = "bearer"
-    expires_in: int
-    user_id: str
-    org_id: str
+    expires_in: int | None = None
+    user_id: str | None = None
+    org_id: str | None = None
     roles: list[str] = Field(default_factory=list)
     permissions: list[str] = Field(default_factory=list)
-    confidence: float
-    verification_status: str
+    confidence: float = 0.99
+    verification_status: str = "iam_db_login"
+
+
+class MfaVerifyRequest(BaseModel):
+    mfa_challenge_token: str
+    code: str
 
 
 class RefreshRequest(BaseModel):

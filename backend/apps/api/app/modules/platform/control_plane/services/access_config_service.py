@@ -143,6 +143,12 @@ class AccessConfigService:
 
         screens = []
         for screen in control_plane_repository.list_screens():
+            # ERP /me/boot only needs tenant (ERP) screens. Platform-owner console
+            # routes live under /platform/* and must not pollute product shell boot.
+            console = str(screen.get("console") or "erp").lower()
+            route = str(screen.get("route_path") or "")
+            if console == "platform" or route == "/platform" or route.startswith("/platform/"):
+                continue
             allowed = self.screen_allowed(
                 org_id,
                 user_id,

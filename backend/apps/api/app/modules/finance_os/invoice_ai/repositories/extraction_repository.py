@@ -74,6 +74,53 @@ class ExtractionRepository:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
+    def list_review_queue(self, org_id: str, *, limit: int = 50) -> list[dict]:
+        """Extractions needing human review: non auto-suggest band, suspected duplicate, or open anomaly."""
+        with get_db_conn() as conn:
+            set_rls_org(conn, org_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT e.id::text AS id,
+                           e.id::text AS extraction_id,
+                           e.document_id::text AS document_id,
+                           e.invoice_number,
+                           e.vendor_name,
+                           e.total_amount::float8 AS total_amount,
+                           e.extraction_confidence::float8 AS overall_score,
+                           e.confidence_band,
+                           e.created_at::text AS created_at,
+                           d.matched_invoice_id::text AS duplicate_of,
+                           d.status AS duplicate_status,
+                           a.max_score AS anomaly_score,
+                           a.top_severity AS anomaly_severity
+                    FROM finance_os.invoice_extractions e
+                    LEFT JOIN LATERAL (
+                        SELECT ds.matched_invoice_id, ds.status
+                        FROM finance_os.invoice_duplicate_scores ds
+                        WHERE ds.org_id = e.org_id AND ds.extraction_id = e.id
+                        ORDER BY ds.created_at DESC
+                        LIMIT 1
+                    ) d ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT MAX(an.anomaly_score)::float8 AS max_score,
+                               (ARRAY_AGG(an.severity ORDER BY an.anomaly_score DESC))[1] AS top_severity
+                        FROM finance_os.invoice_anomalies an
+                        WHERE an.org_id = e.org_id AND an.extraction_id = e.id AND an.status = 'open'
+                    ) a ON TRUE
+                    WHERE e.org_id = %s::uuid
+                      AND (
+                        e.confidence_band <> 'auto_suggest'
+                        OR d.status IN ('suspected', 'confirmed')
+                        OR a.max_score IS NOT NULL
+                      )
+                    ORDER BY e.created_at DESC
+                    LIMIT %s
+                    """,
+                    (org_id, limit),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
     def latest_for_document(self, org_id: str, document_id: str) -> dict | None:
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)

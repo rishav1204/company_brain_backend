@@ -107,6 +107,23 @@ def validate_tool_security_metadata(spec: ToolSpec) -> None:
         raise ValueError(f"tool {spec.tool}.{spec.method} missing audit_classification")
 
 
+def _apply_id_aliases(spec: ToolSpec, params: dict) -> dict[str, Any]:
+    """Copy entity_id (and other aliases) onto required id fields before validation."""
+    out = dict(params or {})
+    for req in spec.required:
+        if req in out and out[req] not in (None, ""):
+            continue
+        for alias in spec.id_aliases:
+            if alias in out and out[alias] not in (None, ""):
+                out[req] = out[alias]
+                break
+        # Also accept bare "id" as alias for *\_id required fields
+        if req.endswith("_id") and "id" in out and out.get(req) in (None, ""):
+            if out["id"] not in (None, ""):
+                out[req] = out["id"]
+    return out
+
+
 def _resolve_kwargs(spec: ToolSpec, params: dict, attrs: dict | None) -> dict[str, Any]:
     kwargs = dict(spec.defaults)
     _skip = {"reverses_node", "forensics", "_forensics_advisory"}
@@ -124,10 +141,10 @@ def _resolve_kwargs(spec: ToolSpec, params: dict, attrs: dict | None) -> dict[st
             continue
         kwargs[key] = value
     for req in spec.required:
-        if req in kwargs:
+        if req in kwargs and kwargs[req] not in (None, ""):
             continue
         for alias in spec.id_aliases:
-            if alias in params:
+            if alias in params and params[alias] not in (None, ""):
                 kwargs[req] = params[alias]
                 break
     if spec.actor_kwarg and attrs:
@@ -265,7 +282,8 @@ def build_handler(spec: ToolSpec) -> ToolHandler:
                     "policy_action": spec.policy_action,
                 }
         try:
-            params = validate_tool_invocation(params or {}, required=spec.required)
+            params = _apply_id_aliases(spec, params or {})
+            params = validate_tool_invocation(params, required=spec.required)
             kwargs = _resolve_kwargs(spec, params, attrs)
             if isinstance(attrs, dict):
                 allowed = attrs.get("allowed_branch_ids")

@@ -98,6 +98,7 @@ class WorkflowStepRepository:
                 pass
 
     def list_steps(self, org_id: str, workflow_instance_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -110,11 +111,12 @@ class WorkflowStepRepository:
                     ORDER BY started_at ASC NULLS LAST, created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, workflow_instance_id),
+                    (org_id, workflow_instance_id, limit),
                 )
                 return list(cur.fetchall())
 
     def list_timeline(self, org_id: str, workflow_instance_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -129,6 +131,6 @@ class WorkflowStepRepository:
                     ORDER BY COALESCE(started_at, created_at) ASC
                     LIMIT %s
                     """,
-                    (org_id, workflow_instance_id),
+                    (org_id, workflow_instance_id, limit),
                 )
                 return [dict(row) for row in cur.fetchall()]

@@ -329,8 +329,21 @@ def ai_gateway_health(context=Depends(build_request_context)) -> dict:
     return {
         "request_id": context.request_id,
         "gateway_enabled": bool(settings.ai_gateway_enabled),
+        "ai_enabled": bool(getattr(settings, "ai_enabled", True)),
         "provider": settings.llm_provider,
+        "embedding_provider": getattr(settings, "embedding_provider", "openai"),
+        "chat_model": (
+            (getattr(settings, "ai_chat_model", None) or "").strip()
+            or (
+                getattr(settings, "anthropic_model", None)
+                if (settings.llm_provider or "").lower() == "anthropic"
+                else settings.openai_model
+            )
+        ),
         "aliases": model_router.aliases(),
         "class_routes": model_router.class_map(),
         "llm_ready": __import__("app.services.llm_provider", fromlist=["llm_provider"]).llm_provider.is_ready(),
+        "embedding_ready": __import__(
+            "app.services.llm_provider", fromlist=["llm_provider"]
+        ).llm_provider.embedding_ready(),
     }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from app.modules.finance_os.platform_ai_runtime.context.schemas.context_schema import (
     IntentResult,
     ResolvedEntity,
@@ -59,7 +61,7 @@ _SOURCE_MAP: dict[tuple[str, str], list[tuple[str, str, str, dict]]] = {
         ("erp", "treasury", "get_cash_position", {}),
         ("erp", "ar", "list_outstanding", {}),
         ("erp", "ap", "list_outstanding", {}),
-        ("erp", "forecasting", "latest", {}),
+        ("erp", "forecasting", "list_forecasts", {}),
         ("memory", "memory", "search", {}),
         ("graph", "graph", "traverse", {}),
     ],
@@ -113,12 +115,66 @@ _SOURCE_MAP: dict[tuple[str, str], list[tuple[str, str, str, dict]]] = {
         ("erp", "journals", "list_approval_queue", {}),
         ("memory", "memory", "search", {}),
     ],
+    ("read", "voucher"): [
+        ("erp", "vouchers", "list", {}),
+        ("erp", "vouchers", "get", {}),
+        ("graph", "graph", "traverse", {}),
+        ("memory", "memory", "search", {}),
+        ("platform", "approval_queue", "list", {}),
+    ],
+    ("read", "vouchers"): [
+        ("erp", "vouchers", "list", {}),
+        ("memory", "memory", "search", {}),
+        ("platform", "approval_queue", "list", {}),
+    ],
+    ("read", "banking"): [
+        ("erp", "banking", "list_accounts", {}),
+        ("erp", "banking", "list_transactions", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "bank"): [
+        ("erp", "banking", "list_accounts", {}),
+        ("erp", "banking", "get_account", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "assets"): [
+        ("erp", "assets", "list", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "asset"): [
+        ("erp", "assets", "get", {}),
+        ("erp", "assets", "list", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "expenses"): [
+        ("erp", "expenses", "list_claims", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "claim"): [
+        ("erp", "expenses", "get_claim", {}),
+        ("erp", "expenses", "list_claims", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "customer"): [
+        ("erp", "ar", "get_customer", {}),
+        ("erp", "ar", "list_outstanding", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "compliance"): [
+        ("erp", "compliance", "dashboard", {}),
+        ("erp", "compliance", "upcoming", {}),
+        ("memory", "memory", "search", {}),
+    ],
+    ("read", "tax"): [
+        ("erp", "tax_gst", "list_returns", {}),
+        ("bridge", "gst", "compliance", {}),
+        ("memory", "memory", "search", {}),
+    ],
 }
 
 # Cross-module expands when user is on a primary entity (invoice-centric chain)
 _CROSS_MODULE: dict[str, list[tuple[str, str, str, dict]]] = {
     "invoice": [
-        ("erp", "ap", "get_vendor", {}),
         ("graph", "graph", "traverse", {}),
         ("bridge", "gst", "compliance", {}),
         ("platform", "approval_queue", "list", {}),
@@ -137,6 +193,10 @@ _CROSS_MODULE: dict[str, list[tuple[str, str, str, dict]]] = {
         ("erp", "ar", "list_outstanding", {}),
         ("erp", "ar", "list_overdue", {}),
         ("graph", "graph", "traverse", {}),
+    ],
+    "voucher": [
+        ("graph", "graph", "traverse", {}),
+        ("platform", "approval_queue", "list", {}),
     ],
 }
 
@@ -164,6 +224,8 @@ def _entity_hint(entities: list[ResolvedEntity]) -> str | None:
             "journal",
             "approval",
             "workflow",
+            "voucher",
+            "claim",
         }:
             return e.entity_type
     return None
@@ -172,26 +234,38 @@ def _entity_hint(entities: list[ResolvedEntity]) -> str | None:
 def _screen_module(world_state: WorldState | None) -> str | None:
     if not world_state or not world_state.screen or not world_state.screen.module:
         return None
-    mod = world_state.screen.module.lower()
-    if "ap" in mod or "payable" in mod:
+    mod = world_state.screen.module.lower().strip()
+    # Use token / phrase checks — substring "ar" matches "dashboard" otherwise
+    tokens = set(re.split(r"[^a-z0-9]+", mod))
+    if tokens & {"ap", "payable", "payables"} or "accounts payable" in mod:
         return "ap"
-    if "ar" in mod or "receivable" in mod:
+    if tokens & {"ar", "receivable", "receivables"} or "accounts receivable" in mod:
         return "ar"
-    if "gst" in mod or "tax" in mod:
+    if tokens & {"gst", "tax"} or "tax" in mod:
         return "gst"
-    if "treasury" in mod or "cash" in mod:
+    if tokens & {"treasury", "cash"} or "treasury" in mod or "cash" in mod:
         return "treasury"
-    if "inventory" in mod:
+    if "inventory" in tokens or "inventory" in mod:
         return "inventory"
-    if "analytics" in mod or "dashboard" in mod:
+    if tokens & {"voucher", "vouchers"} or "voucher" in mod:
+        return "vouchers"
+    if tokens & {"banking", "bank"} or "banking" in mod:
+        return "banking"
+    if tokens & {"asset", "assets"} or "asset" in mod:
+        return "assets"
+    if tokens & {"expense", "expenses", "claim"} or "expense" in mod:
+        return "expenses"
+    if tokens & {"compliance"} or "compliance" in mod:
+        return "compliance"
+    if tokens & {"analytics", "dashboard"} or "analytics" in mod or "dashboard" in mod:
         return "analytics"
-    if "procurement" in mod or "purchase" in mod:
+    if tokens & {"procurement", "purchase"} or "procurement" in mod or "purchase" in mod:
         return "procurement"
-    if "journal" in mod or "gl" in mod:
+    if tokens & {"journal", "journals", "gl"} or "journal" in mod:
         return "journal"
-    if "workflow" in mod:
+    if "workflow" in tokens or "workflow" in mod:
         return "workflow"
-    if "approval" in mod:
+    if "approval" in tokens or "approval" in mod:
         return "approval"
     return None
 
@@ -199,13 +273,45 @@ def _screen_module(world_state: WorldState | None) -> str | None:
 def _message_hints(message: str) -> list[str]:
     text = (message or "").lower()
     hints: list[str] = []
+    # Prefer AP/AR list intents over single-invoice detail when wording is list-like
+    ap_list = any(
+        w in text
+        for w in (
+            "unpaid",
+            "outstanding",
+            "accounts payable",
+            " ap ",
+            "ap invoice",
+            "ap invoices",
+            "payable",
+        )
+    ) or text.strip().startswith("ap ") or "show my unpaid" in text
+    ar_list = any(w in text for w in ("accounts receivable", " ar ", "ar invoice", "customer invoice", "receivable"))
+    # Vendor bill payment asks ("why hasn't INV-001 been paid?") → AP, not AR
+    inv_code = bool(re.search(r"\binv[-_]?\d+\b", text))
+    voucher_code = bool(re.search(r"\b(vch|jv|pv|rv)[-_]?\w*\d+\b", text))
+    payment_ask = any(w in text for w in ("paid", "payment", "pay ", " unpaid"))
+    if inv_code and payment_ask and not ar_list:
+        ap_list = True
+    if ap_list:
+        hints.append("ap")
+    if ar_list:
+        hints.append("ar")
+    # "overdue" alone is ambiguous — bias to AP if payable words present, else AR
+    if "overdue" in text:
+        if ap_list or "payable" in text or "ap" in text:
+            if "ap" not in hints:
+                hints.append("ap")
+        elif "ar" not in hints:
+            hints.append("ar")
+
     mapping = (
-        ("invoice", "invoice"),
+        ("voucher", "voucher"),
+        ("journal voucher", "voucher"),
+        ("gst", "gst"),
         ("vendor", "vendor"),
         ("supplier", "vendor"),
         ("customer", "customer"),
-        ("overdue", "ar"),
-        ("gst", "gst"),
         ("cash", "treasury"),
         ("treasury", "treasury"),
         ("purchase order", "po"),
@@ -214,12 +320,59 @@ def _message_hints(message: str) -> list[str]:
         ("approval", "approval"),
         ("workflow", "workflow"),
         ("blocked", "approval"),
+        ("bank account", "banking"),
+        ("banking", "banking"),
+        ("fixed asset", "asset"),
+        ("asset register", "assets"),
+        ("expense claim", "expenses"),
+        ("expense", "expenses"),
+        ("compliance", "compliance"),
         ("dashboard", "analytics"),
+        ("kpi", "analytics"),
     )
     for needle, hint in mapping:
         if needle in text and hint not in hints:
             hints.append(hint)
+
+    # Concrete document codes
+    if inv_code or "this invoice" in text or "invoice detail" in text:
+        if "invoice" not in hints:
+            hints.append("invoice")
+    elif voucher_code or "this voucher" in text:
+        if "voucher" not in hints:
+            hints.append("voucher")
+    elif "invoice" in text and "ap" not in hints and "ar" not in hints and "voucher" not in hints:
+        # Generic invoice list question → AP list map (most common ERP ask)
+        hints.append("ap")
     return hints
+
+
+_DETAIL_METHODS = {
+    ("ap", "get_invoice"),
+    ("ap", "get_vendor"),
+    ("ar", "get_invoice"),
+    ("ar", "get_customer"),
+    ("journals", "get"),
+    ("procurement", "get_po"),
+    ("vouchers", "get"),
+    ("coa", "get_account"),
+    ("banking", "get_account"),
+}
+
+
+def _has_detail_id(world_state: WorldState | None, entities: list[ResolvedEntity], message: str) -> bool:
+    if world_state and world_state.screen and world_state.screen.entity_id:
+        return True
+    if world_state and (world_state.current_invoice_id or world_state.current_vendor_id or world_state.current_customer_id):
+        return True
+    if any(e.entity_id for e in entities if e.entity_id and str(e.entity_id).lower() not in {"invoice", "voucher", "vendor"}):
+        return True
+    text = (message or "").lower()
+    if re.search(r"\binv[-_]?\d+\b", text):
+        return True
+    if re.search(r"\b(vch|jv|pv|rv|po|grn)[-_]?\w*\d+\b", text):
+        return True
+    return False
 
 
 class ContextPlanner:
@@ -297,7 +450,70 @@ class ContextPlanner:
 
         seen: set[str] = set()
         sources: list[RetrievalSource] = []
+        allow_detail = _has_detail_id(world_state, entities, message)
         for idx, (stype, tool, method, params, cross) in enumerate(raw_sources):
+            # Skip single-object getters when no entity id is in context (avoids noisy Missing required params)
+            if (tool, method) in _DETAIL_METHODS and not allow_detail:
+                continue
+            # AP unpaid/list / INV payment questions should not also pull unrelated AR tools
+            text_l = (message or "").lower()
+            if (
+                "ap" in hints
+                and "ar" not in hints
+                and tool == "ar"
+                and any(
+                    w in text_l
+                    for w in (
+                        "unpaid",
+                        "payable",
+                        "ap invoice",
+                        "accounts payable",
+                        "paid",
+                        "payment",
+                    )
+                )
+            ):
+                continue
+            # Invoice document codes → prefer AP get over AR get unless AR was hinted
+            if (
+                re.search(r"\binv[-_]?\d+\b", text_l)
+                and "ar" not in hints
+                and tool == "ar"
+                and method in {"get_invoice", "list_outstanding", "list_overdue"}
+            ):
+                continue
+            # Specific domain asks from Dashboard should not dump KPI analytics
+            domain_focus = any(
+                h in hints
+                for h in (
+                    "voucher",
+                    "vouchers",
+                    "banking",
+                    "bank",
+                    "assets",
+                    "asset",
+                    "expenses",
+                    "claim",
+                    "journal",
+                    "procurement",
+                    "po",
+                    "compliance",
+                    "tax",
+                    "gst",
+                )
+            )
+            if tool == "analytics" and domain_focus:
+                continue
+            # Specific invoice asks should not dump the executive KPI dashboard
+            if re.search(r"\binv[-_]?\d+\b", text_l) and tool == "analytics":
+                continue
+            # AP unpaid/list asks from Dashboard should use AP tools, not KPI dump
+            if (
+                tool == "analytics"
+                and "ap" in hints
+                and any(w in text_l for w in ("unpaid", "outstanding", "payable", "ap invoice", "accounts payable"))
+            ):
+                continue
             sig = f"{stype}:{tool}.{method}"
             if sig in seen:
                 continue

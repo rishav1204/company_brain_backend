@@ -32,6 +32,7 @@ class TemplateRepository:
                 return dict(row) if row else None
 
     def list_templates(self, org_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -43,7 +44,7 @@ class TemplateRepository:
                     ORDER BY template_key, channel
                     LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

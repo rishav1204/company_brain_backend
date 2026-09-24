@@ -32,6 +32,7 @@ class StatementMvRepository:
                 return count
 
     def list_period(self, org_id: str, *, fiscal_period_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -43,7 +44,7 @@ class StatementMvRepository:
                     ORDER BY reporting_category ASC
                     LIMIT %s
                     """,
-                    (org_id, fiscal_period_id),
+                    (org_id, fiscal_period_id, limit),
                 )
                 return [dict(r) for r in (cur.fetchall() or [])]
 

@@ -8,13 +8,22 @@ from app.core.config import settings
 from app.services.ai_gateway.types import ExecutionClass
 
 
-# Default alias → model id. Override via AI_MODEL_ROUTES_JSON env mapping.
-_DEFAULT_ALIASES: dict[str, str] = {
+# Default alias → model id when LLM_PROVIDER=openai
+_DEFAULT_ALIASES_OPENAI: dict[str, str] = {
     "cheap": "gpt-4.1-mini",
     "standard": "gpt-4.1",
     "strong": "gpt-4.1",
     "embedding": "text-embedding-3-small",
     "vision": "gpt-4.1",
+}
+
+# Default alias → model id when LLM_PROVIDER=anthropic (Haiku for responses by default)
+_DEFAULT_ALIASES_ANTHROPIC: dict[str, str] = {
+    "cheap": "claude-3-5-haiku-latest",
+    "standard": "claude-3-5-haiku-latest",
+    "strong": "claude-3-5-haiku-latest",
+    "embedding": "text-embedding-3-small",  # embeddings still via OpenAI when configured
+    "vision": "claude-3-5-haiku-latest",
 }
 
 _DEFAULT_CLASS_TO_ALIAS: dict[str, str] = {
@@ -36,19 +45,67 @@ _DEFAULT_PRICES: dict[str, dict[str, float]] = {
     "gpt-4.1": {"input": 2.0, "output": 8.0},
     "gpt-4.1-mini": {"input": 0.4, "output": 1.6},
     "text-embedding-3-small": {"input": 0.02, "output": 0.0},
+    "claude-3-5-haiku-latest": {"input": 0.8, "output": 4.0},
+    "claude-3-5-haiku-20241022": {"input": 0.8, "output": 4.0},
+    "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
+    "claude-3-5-sonnet-latest": {"input": 3.0, "output": 15.0},
+    "claude-sonnet-4-0": {"input": 3.0, "output": 15.0},
     "default": {"input": 2.0, "output": 8.0},
 }
 
 
 class ModelRouter:
+    def provider(self) -> str:
+        return (getattr(settings, "llm_provider", "openai") or "openai").strip().lower()
+
     def aliases(self) -> dict[str, str]:
-        aliases = dict(_DEFAULT_ALIASES)
-        aliases["standard"] = getattr(settings, "openai_model", None) or aliases["standard"]
-        aliases["strong"] = getattr(settings, "ai_model_strong", None) or aliases["standard"]
-        aliases["cheap"] = getattr(settings, "ai_model_cheap", None) or "gpt-4.1-mini"
-        aliases["embedding"] = getattr(settings, "retrieval_embedding_model", None) or aliases["embedding"]
-        aliases["vision"] = getattr(settings, "ai_model_vision", None) or aliases["standard"]
-        # JSON override: {"cheap":"gpt-4o-mini", ...}
+        provider = self.provider()
+        if provider == "anthropic":
+            aliases = dict(_DEFAULT_ALIASES_ANTHROPIC)
+            haiku = (
+                (getattr(settings, "ai_chat_model", None) or "").strip()
+                or (getattr(settings, "anthropic_model", None) or "").strip()
+                or aliases["standard"]
+            )
+            aliases["standard"] = haiku
+            cheap = (
+                (getattr(settings, "anthropic_model_cheap", None) or "").strip()
+                or (getattr(settings, "ai_model_cheap", None) or "").strip()
+            )
+            # Ignore OpenAI-named cheap models when chat provider is Anthropic
+            if cheap and not cheap.lower().startswith("claude"):
+                cheap = ""
+            aliases["cheap"] = cheap or haiku
+            strong = (
+                (getattr(settings, "anthropic_model_strong", None) or "").strip()
+                or (getattr(settings, "ai_model_strong", None) or "").strip()
+            )
+            if strong and not strong.lower().startswith("claude"):
+                strong = ""
+            aliases["strong"] = strong or haiku
+            vis = (getattr(settings, "ai_model_vision", None) or "").strip()
+            if vis and not vis.lower().startswith("claude"):
+                vis = ""
+            aliases["vision"] = vis or haiku
+        else:
+            aliases = dict(_DEFAULT_ALIASES_OPENAI)
+            aliases["standard"] = (
+                (getattr(settings, "ai_chat_model", None) or "").strip()
+                or (getattr(settings, "openai_model", None) or "").strip()
+                or aliases["standard"]
+            )
+            aliases["strong"] = (
+                (getattr(settings, "ai_model_strong", None) or "").strip() or aliases["standard"]
+            )
+            aliases["cheap"] = (getattr(settings, "ai_model_cheap", None) or "").strip() or "gpt-4.1-mini"
+            aliases["vision"] = (
+                (getattr(settings, "ai_model_vision", None) or "").strip() or aliases["standard"]
+            )
+
+        aliases["embedding"] = (
+            getattr(settings, "retrieval_embedding_model", None) or aliases.get("embedding") or "text-embedding-3-small"
+        )
+        # JSON override: {"cheap":"...", "standard":"..."}
         raw = (getattr(settings, "ai_model_routes_json", "") or "").strip()
         if raw:
             try:
@@ -82,10 +139,12 @@ class ModelRouter:
     ) -> tuple[str, str, list[str], str]:
         """Return (model_id, provider, fallbacks, reason)."""
         aliases = self.aliases()
-        provider = getattr(settings, "llm_provider", "openai") or "openai"
+        provider = self.provider()
+        if provider in {"none", "off", "disabled"}:
+            provider = "none"
 
         if model_override:
-            return model_override, provider, [aliases.get("cheap", "gpt-4.1-mini")], "override"
+            return model_override, provider, [aliases.get("cheap") or aliases.get("standard", "")], "override"
 
         alias = self.class_map().get(execution_class.value, "standard")
         if prefer_cheap or complexity < 0.4:
@@ -107,8 +166,8 @@ class ModelRouter:
         else:
             reason = f"class={execution_class.value}+alias={alias}"
 
-        model = aliases.get(alias) or aliases.get("standard") or settings.openai_model
-        fallbacks = []
+        model = aliases.get(alias) or aliases.get("standard") or ""
+        fallbacks: list[str] = []
         for a in ("standard", "cheap", "strong"):
             mid = aliases.get(a)
             if mid and mid != model and mid not in fallbacks:
@@ -135,7 +194,13 @@ class ModelRouter:
                             }
             except Exception:
                 pass
-        return prices.get(model) or prices.get("default") or {"input": 2.0, "output": 8.0}
+        if model in prices:
+            return prices[model]
+        # prefix match for dated anthropic ids
+        for key, val in prices.items():
+            if key != "default" and model.startswith(key):
+                return val
+        return prices.get("default") or {"input": 2.0, "output": 8.0}
 
     def estimate_cost_usd(self, model: str, *, input_tokens: int, output_tokens: int) -> float:
         p = self.unit_prices(model)

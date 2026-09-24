@@ -123,7 +123,12 @@ def evaluate(
             dry_run=dry_run,
         )
 
-    if risk_engine.risk_blocks_execution(risk_level, human_approved=human_approved) and attrs.get("fiscal_period_open") is False:
+    # Fiscal lock applies to mutating/posting work only — never block inbox/read/SSE.
+    if (
+        risk_engine.risk_blocks_execution(risk_level, human_approved=human_approved)
+        and attrs.get("fiscal_period_open") is False
+        and risk_engine.requires_open_fiscal_period(action)
+    ):
         return _finalize(
             org_id,
             action=action,

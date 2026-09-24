@@ -24,8 +24,8 @@ class HierarchyRepository:
             return False
 
     def list_for_org(self, org_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not self.schema_ready():
-            limit = clamp_limit(limit)
             return []
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
@@ -39,7 +39,7 @@ class HierarchyRepository:
                     ORDER BY created_at ASC
                     LIMIT %s
                     """,
-                    (org_id,),
+                    (org_id, limit),
                 )
                 cols = [d[0] for d in cur.description]
                 return [dict(zip(cols, row)) for row in cur.fetchall()]

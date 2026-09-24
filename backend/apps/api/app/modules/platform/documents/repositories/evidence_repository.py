@@ -38,6 +38,7 @@ class EvidenceRepository:
                 return dict(cur.fetchone() or {})
 
     def list_for_entity(self, org_id: str, *, entity_type: str, entity_id: str, limit: int = 500) -> list[dict]:
+        limit = clamp_limit(limit)
         with get_db_conn() as conn:
             set_rls_org(conn, org_id)
             with conn.cursor() as cur:
@@ -50,7 +51,7 @@ class EvidenceRepository:
                     ORDER BY created_at DESC
                     LIMIT %s
                     """,
-                    (org_id, entity_type, entity_id),
+                    (org_id, entity_type, entity_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

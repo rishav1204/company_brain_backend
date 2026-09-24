@@ -38,13 +38,28 @@ class TdsService:
         raise ValueError("TDS section could not be resolved; configure payment_type, expense_category, or section_code")
 
     def _section_rates(self, org_id: str, *, section_code: str) -> dict:
+        from app.modules.platform.regulatory.services.regulatory_resolver import (
+            RegulatoryConfigError,
+            regulatory_resolver,
+        )
+
         section = tds_section_repository.get_by_code(org_id, section_code=section_code)
         if not section:
             raise ValueError(f"TDS section not found: {section_code}")
         rate_pan = float(section.get("rate_pan") if section.get("rate_pan") is not None else section["rate"])
-        rate_no_pan = float(
-            section.get("rate_no_pan") if section.get("rate_no_pan") is not None else max(rate_pan * 2, 20)
-        )
+        if section.get("rate_no_pan") is not None:
+            rate_no_pan = float(section["rate_no_pan"])
+        else:
+            try:
+                mult = regulatory_resolver.resolve_param_numeric(
+                    "tds.no_pan_multiplier", org_id=org_id, required=False, default=2
+                )
+                floor = regulatory_resolver.resolve_param_numeric(
+                    "tds.no_pan_floor_pct", org_id=org_id, required=True
+                )
+            except RegulatoryConfigError as exc:
+                raise ValueError(str(exc)) from exc
+            rate_no_pan = max(rate_pan * float(mult), float(floor))
         threshold = float(section.get("threshold_amount") or 0)
         return {"rate_pan": rate_pan, "rate_no_pan": rate_no_pan, "threshold": threshold}
 
@@ -74,6 +89,7 @@ class TdsService:
             threshold=rates["threshold"],
             prior_ytd=prior_ytd,
             pan_present=pan_present,
+            org_id=org_id,
         )
         return {**result, "section_code": section_code}
 

@@ -79,5 +79,8 @@ class AnomalyService:
     def list_for_extraction(self, org_id: str, extraction_id: str) -> list[dict]:
         return anomaly_repository.list_for_extraction(org_id, extraction_id)
 
+    def list_recent(self, org_id: str, limit: int = 200) -> list[dict]:
+        return anomaly_repository.list_recent(org_id, limit=limit)
+
 
 anomaly_service = AnomalyService()

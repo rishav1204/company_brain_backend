@@ -10,8 +10,10 @@ from app.modules.core.iam.services.mfa_service import (
     admin_reset_mfa,
     confirm_mfa_enrollment,
     enroll_mfa,
+    user_has_mfa_enabled,
     verify_mfa_code,
 )
+from app.modules.core.iam.repositories.mfa_repository import mfa_repo
 from app.modules.core.iam.services.sms_otp_service import send_sms_otp
 from app.modules.core.iam.services.webauthn_service import (
     WebAuthnNotEnabled,
@@ -40,15 +42,45 @@ class RecoveryVerifyBody(BaseModel):
     code: str
 
 
+@router.get("/users/me/mfa")
+def mfa_status(context=Depends(build_request_context)) -> dict:
+    """Return whether the current user has completed MFA enrollment."""
+    enabled = user_has_mfa_enabled(context.org_id, context.user_id)
+    methods = mfa_repo.list_enabled_methods(context.org_id, context.user_id)
+    pending = mfa_repo.get_method(context.org_id, context.user_id, "totp")
+    enrollment_pending = bool(
+        pending
+        and not pending.get("enabled")
+        and (pending.get("metadata") or {}).get("secret")
+    )
+    return {
+        "request_id": context.request_id,
+        "mfa_enabled": enabled,
+        "methods": [str(m.get("method")) for m in methods],
+        "enrollment_pending": enrollment_pending and not enabled,
+        "confidence": 0.99,
+        "verification_status": "mfa_status",
+    }
+
+
 @router.post("/users/me/mfa/enroll")
 def mfa_enroll(context=Depends(build_request_context)) -> dict:
+    if user_has_mfa_enabled(context.org_id, context.user_id):
+        raise HTTPException(
+            status_code=409,
+            detail="MFA is already enabled for this account",
+        )
     try:
         result = enroll_mfa(context.org_id, context.user_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {
         "request_id": context.request_id,
+        "secret": result["secret"],
         "provisioning_uri": result["provisioning_uri"],
+        "qr_code_data_url": result.get("qr_code_data_url"),
+        "issuer": result.get("issuer"),
+        "account_name": result.get("account_name"),
         "confidence": 0.99,
         "verification_status": "mfa_enrollment_started",
     }

@@ -1,10 +1,27 @@
 from __future__ import annotations
 
+_READ_ACTION_TOKENS = frozenset({"read", "list", "get", "status", "summary", "stream", "sse", "watch", "export"})
+
+
+def requires_open_fiscal_period(action: str) -> bool:
+    """Fiscal period lock is for posting/mutations, not inbox or read APIs."""
+    a = (action or "").strip().lower()
+    if not a:
+        return False
+    if a in _READ_ACTION_TOKENS:
+        return False
+    leaf = a.rsplit(".", 1)[-1]
+    if leaf in _READ_ACTION_TOKENS:
+        return False
+    if any(tok in a for tok in ("stream", "sse", "status", "summary")):
+        return False
+    return True
+
 
 def assess_risk(*, action: str, attrs: dict) -> str:
     amount = float(attrs.get("amount", 0) or 0)
     vendor_risk = str(attrs.get("vendor_risk") or "").lower()
-    if attrs.get("fiscal_period_open") is False:
+    if attrs.get("fiscal_period_open") is False and requires_open_fiscal_period(action):
         return "CRITICAL"
     if vendor_risk in {"critical", "blacklisted"}:
         return "CRITICAL"

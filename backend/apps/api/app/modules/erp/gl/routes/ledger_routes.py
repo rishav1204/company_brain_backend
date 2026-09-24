@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import build_request_context
-from app.modules.erp.gl.security.gl_guard import require_finance_gl_admin
+from app.modules.erp.gl.security.gl_guard import require_gl_read
 from app.modules.erp.gl.services.ledger_service import ledger_service
 
 router = APIRouter()
@@ -11,7 +11,7 @@ router = APIRouter()
 
 @router.get("/ledger/entries")
 def list_ledger_entries(
-    context=Depends(require_finance_gl_admin),
+    context=Depends(require_gl_read),
     account_id: str | None = Query(default=None),
     batch_id: str | None = Query(default=None),
     reference_type: str | None = Query(default=None),

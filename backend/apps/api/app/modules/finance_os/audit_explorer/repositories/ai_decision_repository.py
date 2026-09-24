@@ -146,6 +146,7 @@ class AIDecisionRepository:
                 return dict(existing) if existing else {"id": row_id}
 
     def get_by_execution(self, org_id: str, execution_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        limit = clamp_limit(limit)
         if not self.schema_ready():
             limit = clamp_limit(limit)
             return []
@@ -163,7 +164,7 @@ class AIDecisionRepository:
                     ORDER BY created_at ASC
                     LIMIT %s
                     """,
-                    (org_id, execution_id),
+                    (org_id, execution_id, limit),
                 )
                 return [dict(r) for r in cur.fetchall()]
 

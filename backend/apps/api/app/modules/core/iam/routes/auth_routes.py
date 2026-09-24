@@ -10,11 +10,19 @@ from app.modules.core.iam.schemas.auth_schema import (
     LoginRequest,
     LoginResponse,
     LogoutRequest,
+    MfaVerifyRequest,
     RefreshRequest,
     RefreshResponse,
 )
 from app.modules.core.iam.services.auth_cookies import clear_access_token_cookie, set_access_token_cookie
-from app.modules.core.iam.services.auth_service import AuthError, iam_db_enabled, login, logout, refresh
+from app.modules.core.iam.services.auth_service import (
+    AuthError,
+    complete_mfa_login,
+    iam_db_enabled,
+    login,
+    logout,
+    refresh,
+)
 from app.modules.core.iam.services.iam_schema_service import IamSchemaError
 from app.modules.core.iam.services.session_service import resolve_refresh_session
 from app.services.jwt_auth import decode_bearer_token
@@ -29,6 +37,33 @@ def _client_ip(request: Request) -> str | None:
     if request.client:
         return request.client.host
     return None
+
+
+def _login_response(result: dict, *, status: str) -> LoginResponse:
+    now = datetime.now(timezone.utc)
+    if result.get("mfa_required"):
+        return LoginResponse(
+            request_id=f"login-{int(now.timestamp())}",
+            mfa_required=True,
+            mfa_challenge_token=result.get("mfa_challenge_token"),
+            user_id=result.get("user_id"),
+            org_id=result.get("org_id"),
+            confidence=0.99,
+            verification_status="mfa_challenge",
+        )
+    return LoginResponse(
+        request_id=f"login-{int(now.timestamp())}",
+        mfa_required=False,
+        access_token=result["access_token"],
+        refresh_token=result["refresh_token"],
+        expires_in=result["expires_in"],
+        user_id=result["user_id"],
+        org_id=result["org_id"],
+        roles=result.get("roles") or [],
+        permissions=result.get("permissions") or [],
+        confidence=0.99,
+        verification_status=status,
+    )
 
 
 @router.post("/auth/login", response_model=LoginResponse)
@@ -52,25 +87,41 @@ def auth_login(request_body: LoginRequest, request: Request, response: Response)
     except IamSchemaError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+    if result.get("mfa_required"):
+        return _login_response(result, status="mfa_challenge")
+
     set_access_token_cookie(response, result["access_token"], max_age=result["expires_in"])
-    now = datetime.now(timezone.utc)
-    return LoginResponse(
-        request_id=f"login-{int(now.timestamp())}",
-        access_token=result["access_token"],
-        refresh_token=result["refresh_token"],
-        expires_in=result["expires_in"],
-        user_id=result["user_id"],
-        org_id=result["org_id"],
-        roles=result["roles"],
-        permissions=result["permissions"],
-        confidence=0.99,
-        verification_status="iam_db_login",
-    )
+    return _login_response(result, status="iam_db_login")
+
+
+@router.post("/auth/mfa/verify", response_model=LoginResponse)
+def auth_mfa_verify(request_body: MfaVerifyRequest, request: Request, response: Response) -> LoginResponse:
+    """Complete login after password step using TOTP / recovery code."""
+    if not iam_db_enabled():
+        raise HTTPException(status_code=503, detail="IAM database authentication is not enabled")
+    try:
+        result = complete_mfa_login(
+            mfa_challenge_token=request_body.mfa_challenge_token,
+            code=request_body.code,
+            device_info={"user_agent": request.headers.get("user-agent", "")},
+            ip_address=_client_ip(request),
+        )
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except IamSchemaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    set_access_token_cookie(response, result["access_token"], max_age=result["expires_in"])
+    return _login_response(result, status="iam_db_login_mfa")
 
 
 @router.post("/auth/sse-token")
 def auth_sse_token(context=Depends(build_request_context)) -> dict:
-    """Issue short-lived token for EventSource streams (SEC-03). Use X-SSE-Token header on stream URL."""
+    """Issue short-lived token for EventSource streams (SEC-03).
+
+    Prefer ``?sse_token=`` on the stream URL (EventSource cannot set headers).
+    ``X-SSE-Token`` header is also accepted for fetch-based clients.
+    """
     raw, ttl = issue_sse_token(
         org_id=context.org_id,
         user_id=context.user_id,

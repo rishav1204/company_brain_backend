@@ -1,3 +1,5 @@
+import pytest
+
 from app.modules.erp.tax.engine.tds_engine import (
     calculate_tds,
     financial_year_from_date,
@@ -6,6 +8,21 @@ from app.modules.erp.tax.engine.tds_engine import (
 )
 from app.modules.erp.tax.engine.tcs_engine import calculate_tcs
 from app.modules.erp.tax.services.tds_posting_service import build_payment_journal_lines
+
+
+@pytest.fixture(autouse=True)
+def _mock_no_pan_floor(monkeypatch):
+    from app.modules.platform.regulatory.services import regulatory_resolver as rr_mod
+
+    def _resolve_param_numeric(param_key, *args, **kwargs):
+        key = str(param_key)
+        if key == "tds.no_pan_floor_pct":
+            return 20.0
+        if kwargs.get("default") is not None:
+            return float(kwargs["default"])
+        return 20.0
+
+    monkeypatch.setattr(rr_mod.regulatory_resolver, "resolve_param_numeric", _resolve_param_numeric)
 
 
 def test_tds_194j_calculation() -> None:

@@ -10,7 +10,7 @@ from app.modules.core.iam.services.access_control import evaluate_access
 
 from app.modules.erp.journals.schemas.journal_schema import BatchPostRequest, JournalMarkReviewedRequest
 
-from app.modules.erp.journals.security.journal_guard import require_finance_journal_admin
+from app.modules.erp.journals.security.journal_guard import require_finance_journal_admin, require_journal_read
 
 from app.modules.erp.journals.services.approval_service import approval_service
 
@@ -88,7 +88,7 @@ def _enforce_journal_action(context, journal_payload: dict, action: str) -> None
 
 def approval_queue(
 
-    context=Depends(require_finance_journal_admin),
+    context=Depends(require_journal_read),
 
     limit: int = Query(default=100, ge=1, le=500),
 

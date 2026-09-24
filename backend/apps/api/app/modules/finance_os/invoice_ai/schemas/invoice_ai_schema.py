@@ -59,7 +59,7 @@ class AnomalyItem(BaseModel):
 
 
 class AnomalyListResponse(BaseModel):
-    extraction_id: str
+    extraction_id: str | None = None
     anomalies: list[AnomalyItem]
 
 

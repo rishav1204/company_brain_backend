@@ -1,8 +1,11 @@
+"""OpenAI + Anthropic client facade — every chat/JSON call routes through AI Gateway (Wave 6)."""
+
+from __future__ import annotations
+
 import json
 import os
+from types import SimpleNamespace
 from typing import Any
-
-from openai import OpenAI
 
 from app.core.config import settings
 from app.services.ai_gateway.gateway import AIBudgetExceededError, ai_gateway
@@ -12,12 +15,32 @@ from app.services.metrics import metrics_store
 from app.services.logger import log_event
 
 
+def _provider_name() -> str:
+    return (settings.llm_provider or "openai").strip().lower()
+
+
+def _ai_master_enabled() -> bool:
+    if not getattr(settings, "ai_enabled", True):
+        return False
+    return _provider_name() not in {"", "none", "off", "disabled", "false", "0"}
+
+
 class LlmProvider:
-    """OpenAI client facade — every chat/JSON call routes through AI Gateway (Wave 6)."""
+    """Multi-provider LLM facade (OpenAI chat/embed + Anthropic Messages)."""
 
     def __init__(self) -> None:
+        self.openai_client = None
+        self.anthropic_client = None
+        self._init_openai()
+        self._init_anthropic()
+
+    def _init_openai(self) -> None:
         if not settings.openai_api_key:
-            self.client = None
+            return
+        try:
+            from openai import OpenAI
+        except ImportError:
+            log_event("llm.openai.import_failed")
             return
         kwargs: dict = {"api_key": settings.openai_api_key}
         base_url = (settings.openai_base_url or "").strip()
@@ -25,10 +48,60 @@ class LlmProvider:
             kwargs["base_url"] = base_url
         else:
             os.environ.pop("OPENAI_BASE_URL", None)
-        self.client = OpenAI(**kwargs)
+        self.openai_client = OpenAI(**kwargs)
+
+    def _init_anthropic(self) -> None:
+        if not settings.anthropic_api_key:
+            return
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            log_event("llm.anthropic.import_failed", detail="pip install anthropic")
+            return
+        kwargs: dict[str, Any] = {"api_key": settings.anthropic_api_key}
+        base = (getattr(settings, "anthropic_base_url", "") or "").strip()
+        if base:
+            kwargs["base_url"] = base
+        self.anthropic_client = Anthropic(**kwargs)
+
+    # Back-compat for older call sites that inspected .client
+    @property
+    def client(self) -> Any:
+        if _provider_name() == "anthropic":
+            return self.anthropic_client
+        return self.openai_client
 
     def is_ready(self) -> bool:
-        return self.client is not None and settings.llm_provider == "openai"
+        """True when AI is on and the active chat provider has a client."""
+        if not _ai_master_enabled():
+            return False
+        p = _provider_name()
+        if p == "anthropic":
+            return self.anthropic_client is not None
+        if p == "openai":
+            return self.openai_client is not None
+        return False
+
+    def embedding_ready(self) -> bool:
+        if not getattr(settings, "ai_enabled", True):
+            return False
+        emb = (getattr(settings, "embedding_provider", "openai") or "openai").strip().lower()
+        if emb in {"none", "off", "disabled"}:
+            return False
+        return self.openai_client is not None
+
+    def active_provider(self) -> str:
+        if not self.is_ready():
+            return "none"
+        return _provider_name()
+
+    def _default_chat_model(self) -> str:
+        explicit = (getattr(settings, "ai_chat_model", "") or "").strip()
+        if explicit:
+            return explicit
+        if _provider_name() == "anthropic":
+            return settings.anthropic_model or "claude-3-5-haiku-latest"
+        return settings.openai_model or "gpt-4.1"
 
     def _invoke_chat(
         self,
@@ -37,8 +110,25 @@ class LlmProvider:
         temperature: float,
         max_tokens: int | None,
     ) -> Any:
-        if not self.client:
-            raise RuntimeError("LLM provider is not configured. Set OPENAI_API_KEY.")
+        """Gateway callback: returns OpenAI-shaped object with .choices and .usage."""
+        if not _ai_master_enabled():
+            raise RuntimeError("AI is disabled (AI_ENABLED=false or LLM_PROVIDER=none).")
+        provider = _provider_name()
+        # If model id clearly belongs to the other family, prefer matching client
+        mid = (model or "").lower()
+        if mid.startswith("claude") or provider == "anthropic":
+            return self._invoke_anthropic(model, messages, temperature, max_tokens)
+        return self._invoke_openai(model, messages, temperature, max_tokens)
+
+    def _invoke_openai(
+        self,
+        model: str,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int | None,
+    ) -> Any:
+        if not self.openai_client:
+            raise RuntimeError("OpenAI is not configured. Set OPENAI_API_KEY.")
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -47,7 +137,64 @@ class LlmProvider:
         }
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
-        return self.client.chat.completions.create(**kwargs)
+        return self.openai_client.chat.completions.create(**kwargs)
+
+    def _invoke_anthropic(
+        self,
+        model: str,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int | None,
+    ) -> Any:
+        if not self.anthropic_client:
+            raise RuntimeError("Anthropic is not configured. Set ANTHROPIC_API_KEY.")
+        system_parts: list[str] = []
+        anth_messages: list[dict[str, Any]] = []
+        for m in messages:
+            role = (m.get("role") or "user").lower()
+            content = m.get("content") or ""
+            if role == "system":
+                system_parts.append(str(content))
+            elif role == "assistant":
+                anth_messages.append({"role": "assistant", "content": str(content)})
+            else:
+                anth_messages.append({"role": "user", "content": str(content)})
+        if not anth_messages:
+            anth_messages = [{"role": "user", "content": ""}]
+        # Anthropic requires alternating user/assistant; collapse leading assistant if any
+        if anth_messages[0]["role"] != "user":
+            anth_messages.insert(0, {"role": "user", "content": "(continue)"})
+
+        kwargs: dict[str, Any] = {
+            "model": model or self._default_chat_model(),
+            "messages": anth_messages,
+            "temperature": temperature,
+            "max_tokens": int(max_tokens or 4096),
+            "timeout": settings.llm_timeout_seconds,
+        }
+        if system_parts:
+            kwargs["system"] = "\n\n".join(system_parts)
+        response = self.anthropic_client.messages.create(**kwargs)
+        text_parts: list[str] = []
+        for block in getattr(response, "content", None) or []:
+            t = getattr(block, "text", None)
+            if t:
+                text_parts.append(str(t))
+        text = "".join(text_parts)
+        usage = getattr(response, "usage", None)
+        prompt_tokens = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+        completion_tokens = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
+        # Normalize to OpenAI-like shape so AI Gateway stays provider-agnostic
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+            usage=SimpleNamespace(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+            ),
+            model=getattr(response, "model", model),
+            provider="anthropic",
+        )
 
     def generate_text(
         self,
@@ -69,7 +216,10 @@ class LlmProvider:
         metadata: dict | None = None,
     ) -> str:
         if not self.is_ready():
-            raise RuntimeError("LLM provider is not configured. Set OPENAI_API_KEY.")
+            raise RuntimeError(
+                "LLM provider is not configured. Set AI_ENABLED=true and LLM_PROVIDER "
+                "(openai|anthropic) with the matching API key."
+            )
 
         if not getattr(settings, "ai_gateway_enabled", True):
             return self._legacy_generate_text(
@@ -102,11 +252,14 @@ class LlmProvider:
             result = ai_gateway.complete(req, invoke=self._invoke_chat)
             return result.text
         except AIBudgetExceededError:
-            log_event("ai.gateway.budget_blocked", org_id=org_id, operation=operation_code or usage_operation_code or "")
+            log_event(
+                "ai.gateway.budget_blocked",
+                org_id=org_id,
+                operation=operation_code or usage_operation_code or "",
+            )
             raise
         except RuntimeError as exc:
             if "deterministic_path_no_llm" in str(exc):
-                # Caller should not reach LLM for pure tool paths; re-raise clearly
                 raise
             raise
 
@@ -127,7 +280,8 @@ class LlmProvider:
     ) -> dict:
         raw = self.generate_text(
             org_id=org_id,
-            system_prompt=system_prompt,
+            system_prompt=system_prompt
+            + "\nRespond with ONLY valid JSON. No markdown fences, no commentary.",
             user_prompt=user_prompt,
             estimated_tokens=estimated_tokens,
             operation_code=operation_code,
@@ -136,19 +290,39 @@ class LlmProvider:
             intent=intent,
             user_id=user_id,
             goal_id=goal_id,
-            **{k: v for k, v in kwargs.items() if k in {"model_override", "temperature", "max_output_tokens", "metadata", "workflow_id"}},
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k in {"model_override", "temperature", "max_output_tokens", "metadata", "workflow_id"}
+            },
         )
         raw = (raw or "").strip()
         if raw.startswith("```"):
             raw = raw.strip("`")
             if raw.lower().startswith("json"):
                 raw = raw[4:].strip()
-        return json.loads(raw)
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(raw[start : end + 1])
+            if isinstance(data, dict):
+                return data
+        # Last resort: wrap plain prose as answer string so callers never get a bare dump
+        if raw and "DATA BELOW IS UNTRUSTED" not in raw and "WORLD_STATE:" not in raw:
+            return {"answer": raw[:4000], "confidence_band": "review"}
+        raise RuntimeError("LLM did not return parseable JSON")
 
     def generate_embedding(self, org_id: str, text: str) -> list[float]:
-        if not self.is_ready():
-            raise RuntimeError("LLM provider is not configured. Set OPENAI_API_KEY.")
-        # Gateway decision for cost telemetry; embeddings still need direct embeddings API
+        if not self.embedding_ready():
+            raise RuntimeError(
+                "Embeddings require AI_ENABLED=true, EMBEDDING_PROVIDER=openai, and OPENAI_API_KEY."
+            )
         from app.services.ai_gateway.model_router import model_router
         from app.services.ai_gateway.budget_manager import ai_budget_manager
         from app.services.ai_gateway.token_intel import token_intelligence
@@ -169,7 +343,7 @@ class LlmProvider:
             if delay > 0:
                 llm_runtime_guard.backoff(delay)
             try:
-                response = self.client.embeddings.create(
+                response = self.openai_client.embeddings.create(
                     model=model,
                     input=text,
                     timeout=settings.llm_timeout_seconds,
@@ -178,12 +352,16 @@ class LlmProvider:
                     raise RuntimeError("Embedding response returned no data")
                 llm_runtime_guard.record_success(org_id)
                 usage = getattr(response, "usage", None)
-                pt = int(getattr(usage, "total_tokens", 0) or getattr(usage, "prompt_tokens", 0) or est_tokens) if usage else est_tokens
+                pt = (
+                    int(getattr(usage, "total_tokens", 0) or getattr(usage, "prompt_tokens", 0) or est_tokens)
+                    if usage
+                    else est_tokens
+                )
                 latency = round((__import__("time").perf_counter() - started) * 1000.0, 2)
                 cost = model_router.estimate_cost_usd(model, input_tokens=pt, output_tokens=0)
                 tel = token_intelligence.build(
                     org_id=org_id,
-                    provider=settings.llm_provider,
+                    provider="openai",
                     model=model,
                     operation_code="embedding",
                     execution_class=ExecutionClass.EMBEDDING.value,
@@ -234,24 +412,26 @@ class LlmProvider:
             except Exception:
                 pass
         llm_runtime_guard.reserve_tokens(org_id, estimated_tokens=estimated_tokens)
+        model = self._default_chat_model()
         last_error: Exception | None = None
         for delay in [0.0] + llm_runtime_guard.retry_delays():
             if delay > 0:
                 llm_runtime_guard.backoff(delay)
             try:
-                response = self.client.chat.completions.create(
-                    model=settings.openai_model,
-                    messages=[
+                response = self._invoke_chat(
+                    model,
+                    [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    temperature=0.2,
-                    timeout=settings.llm_timeout_seconds,
+                    0.2,
+                    None,
                 )
                 llm_runtime_guard.record_success(org_id)
                 usage = getattr(response, "usage", None)
                 prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
                 completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
+                provider = self.active_provider()
                 if operation_code:
                     try:
                         from app.modules.platform.billing.services.credit_service import credit_service
@@ -259,8 +439,8 @@ class LlmProvider:
                         credit_service.commit_deduction(org_id, operation_code)
                         credit_service.log_ai_usage(
                             org_id,
-                            provider="openai",
-                            model=settings.openai_model,
+                            provider=provider,
+                            model=model,
                             operation_code=operation_code,
                             prompt_tokens=prompt_tokens,
                             completion_tokens=completion_tokens,
@@ -274,8 +454,8 @@ class LlmProvider:
 
                         credit_service.log_ai_usage(
                             org_id,
-                            provider="openai",
-                            model=settings.openai_model,
+                            provider=provider,
+                            model=model,
                             operation_code=usage_operation_code,
                             prompt_tokens=prompt_tokens,
                             completion_tokens=completion_tokens,

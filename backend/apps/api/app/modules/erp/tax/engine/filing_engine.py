@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-B2C_LARGE_THRESHOLD = 250_000.0
+from app.modules.platform.regulatory.services.regulatory_resolver import (
+    RegulatoryConfigError,
+    regulatory_resolver,
+)
 
 
 def _tx_row(tx: dict) -> dict:
@@ -16,7 +19,16 @@ def _tx_row(tx: dict) -> dict:
     }
 
 
-def build_gstr1_payload(transactions: list[dict], *, return_period: str) -> dict:
+def build_gstr1_payload(
+    transactions: list[dict], *, return_period: str, org_id: str | None = None
+) -> dict:
+    try:
+        b2c_large_threshold = regulatory_resolver.resolve_threshold_amount(
+            "gst.b2c_large_invoice", org_id=org_id, required=True
+        )
+    except RegulatoryConfigError as exc:
+        raise ValueError(str(exc)) from exc
+
     b2b: list[dict] = []
     b2c_large: list[dict] = []
     b2c_small_agg: dict[str, float] = {"taxable_value": 0.0, "cgst": 0.0, "sgst": 0.0, "igst": 0.0}
@@ -44,7 +56,7 @@ def build_gstr1_payload(transactions: list[dict], *, return_period: str) -> dict
 
         if party_gstin:
             b2b.append(row)
-        elif taxable >= B2C_LARGE_THRESHOLD:
+        elif taxable >= b2c_large_threshold:
             b2c_large.append(row)
         else:
             b2c_small_agg["taxable_value"] += taxable
